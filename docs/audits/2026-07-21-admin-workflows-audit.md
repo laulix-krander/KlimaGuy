@@ -458,3 +458,114 @@ Jeder spätere PR muss folgende Gates erfüllen:
 9. **Offene Entscheidungen:** Siehe Abschnitt 20.
 10. **Bestätigung:** Es wurde keinerlei funktionaler Code geändert.
 11. **Pull Request Link:** Wird nach Commit und PR-Erstellung ergänzt.
+
+## AP-01 Implementation Result
+
+- **Audit-ID:** KG-AUDIT-2026-07-21-ADMIN-WORKFLOWS-V1
+- **Arbeitspaket:** AP-01 – Domainregeln und Statusübergänge
+- **Implementierungsstatus:** Implementiert auf Branch `codex/ap-01-domain-rules`; der Gesamt-Audit-Status bleibt unverändert und wird nicht rückwirkend umgeschrieben.
+- **Betroffene Dateien:**
+  - `lib/domain/types.ts`
+  - `lib/domain/schemas.ts`
+  - `lib/domain/mappers.ts`
+  - `lib/domain/project-status.ts`
+  - `lib/domain/permissions.ts`
+  - `test/domain.test.ts`
+  - `docs/audits/2026-07-21-admin-workflows-audit.md`
+- **Umgesetzte Domainregeln:**
+  - Zentrale Typen und Konstanten für Rollen `admin` und `reviewer`, Projektstatuswerte `new`, `collecting_information`, `technical_review`, `quote_draft`, `human_review`, `quote_sent`, `accepted`, `rejected`, `closed` sowie Projektklassen `A`, `B`, `C`, `D`.
+  - Zentrale, unveränderliche Statusübergangsmatrix inklusive explizit leerer Folgeliste für `closed`.
+  - Reine Helfer für erlaubte Statusübergänge und abrufbare Folgestatus ohne Supabase-, HTTP- oder Datenbankabhängigkeit.
+  - Deutsche Labels für Status, Projektklassen und Rollen sowie Beschreibungen für Projektklassen.
+  - Zentraler Standard `DEFAULT_REQUIRES_HUMAN_REVIEW = true` und Zod-Default für neue Projektdaten.
+  - Reine Domain-Berechtigungshelfer für Kunden, Projekte, Human Review, Zusammenfassung und Notizen gemäß Admin-/Reviewer-Zielmodell. Diese Helfer ersetzen keine serverseitige Authentifizierung und keine RLS-Policies.
+- **Testumfang:** Unit-Tests für gültige und ungültige Statuswerte, alle erlaubten Matrixübergänge, definierte verbotene Übergänge, Unveränderlichkeit der Matrix, Projektklassen inklusive Nullable-Schema, Rollen, Human-Review-Default und ungültige Werte sowie Admin-/Reviewer-Berechtigungen inklusive Besitzprüfung für Notizen.
+- **Ausgeführte Merge Gates:**
+  - Baseline vor Implementierung: `npm install`, `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich.
+  - Nach Implementierung: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich.
+- **Bekannte Einschränkungen:** Keine Datenbankmigration, keine RLS-Änderung, keine Server Actions und keine UI-Änderung in AP-01; spätere Arbeitspakete müssen die Domainregeln serverseitig und in RLS/Triggern audit-konform anbinden.
+- **Rollback-Hinweis:** PR beziehungsweise Commit `Implement AP-01 domain rules and status transitions` zurücksetzen; es sind keine Datenbankänderungen rückabzuwickeln.
+
+## AP-02 Implementation Result
+
+- **Audit-ID:** KG-AUDIT-2026-07-21-ADMIN-WORKFLOWS-V1
+- **Arbeitspaket:** AP-02 – Kunden anlegen und Kundendetail
+- **Implementierungsstatus:** Implementiert auf Branch `codex/ap-02-create-customer`; der Gesamt-Audit-Status bleibt unverändert und wird nicht rückwirkend umgeschrieben.
+- **Baseline-Commit:** `7cd46b3745f5e87364f5dfda1ad1fa2a38e25f73`
+- **Betroffene Dateien:**
+  - `app/(app)/customers/page.tsx`
+  - `app/(app)/customers/new/page.tsx`
+  - `app/(app)/customers/new/customer-form.tsx`
+  - `app/(app)/customers/[id]/page.tsx`
+  - `lib/actions/customers.ts`
+  - `lib/actions/customer-create-service.ts`
+  - `lib/domain/display.ts`
+  - `lib/domain/schemas.ts`
+  - `test/customer-create.test.ts`
+  - `docs/audits/2026-07-21-admin-workflows-audit.md`
+- **Implementierte Funktionen:** Kundenliste zeigt nur aktive Kunden und verlinkt Detailseiten; Admins sehen den Button `Kunde anlegen`; `/customers/new` enthält ein validiertes Anlageformular; erfolgreiche Anlage führt zur Kundendetailseite; `/customers/[id]` lädt validierte UUIDs, blendet gelöschte Kunden aus und zeigt optionale Felder sicher an.
+- **Rollenprüfung:** Die Kundenanlage lädt serverseitig Benutzer und Profil, validiert die Rolle mit `roleSchema` und prüft `canCreateCustomer(role)`. Reviewer und nicht authentifizierte Aufrufe werden serverseitig abgewiesen.
+- **Validierungsregeln:** `createCustomerSchema` erlaubt ausschließlich `first_name`, `last_name`, `email` und `phone`; Namen werden getrimmt und müssen nach Trim gefüllt sein; optionale leere E-Mail und Telefonnummer werden `null`; Telefonnummern werden außen getrimmt, interne Formatzeichen bleiben erhalten.
+- **Testumfang:** Unit-Tests für Kundenschema, Mass-Assignment-Schutz, Admin-/Reviewer-Berechtigung, Kundenanlage-Service mit Auth-/Profil-/Reviewer-/Validierungs-/Insert-Szenarien, serverseitiges `created_by`, neutrale Datenbankfehlermeldung und optionale Anzeige-Platzhalter.
+- **Merge-Gates:** Baseline vor Implementierung: `npm install`, `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich. Nach Implementierung: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich.
+- **Audit-Log-Status:** Kein sicherer, dokumentierter und getesteter Audit-Schreibmechanismus für `customer.created` existiert in AP-02. Es wurde kein Audit-Eintrag erzwungen, keine Migration erstellt, keine RLS-Änderung vorgenommen und kein Service-Role-Key verwendet.
+- **Bekannte Einschränkungen:** Vercel-Deployment des aktuellen main konnte lokal nicht unabhängig verifiziert werden; AP-02 enthält keine Kundenbearbeitung, kein Soft Delete, keine Suche, keine Filter, keine RLS-Härtung und keinen Audit-Log-Schreibpfad.
+- **Rollback-Anweisung:** PR beziehungsweise Commit `Implement AP-02 customer creation and detail view` zurücksetzen; es sind keine Datenbankänderungen rückabzuwickeln.
+
+## AP-03 Implementation Result
+
+- **Audit-ID:** KG-AUDIT-2026-07-21-ADMIN-WORKFLOWS-V1
+- **Arbeitspaket:** AP-03 – Kunden bearbeiten
+- **Implementierungsstatus:** Implementiert auf Branch `codex/ap-03-edit-customer`; der Gesamt-Audit-Status bleibt unverändert und wird nicht rückwirkend verändert.
+- **Baseline-Commit:** `d3dfa4256c61a07f0e0531d88bdbc24323c94fd8`
+- **Betroffene Dateien:**
+  - `app/(app)/customers/[id]/page.tsx`
+  - `app/(app)/customers/[id]/edit/page.tsx`
+  - `app/(app)/customers/[id]/edit/customer-edit-form.tsx`
+  - `lib/actions/customers.ts`
+  - `lib/actions/customer-update-service.ts`
+  - `lib/domain/display.ts`
+  - `lib/domain/schemas.ts`
+  - `test/customer-update.test.ts`
+  - `docs/audits/2026-07-21-admin-workflows-audit.md`
+- **Implementierte Route:** `/customers/[id]/edit` für die Bearbeitung bestehender, nicht gelöschter Kunden.
+- **Implementierter Bearbeitungsworkflow:** Admins sehen auf der Kundendetailseite `Bearbeiten`, laden aktuelle Kundendaten im Formular, speichern validierte Änderungen und werden nach Erfolg zu `/customers/[id]?updated=1` zurückgeführt. Die Detailseite kann `Kundendaten wurden aktualisiert.` anzeigen.
+- **Rollenprüfung:** Detailseite, Bearbeitungsseite und Update-Action laden Benutzerprofil, validieren `roleSchema` und prüfen `canEditCustomer(role)`. Reviewer erhalten keinen Bearbeiten-Button und werden serverseitig abgewiesen.
+- **Zod-Validierung:** `updateCustomerSchema` erlaubt ausschließlich `first_name`, `last_name`, `email` und `phone`; Namen bleiben Pflichtfelder, optionale leere E-Mail und Telefonnummer werden `null`, Telefonnummern werden nicht aggressiv normalisiert.
+- **Mass-Assignment-Schutz:** FormData und Update-Payload verwenden explizite Allowlists. `id`, `created_by`, `created_at`, `updated_at`, `deleted_at`, `role` und unbekannte Felder werden nicht an Supabase übergeben.
+- **Schutz soft gelöschter Kunden:** Bearbeitungsseite und Update-Action filtern Kunden mit `deleted_at IS NULL`; ungültige, unbekannte oder soft gelöschte Kunden werden nicht regulär bearbeitet.
+- **Testumfang:** Unit-Tests für Update-Schema, fremde Felder, Admin-/Reviewer-Berechtigung, Auth-/Profil-/Rollenfehler, ungültige UUID, Feldfehler, Update-Payload-Allowlist, ID-Filter, `deleted_at IS NULL`, erfolgreiche Updates, neutrale Fehler bei nicht betroffenen Datensätzen und DB-Fehlern sowie Formularwerte für optionale Felder.
+- **Ausgeführte Merge-Gates:** Baseline vor Implementierung: `npm install`, `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich. Nach Implementierung: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich.
+- **Audit-Log-Status:** Kein neuer Audit-Log-Schreibmechanismus. `customer.updated` wird in AP-03 nicht in `audit_log` geschrieben, weil kein sicherer, dokumentierter und getesteter Mechanismus existiert. Kein Service-Role-Key, keine Migration und keine RLS-Änderung.
+- **Bekannte Einschränkungen:** Vercel-Production-Deployment von main konnte lokal nicht unabhängig verifiziert werden. AP-03 enthält kein Soft Delete, keine Suche, keine Filter, keine RLS-Härtung und keinen Audit-Schreibpfad.
+- **Rollback-Anweisung:** PR beziehungsweise Commit `Implement AP-03 customer editing` zurücksetzen; es sind keine Datenbankänderungen rückabzuwickeln.
+
+## AP-04 Implementation Result
+
+- **Audit-ID:** KG-AUDIT-2026-07-21-ADMIN-WORKFLOWS-V1
+- **Arbeitspaket:** AP-04 – Kunden Soft Delete
+- **Implementierungsstatus:** Implementiert auf Branch `codex/ap-04-soft-delete-customer`; der Gesamt-Audit-Status bleibt unverändert und ursprüngliche Audit-Erkenntnisse wurden nicht rückwirkend verändert.
+- **Baseline-Commit:** `392c55d68e1e4b589d3c0ee335f1a1d9db79ca79`
+- **Betroffene Dateien:**
+  - `app/(app)/customers/page.tsx`
+  - `app/(app)/customers/[id]/page.tsx`
+  - `app/(app)/customers/[id]/delete-customer-form.tsx`
+  - `lib/actions/customers.ts`
+  - `lib/actions/customer-delete-service.ts`
+  - `test/customer-delete.test.ts`
+  - `docs/audits/2026-07-21-admin-workflows-audit.md`
+- **Implementierter Soft-Delete-Workflow:** Admins sehen auf aktiven Kundendetailseiten `Kunde löschen`, müssen die Löschung bestätigen, und werden nach erfolgreichem serverseitigem Soft Delete zu `/customers?deleted=1` weitergeleitet. Die Kundenliste zeigt `Kunde wurde gelöscht.` und normale Listen-/Detail-/Edit-Abfragen blenden den Kunden durch vorhandene `deleted_at IS NULL`-Filter aus.
+- **Rollenprüfung:** Die Soft-Delete-Action lädt den angemeldeten Benutzer, lädt das Profil, validiert `roleSchema` und prüft zwingend `canSoftDeleteCustomer(role)`. Reviewer und ungültige Rollen werden vor Kunden- oder Projektabfragen abgewiesen.
+- **UUID-Validierung:** `deleteCustomerSchema` akzeptiert ausschließlich `customer_id` als UUID. Ungültige IDs lösen keine Update-Abfrage aus.
+- **Projekt-Sperrregel:** Vor dem Kundenupdate wird minimal `projects.select("id").eq("customer_id", customerId).is("deleted_at", null).limit(1)` geprüft. Jedes nicht gelöschte Projekt blockiert die Löschung unabhängig vom Projektstatus.
+- **Soft-Delete-Payload:** Das Update-Payload enthält ausschließlich `deleted_at` mit serverseitig erzeugtem ISO-Zeitstempel.
+- **Mass-Assignment-Schutz:** FormData wird nur auf `customer_id` abgebildet; clientseitige Werte für `deleted_at`, Kundendaten, `created_by`, Rollen, Projektinformationen oder Metadaten werden nicht an Supabase übergeben.
+- **IDOR-Schutz:** Kunden-ID, Authentifizierung, Profil, Rolle, RLS und `deleted_at IS NULL`-Filter wirken zusammen. Das Kundenupdate nutzt zusätzlich `eq("id", customerId)` und `is("deleted_at", null)`.
+- **Verhalten für bereits gelöschte Kunden:** Bereits gelöschte oder nicht vorhandene Kunden werden vor dem Update als nicht verfügbar behandelt; ein zweiter Löschversuch wird nicht als Erfolg behandelt.
+- **Revalidierungsverhalten:** Nach Erfolg werden `/customers` und `/customers/[id]` revalidiert.
+- **Testumfang:** Unit-Tests für Delete-Input-Schema, fremde Felder, Admin-/Reviewer-Berechtigung, Auth-/Profil-/Rollenfehler, ungültige UUID, aktiver Kunde mit `deleted_at IS NULL`, Projekt-Sperrregel, minimale Projektabfrage, Update-Payload, serverseitige Zeitquelle, Projektsperre ohne Customer-Update, neutrale Fehler und nicht betroffene Datensätze.
+- **Ausgeführte Merge-Gates:** Baseline vor Implementierung: `npm install`, `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich mit 57 Ausgangstests; `npm run build` meldete eine Netzwerk-/Lockfile-Patch-Warnung beim Zugriff auf `registry.npmjs.org`, beendete aber mit Exit Code 0. Nach Implementierung: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich.
+- **Audit-Log-Status:** Kein neuer Audit-Log-Schreibmechanismus. `customer.deleted` wird in AP-04 nicht in `audit_log` geschrieben, weil kein sicherer, dokumentierter und getesteter Mechanismus existiert. Kein Service-Role-Key, keine Migration und keine RLS-Änderung.
+- **Bekannte Einschränkungen:** Vercel-Production-Deployment von main konnte lokal nicht unabhängig verifiziert werden. AP-04 enthält keine Wiederherstellung, keine Papierkorbansicht, keine Suche, keine Filter, keine RLS-Härtung und keinen Audit-Schreibpfad.
+- **Hinweis zur fehlenden Atomarität:** Die Prüfung auf verknüpfte Projekte und das anschließende Soft Delete erfolgen in AP-04 auf Anwendungsebene und sind ohne neue Datenbankfunktion nicht vollständig atomar.
+- **Rollback-Anweisung:** PR beziehungsweise Commit `Implement AP-04 customer soft delete` zurücksetzen; es sind keine Datenbankänderungen rückabzuwickeln.
