@@ -1,0 +1,1 @@
+-- Optionale anonymisierte Beispieldaten nach Anlegen von Auth-Benutzern manuell ergänzen.
