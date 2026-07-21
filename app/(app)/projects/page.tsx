@@ -1,8 +1,84 @@
+import Link from "next/link";
 import { Card, Badge } from "@/components/ui";
-import { createClient } from "@/lib/supabase/server";
-import { projectSchema } from "@/lib/domain/schemas";
-import { projectClasses, projectStatuses, type ProjectStatus } from "@/lib/domain/types";
+import { humanReviewDisplay, projectClassDisplay } from "@/lib/domain/display";
 import { statusToLabel } from "@/lib/domain/mappers";
-import { revalidatePath } from "next/cache";
-async function createProject(formData: FormData) { "use server"; const supabase = await createClient(); const { data: { user } } = await supabase.auth.getUser(); if (!user) return; const parsed = projectSchema.parse({ ...Object.fromEntries(formData), requires_human_review: true, project_class: formData.get("project_class") || null }); await supabase.from("projects").insert({ ...parsed, created_by: user.id }); revalidatePath("/projects"); }
-export default async function Projects({ searchParams }: { searchParams: Promise<{ status?: string; class?: string }> }) { const sp = await searchParams; const supabase = await createClient(); let query = supabase.from("projects").select("id,title,status,project_class,requires_human_review,customers(first_name,last_name)").is("deleted_at", null).order("updated_at", { ascending: false }); if (sp.status) query = query.eq("status", sp.status); if (sp.class) query = query.eq("project_class", sp.class); const [{ data: projects }, { data: customers }] = await Promise.all([query, supabase.from("customers").select("id,first_name,last_name").is("deleted_at", null)]); return <div className="space-y-6"><h1 className="text-3xl font-bold">Projektverwaltung</h1><Card><form className="mb-4 flex gap-2"><select name="status" defaultValue={sp.status ?? ""} className="rounded border p-2"><option value="">Alle Status</option>{projectStatuses.map(s=><option key={s} value={s}>{statusToLabel(s)}</option>)}</select><select name="class" defaultValue={sp.class ?? ""} className="rounded border p-2"><option value="">Alle Klassen</option>{projectClasses.map(c=><option key={c}>{c}</option>)}</select><button>Filtern</button></form><div className="grid gap-2">{(projects??[]).map(p=><a className="rounded border p-3 hover:bg-slate-50" href={`/projects/${p.id}`} key={p.id}><div className="flex justify-between"><strong>{p.title}</strong><Badge tone={p.requires_human_review ? "warn" : "default"}>{statusToLabel(p.status as ProjectStatus)}</Badge></div><p className="text-sm text-slate-600">Klasse {p.project_class ?? "offen"}</p></a>)}</div></Card><Card><h2 className="mb-4 text-xl font-semibold">Projekt anlegen</h2><form action={createProject} className="grid gap-3 md:grid-cols-2"><select name="customer_id" required className="rounded border p-2"><option value="">Kunde auswählen</option>{(customers??[]).map(c=><option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>)}</select><input name="title" required placeholder="Titel" className="rounded border p-2"/><input name="installation_address" placeholder="Adresse" className="rounded border p-2"/><input name="postal_code" placeholder="PLZ" className="rounded border p-2"/><input name="city" placeholder="Ort" className="rounded border p-2"/><select name="project_class" className="rounded border p-2"><option value="">Klasse offen</option>{projectClasses.map(c=><option key={c}>{c}</option>)}</select><textarea name="summary" placeholder="Zusammenfassung" className="rounded border p-2 md:col-span-2"/><button className="rounded bg-teal-700 p-2 text-white md:col-span-2">Speichern</button></form></Card></div>; }
+import { canCreateProject } from "@/lib/domain/permissions";
+import { roleSchema } from "@/lib/domain/schemas";
+import type { ProjectClass, ProjectStatus } from "@/lib/domain/types";
+import { createClient } from "@/lib/supabase/server";
+
+function formatDate(value: string): string {
+  return new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function firstRelatedCustomer<T>(value: T | T[] | null): T | null {
+  return Array.isArray(value) ? value[0] ?? null : value;
+}
+
+export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ created?: string }> }) {
+  const { created } = await searchParams;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: profile } = user
+    ? await supabase.from("profiles").select("role").eq("id", user.id).single()
+    : { data: null };
+  const parsedRole = roleSchema.safeParse(profile?.role);
+  const mayCreateProject = parsedRole.success && canCreateProject(parsedRole.data);
+
+  const { data: projects, error } = await supabase
+    .from("projects")
+    .select("id,title,status,project_class,requires_human_review,created_at,customers(id,first_name,last_name)")
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false });
+
+  return (
+    <div className="space-y-6">
+      {created === "1" ? (
+        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
+          Projekt wurde angelegt.
+        </div>
+      ) : null}
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-3xl font-bold">Projektverwaltung</h1>
+        {mayCreateProject ? (
+          <Link className="rounded-lg bg-teal-700 px-4 py-2 font-medium text-white hover:bg-teal-800" href="/projects/new">
+            Projekt anlegen
+          </Link>
+        ) : null}
+      </div>
+      <Card>
+        {error ? (
+          <p className="text-red-700">Die Projekte konnten nicht geladen werden.</p>
+        ) : projects && projects.length > 0 ? (
+          <div className="grid gap-3">
+            {projects.map((project) => {
+              const customer = firstRelatedCustomer(project.customers);
+              return (
+                <Link className="rounded border p-4 hover:bg-slate-50" href={`/projects/${project.id}`} key={project.id}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="font-semibold">{project.title}</h2>
+                    <p className="text-sm text-slate-600">
+                      Kunde: {customer?.first_name} {customer?.last_name}
+                    </p>
+                  </div>
+                  <Badge tone={project.requires_human_review ? "warn" : "default"}>{statusToLabel(project.status as ProjectStatus)}</Badge>
+                </div>
+                <dl className="mt-3 grid gap-2 text-sm text-slate-700 md:grid-cols-3">
+                  <div><dt className="font-medium">Projektklasse</dt><dd>{projectClassDisplay(project.project_class as ProjectClass | null)}</dd></div>
+                  <div><dt className="font-medium">Human Review</dt><dd>{humanReviewDisplay(project.requires_human_review)}</dd></div>
+                  <div><dt className="font-medium">Erstellt</dt><dd>{formatDate(project.created_at)}</dd></div>
+                </dl>
+                </Link>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-slate-600">Noch keine Projekte vorhanden.</p>
+        )}
+      </Card>
+    </div>
+  );
+}
