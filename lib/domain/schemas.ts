@@ -11,12 +11,15 @@ const optionalText = z.string().trim().max(500).optional().nullable().transform(
 const optionalEmail = z.string().trim().email("Bitte geben Sie eine gültige E-Mail-Adresse ein.").optional().or(z.literal("")).transform((value) => value || null);
 const optionalCustomerText = z.string().trim().max(500).optional().nullable().transform((value) => value ? value : null);
 
-export const createCustomerSchema = z.object({
+const customerFields = {
   first_name: z.string().trim().min(1, "Vorname ist erforderlich").max(120),
   last_name: z.string().trim().min(1, "Nachname ist erforderlich").max(120),
   email: optionalEmail,
   phone: optionalCustomerText,
-}).strip();
+};
+
+export const createCustomerSchema = z.object(customerFields).strip();
+export const updateCustomerSchema = z.object(customerFields).strip();
 export const customerSchema = createCustomerSchema;
 export const projectSchema = z.object({ customer_id: z.string().uuid(), title: z.string().trim().min(1).max(180), status: projectStatusSchema.default("new"), project_class: nullableProjectClassSchema.optional(), installation_address: optionalText, postal_code: optionalText, city: optionalText, summary: z.string().trim().max(4000).optional().nullable().transform((value) => value === "" ? null : value), requires_human_review: requiresHumanReviewSchema });
 export const projectNoteSchema = z.object({ project_id: z.string().uuid(), content: z.string().trim().min(1).max(4000) });

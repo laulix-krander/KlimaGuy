@@ -511,3 +511,31 @@ Jeder spätere PR muss folgende Gates erfüllen:
 - **Audit-Log-Status:** Kein sicherer, dokumentierter und getesteter Audit-Schreibmechanismus für `customer.created` existiert in AP-02. Es wurde kein Audit-Eintrag erzwungen, keine Migration erstellt, keine RLS-Änderung vorgenommen und kein Service-Role-Key verwendet.
 - **Bekannte Einschränkungen:** Vercel-Deployment des aktuellen main konnte lokal nicht unabhängig verifiziert werden; AP-02 enthält keine Kundenbearbeitung, kein Soft Delete, keine Suche, keine Filter, keine RLS-Härtung und keinen Audit-Log-Schreibpfad.
 - **Rollback-Anweisung:** PR beziehungsweise Commit `Implement AP-02 customer creation and detail view` zurücksetzen; es sind keine Datenbankänderungen rückabzuwickeln.
+
+## AP-03 Implementation Result
+
+- **Audit-ID:** KG-AUDIT-2026-07-21-ADMIN-WORKFLOWS-V1
+- **Arbeitspaket:** AP-03 – Kunden bearbeiten
+- **Implementierungsstatus:** Implementiert auf Branch `codex/ap-03-edit-customer`; der Gesamt-Audit-Status bleibt unverändert und wird nicht rückwirkend verändert.
+- **Baseline-Commit:** `d3dfa4256c61a07f0e0531d88bdbc24323c94fd8`
+- **Betroffene Dateien:**
+  - `app/(app)/customers/[id]/page.tsx`
+  - `app/(app)/customers/[id]/edit/page.tsx`
+  - `app/(app)/customers/[id]/edit/customer-edit-form.tsx`
+  - `lib/actions/customers.ts`
+  - `lib/actions/customer-update-service.ts`
+  - `lib/domain/display.ts`
+  - `lib/domain/schemas.ts`
+  - `test/customer-update.test.ts`
+  - `docs/audits/2026-07-21-admin-workflows-audit.md`
+- **Implementierte Route:** `/customers/[id]/edit` für die Bearbeitung bestehender, nicht gelöschter Kunden.
+- **Implementierter Bearbeitungsworkflow:** Admins sehen auf der Kundendetailseite `Bearbeiten`, laden aktuelle Kundendaten im Formular, speichern validierte Änderungen und werden nach Erfolg zu `/customers/[id]?updated=1` zurückgeführt. Die Detailseite kann `Kundendaten wurden aktualisiert.` anzeigen.
+- **Rollenprüfung:** Detailseite, Bearbeitungsseite und Update-Action laden Benutzerprofil, validieren `roleSchema` und prüfen `canEditCustomer(role)`. Reviewer erhalten keinen Bearbeiten-Button und werden serverseitig abgewiesen.
+- **Zod-Validierung:** `updateCustomerSchema` erlaubt ausschließlich `first_name`, `last_name`, `email` und `phone`; Namen bleiben Pflichtfelder, optionale leere E-Mail und Telefonnummer werden `null`, Telefonnummern werden nicht aggressiv normalisiert.
+- **Mass-Assignment-Schutz:** FormData und Update-Payload verwenden explizite Allowlists. `id`, `created_by`, `created_at`, `updated_at`, `deleted_at`, `role` und unbekannte Felder werden nicht an Supabase übergeben.
+- **Schutz soft gelöschter Kunden:** Bearbeitungsseite und Update-Action filtern Kunden mit `deleted_at IS NULL`; ungültige, unbekannte oder soft gelöschte Kunden werden nicht regulär bearbeitet.
+- **Testumfang:** Unit-Tests für Update-Schema, fremde Felder, Admin-/Reviewer-Berechtigung, Auth-/Profil-/Rollenfehler, ungültige UUID, Feldfehler, Update-Payload-Allowlist, ID-Filter, `deleted_at IS NULL`, erfolgreiche Updates, neutrale Fehler bei nicht betroffenen Datensätzen und DB-Fehlern sowie Formularwerte für optionale Felder.
+- **Ausgeführte Merge-Gates:** Baseline vor Implementierung: `npm install`, `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich. Nach Implementierung: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich.
+- **Audit-Log-Status:** Kein neuer Audit-Log-Schreibmechanismus. `customer.updated` wird in AP-03 nicht in `audit_log` geschrieben, weil kein sicherer, dokumentierter und getesteter Mechanismus existiert. Kein Service-Role-Key, keine Migration und keine RLS-Änderung.
+- **Bekannte Einschränkungen:** Vercel-Production-Deployment von main konnte lokal nicht unabhängig verifiziert werden. AP-03 enthält kein Soft Delete, keine Suche, keine Filter, keine RLS-Härtung und keinen Audit-Schreibpfad.
+- **Rollback-Anweisung:** PR beziehungsweise Commit `Implement AP-03 customer editing` zurücksetzen; es sind keine Datenbankänderungen rückabzuwickeln.
