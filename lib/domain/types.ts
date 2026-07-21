@@ -1,7 +1,24 @@
-export const roles = ["admin", "reviewer"] as const;
-export type Role = (typeof roles)[number];
-export const projectStatuses = ["new", "collecting_information", "technical_review", "quote_draft", "human_review", "quote_sent", "accepted", "rejected", "closed"] as const;
-export type ProjectStatus = (typeof projectStatuses)[number];
-export const projectClasses = ["A", "B", "C", "D"] as const;
-export type ProjectClass = (typeof projectClasses)[number];
-export const statusLabels: Record<ProjectStatus, string> = { new: "Neu", collecting_information: "Infosammlung", technical_review: "Technische Prüfung", quote_draft: "Angebotsentwurf", human_review: "Menschliche Prüfung", quote_sent: "Angebot gesendet", accepted: "Angenommen", rejected: "Abgelehnt", closed: "Geschlossen" };
+export const ROLES = ["admin", "reviewer"] as const;
+export type Role = (typeof ROLES)[number];
+
+export const PROJECT_STATUSES = [
+  "new",
+  "collecting_information",
+  "technical_review",
+  "quote_draft",
+  "human_review",
+  "quote_sent",
+  "accepted",
+  "rejected",
+  "closed",
+] as const;
+export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
+
+export const PROJECT_CLASSES = ["A", "B", "C", "D"] as const;
+export type ProjectClass = (typeof PROJECT_CLASSES)[number];
+
+export const DEFAULT_REQUIRES_HUMAN_REVIEW = true;
+
+export const roles = ROLES;
+export const projectStatuses = PROJECT_STATUSES;
+export const projectClasses = PROJECT_CLASSES;
