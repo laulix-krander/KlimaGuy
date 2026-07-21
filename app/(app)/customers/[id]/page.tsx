@@ -2,9 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card } from "@/components/ui";
 import { optionalFieldDisplay } from "@/lib/domain/display";
-import { canEditCustomer } from "@/lib/domain/permissions";
+import { canEditCustomer, canSoftDeleteCustomer } from "@/lib/domain/permissions";
 import { roleSchema } from "@/lib/domain/schemas";
 import { createClient } from "@/lib/supabase/server";
+import { DeleteCustomerForm } from "./delete-customer-form";
 import { z } from "zod";
 
 const customerIdSchema = z.string().uuid();
@@ -31,6 +32,7 @@ export default async function CustomerDetailPage({ params, searchParams }: { par
     : { data: null };
   const parsedRole = roleSchema.safeParse(profile?.role);
   const mayEditCustomer = parsedRole.success && canEditCustomer(parsedRole.data);
+  const maySoftDeleteCustomer = parsedRole.success && canSoftDeleteCustomer(parsedRole.data);
 
   const { data: customer } = await supabase
     .from("customers")
@@ -60,11 +62,14 @@ export default async function CustomerDetailPage({ params, searchParams }: { par
       ) : null}
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-3xl font-bold">{customer.first_name} {customer.last_name}</h1>
-        {mayEditCustomer ? (
-          <Link className="rounded-lg bg-teal-700 px-4 py-2 font-medium text-white hover:bg-teal-800" href={`/customers/${customer.id}/edit`}>
-            Bearbeiten
-          </Link>
-        ) : null}
+        <div className="flex flex-wrap gap-3">
+          {mayEditCustomer ? (
+            <Link className="rounded-lg bg-teal-700 px-4 py-2 font-medium text-white hover:bg-teal-800" href={`/customers/${customer.id}/edit`}>
+              Bearbeiten
+            </Link>
+          ) : null}
+          {maySoftDeleteCustomer ? <DeleteCustomerForm customerId={customer.id} /> : null}
+        </div>
       </div>
       <Card>
         <dl className="grid gap-4 md:grid-cols-2">

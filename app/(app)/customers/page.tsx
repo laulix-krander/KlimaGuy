@@ -4,7 +4,8 @@ import { canCreateCustomer } from "@/lib/domain/permissions";
 import { roleSchema } from "@/lib/domain/schemas";
 import { createClient } from "@/lib/supabase/server";
 
-export default async function Customers() {
+export default async function Customers({ searchParams }: { searchParams: Promise<{ deleted?: string }> }) {
+  const { deleted } = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
@@ -32,6 +33,9 @@ export default async function Customers() {
         ) : null}
       </div>
       <Card>
+        {deleted === "1" ? (
+          <div className="mb-4 rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">Kunde wurde gelöscht.</div>
+        ) : null}
         {error ? (
           <p className="text-red-700">Die Kundenliste konnte nicht geladen werden.</p>
         ) : null}

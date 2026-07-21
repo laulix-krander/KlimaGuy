@@ -24,6 +24,17 @@ import {
   updateCustomerWithDataSource,
 } from "./customer-update-service";
 
+import {
+  type CustomerSoftDeletePayload,
+  type CustomersDeleteQuery,
+  type DeleteCustomerDataSource,
+  type DeleteProfilesQuery,
+  type DeletedCustomer,
+  type ProjectsForCustomerQuery,
+  formDataToDeleteCustomerInput,
+  softDeleteCustomerWithDataSource,
+} from "./customer-delete-service";
+
 export async function createCustomerAction(
   _previousState: ActionResult<CreatedCustomer>,
   formData: FormData,
@@ -157,4 +168,127 @@ export async function updateCustomerAction(
   revalidatePath("/customers");
   revalidatePath(`/customers/${result.data.id}`);
   redirect(`/customers/${result.data.id}?updated=1`);
+}
+
+
+export async function softDeleteCustomerAction(
+  _previousState: ActionResult<DeletedCustomer>,
+  formData: FormData,
+): Promise<ActionResult<DeletedCustomer>> {
+  const supabase = await createClient();
+  function from(table: "profiles"): DeleteProfilesQuery;
+  function from(table: "customers"): CustomersDeleteQuery;
+  function from(table: "projects"): ProjectsForCustomerQuery;
+  function from(table: "profiles" | "customers" | "projects"): DeleteProfilesQuery | CustomersDeleteQuery | ProjectsForCustomerQuery {
+    if (table === "profiles") {
+      return {
+        select() {
+          return {
+            eq(_column: "id", value: string) {
+              return {
+                async single() {
+                  const { data, error } = await supabase.from("profiles").select("role").eq("id", value).single();
+                  return { data, error };
+                },
+              };
+            },
+          };
+        },
+      };
+    }
+
+    if (table === "projects") {
+      return {
+        select() {
+          return {
+            eq(_column: "customer_id", customerId: string) {
+              return {
+                is(_deletedAtColumn: "deleted_at", value: null) {
+                  return {
+                    async limit(count: 1) {
+                      const { data, error } = await supabase
+                        .from("projects")
+                        .select("id")
+                        .eq("customer_id", customerId)
+                        .is("deleted_at", value)
+                        .limit(count);
+                      return { data, error };
+                    },
+                  };
+                },
+              };
+            },
+          };
+        },
+      };
+    }
+
+    return {
+      select() {
+        return {
+          eq(_column: "id", customerId: string) {
+            return {
+              is(_deletedAtColumn: "deleted_at", value: null) {
+                return {
+                  async single() {
+                    const { data, error } = await supabase
+                      .from("customers")
+                      .select("id")
+                      .eq("id", customerId)
+                      .is("deleted_at", value)
+                      .single();
+                    return { data, error };
+                  },
+                };
+              },
+            };
+          },
+        };
+      },
+      update(payload: CustomerSoftDeletePayload) {
+        return {
+          eq(_column: "id", customerId: string) {
+            return {
+              is(_deletedAtColumn: "deleted_at", value: null) {
+                return {
+                  select() {
+                    return {
+                      async single() {
+                        const { data, error } = await supabase
+                          .from("customers")
+                          .update(payload)
+                          .eq("id", customerId)
+                          .is("deleted_at", value)
+                          .select("id")
+                          .single();
+                        return { data, error };
+                      },
+                    };
+                  },
+                };
+              },
+            };
+          },
+        };
+      },
+    };
+  }
+
+  const dataSource: DeleteCustomerDataSource = {
+    auth: {
+      async getUser() {
+        return supabase.auth.getUser();
+      },
+    },
+    from,
+  };
+  const result = await softDeleteCustomerWithDataSource(dataSource, formDataToDeleteCustomerInput(formData));
+
+  if (!result.success) {
+    return result;
+  }
+
+  revalidatePath("/customers");
+  revalidatePath(`/customers/${result.data.id}`);
+  redirect("/customers?deleted=1");
 }

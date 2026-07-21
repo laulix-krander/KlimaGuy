@@ -539,3 +539,33 @@ Jeder spätere PR muss folgende Gates erfüllen:
 - **Audit-Log-Status:** Kein neuer Audit-Log-Schreibmechanismus. `customer.updated` wird in AP-03 nicht in `audit_log` geschrieben, weil kein sicherer, dokumentierter und getesteter Mechanismus existiert. Kein Service-Role-Key, keine Migration und keine RLS-Änderung.
 - **Bekannte Einschränkungen:** Vercel-Production-Deployment von main konnte lokal nicht unabhängig verifiziert werden. AP-03 enthält kein Soft Delete, keine Suche, keine Filter, keine RLS-Härtung und keinen Audit-Schreibpfad.
 - **Rollback-Anweisung:** PR beziehungsweise Commit `Implement AP-03 customer editing` zurücksetzen; es sind keine Datenbankänderungen rückabzuwickeln.
+
+## AP-04 Implementation Result
+
+- **Audit-ID:** KG-AUDIT-2026-07-21-ADMIN-WORKFLOWS-V1
+- **Arbeitspaket:** AP-04 – Kunden Soft Delete
+- **Implementierungsstatus:** Implementiert auf Branch `codex/ap-04-soft-delete-customer`; der Gesamt-Audit-Status bleibt unverändert und ursprüngliche Audit-Erkenntnisse wurden nicht rückwirkend verändert.
+- **Baseline-Commit:** `392c55d68e1e4b589d3c0ee335f1a1d9db79ca79`
+- **Betroffene Dateien:**
+  - `app/(app)/customers/page.tsx`
+  - `app/(app)/customers/[id]/page.tsx`
+  - `app/(app)/customers/[id]/delete-customer-form.tsx`
+  - `lib/actions/customers.ts`
+  - `lib/actions/customer-delete-service.ts`
+  - `test/customer-delete.test.ts`
+  - `docs/audits/2026-07-21-admin-workflows-audit.md`
+- **Implementierter Soft-Delete-Workflow:** Admins sehen auf aktiven Kundendetailseiten `Kunde löschen`, müssen die Löschung bestätigen, und werden nach erfolgreichem serverseitigem Soft Delete zu `/customers?deleted=1` weitergeleitet. Die Kundenliste zeigt `Kunde wurde gelöscht.` und normale Listen-/Detail-/Edit-Abfragen blenden den Kunden durch vorhandene `deleted_at IS NULL`-Filter aus.
+- **Rollenprüfung:** Die Soft-Delete-Action lädt den angemeldeten Benutzer, lädt das Profil, validiert `roleSchema` und prüft zwingend `canSoftDeleteCustomer(role)`. Reviewer und ungültige Rollen werden vor Kunden- oder Projektabfragen abgewiesen.
+- **UUID-Validierung:** `deleteCustomerSchema` akzeptiert ausschließlich `customer_id` als UUID. Ungültige IDs lösen keine Update-Abfrage aus.
+- **Projekt-Sperrregel:** Vor dem Kundenupdate wird minimal `projects.select("id").eq("customer_id", customerId).is("deleted_at", null).limit(1)` geprüft. Jedes nicht gelöschte Projekt blockiert die Löschung unabhängig vom Projektstatus.
+- **Soft-Delete-Payload:** Das Update-Payload enthält ausschließlich `deleted_at` mit serverseitig erzeugtem ISO-Zeitstempel.
+- **Mass-Assignment-Schutz:** FormData wird nur auf `customer_id` abgebildet; clientseitige Werte für `deleted_at`, Kundendaten, `created_by`, Rollen, Projektinformationen oder Metadaten werden nicht an Supabase übergeben.
+- **IDOR-Schutz:** Kunden-ID, Authentifizierung, Profil, Rolle, RLS und `deleted_at IS NULL`-Filter wirken zusammen. Das Kundenupdate nutzt zusätzlich `eq("id", customerId)` und `is("deleted_at", null)`.
+- **Verhalten für bereits gelöschte Kunden:** Bereits gelöschte oder nicht vorhandene Kunden werden vor dem Update als nicht verfügbar behandelt; ein zweiter Löschversuch wird nicht als Erfolg behandelt.
+- **Revalidierungsverhalten:** Nach Erfolg werden `/customers` und `/customers/[id]` revalidiert.
+- **Testumfang:** Unit-Tests für Delete-Input-Schema, fremde Felder, Admin-/Reviewer-Berechtigung, Auth-/Profil-/Rollenfehler, ungültige UUID, aktiver Kunde mit `deleted_at IS NULL`, Projekt-Sperrregel, minimale Projektabfrage, Update-Payload, serverseitige Zeitquelle, Projektsperre ohne Customer-Update, neutrale Fehler und nicht betroffene Datensätze.
+- **Ausgeführte Merge-Gates:** Baseline vor Implementierung: `npm install`, `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich mit 57 Ausgangstests; `npm run build` meldete eine Netzwerk-/Lockfile-Patch-Warnung beim Zugriff auf `registry.npmjs.org`, beendete aber mit Exit Code 0. Nach Implementierung: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich.
+- **Audit-Log-Status:** Kein neuer Audit-Log-Schreibmechanismus. `customer.deleted` wird in AP-04 nicht in `audit_log` geschrieben, weil kein sicherer, dokumentierter und getesteter Mechanismus existiert. Kein Service-Role-Key, keine Migration und keine RLS-Änderung.
+- **Bekannte Einschränkungen:** Vercel-Production-Deployment von main konnte lokal nicht unabhängig verifiziert werden. AP-04 enthält keine Wiederherstellung, keine Papierkorbansicht, keine Suche, keine Filter, keine RLS-Härtung und keinen Audit-Schreibpfad.
+- **Hinweis zur fehlenden Atomarität:** Die Prüfung auf verknüpfte Projekte und das anschließende Soft Delete erfolgen in AP-04 auf Anwendungsebene und sind ohne neue Datenbankfunktion nicht vollständig atomar.
+- **Rollback-Anweisung:** PR beziehungsweise Commit `Implement AP-04 customer soft delete` zurücksetzen; es sind keine Datenbankänderungen rückabzuwickeln.
