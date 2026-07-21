@@ -436,6 +436,15 @@ Jeder spätere PR muss folgende Gates erfüllen:
 - **Freigegebene Arbeitspakete:** _keine_
 - **Hinweis:** Spätere Implementierungen dürfen erst nach expliziter Freigabe dieses Audits und ausschließlich mit Referenz auf freigegebene Arbeitspakete erfolgen.
 
+## Baseline Stabilization Result
+
+- **Audit Referenz:** KG-AUDIT-2026-07-21-ADMIN-WORKFLOWS-V1
+- **Arbeitspaket:** AP-00 – Baseline Stabilisierung
+- **Ursache:** `tsconfig.json` definiert den TypeScript-Pfadalias `@/*`, aber `vitest.config.ts` hatte keine entsprechende Vite/Vitest-Resolve-Alias-Konfiguration. TypeScript konnte die Imports typisieren, Vitest konnte sie zur Laufzeit beim Transformieren der Tests jedoch nicht auflösen.
+- **Lösung:** `vitest.config.ts` wurde minimal um `resolve.alias` für `@` auf das Repository-Root erweitert. Es wurden keine Features, UI-Änderungen, Datenmodelländerungen, Migrationen oder Paketupdates vorgenommen.
+- **Betroffene Dateien:** `vitest.config.ts`, `docs/audits/2026-07-21-admin-workflows-audit.md`
+- **Build Status:** `npm install`, `npm run typecheck`, `npm run lint`, `npm test` und `npm run build` laufen nach AP-00 erfolgreich mit Exit Code 0. AP-00 führt keine neuen Warnungen ein; die bereits in der Audit-Baseline dokumentierten npm-, Vite- und Next.js-Hinweise bleiben unverändert.
+
 ## Abschlussbericht – KG-AUDIT-2026-07-21-ADMIN-WORKFLOWS-V1
 
 1. **Audit ID:** KG-AUDIT-2026-07-21-ADMIN-WORKFLOWS-V1
