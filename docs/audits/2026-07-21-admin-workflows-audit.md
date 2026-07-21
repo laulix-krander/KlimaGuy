@@ -458,3 +458,56 @@ Jeder spätere PR muss folgende Gates erfüllen:
 9. **Offene Entscheidungen:** Siehe Abschnitt 20.
 10. **Bestätigung:** Es wurde keinerlei funktionaler Code geändert.
 11. **Pull Request Link:** Wird nach Commit und PR-Erstellung ergänzt.
+
+## AP-01 Implementation Result
+
+- **Audit-ID:** KG-AUDIT-2026-07-21-ADMIN-WORKFLOWS-V1
+- **Arbeitspaket:** AP-01 – Domainregeln und Statusübergänge
+- **Implementierungsstatus:** Implementiert auf Branch `codex/ap-01-domain-rules`; der Gesamt-Audit-Status bleibt unverändert und wird nicht rückwirkend umgeschrieben.
+- **Betroffene Dateien:**
+  - `lib/domain/types.ts`
+  - `lib/domain/schemas.ts`
+  - `lib/domain/mappers.ts`
+  - `lib/domain/project-status.ts`
+  - `lib/domain/permissions.ts`
+  - `test/domain.test.ts`
+  - `docs/audits/2026-07-21-admin-workflows-audit.md`
+- **Umgesetzte Domainregeln:**
+  - Zentrale Typen und Konstanten für Rollen `admin` und `reviewer`, Projektstatuswerte `new`, `collecting_information`, `technical_review`, `quote_draft`, `human_review`, `quote_sent`, `accepted`, `rejected`, `closed` sowie Projektklassen `A`, `B`, `C`, `D`.
+  - Zentrale, unveränderliche Statusübergangsmatrix inklusive explizit leerer Folgeliste für `closed`.
+  - Reine Helfer für erlaubte Statusübergänge und abrufbare Folgestatus ohne Supabase-, HTTP- oder Datenbankabhängigkeit.
+  - Deutsche Labels für Status, Projektklassen und Rollen sowie Beschreibungen für Projektklassen.
+  - Zentraler Standard `DEFAULT_REQUIRES_HUMAN_REVIEW = true` und Zod-Default für neue Projektdaten.
+  - Reine Domain-Berechtigungshelfer für Kunden, Projekte, Human Review, Zusammenfassung und Notizen gemäß Admin-/Reviewer-Zielmodell. Diese Helfer ersetzen keine serverseitige Authentifizierung und keine RLS-Policies.
+- **Testumfang:** Unit-Tests für gültige und ungültige Statuswerte, alle erlaubten Matrixübergänge, definierte verbotene Übergänge, Unveränderlichkeit der Matrix, Projektklassen inklusive Nullable-Schema, Rollen, Human-Review-Default und ungültige Werte sowie Admin-/Reviewer-Berechtigungen inklusive Besitzprüfung für Notizen.
+- **Ausgeführte Merge Gates:**
+  - Baseline vor Implementierung: `npm install`, `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich.
+  - Nach Implementierung: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich.
+- **Bekannte Einschränkungen:** Keine Datenbankmigration, keine RLS-Änderung, keine Server Actions und keine UI-Änderung in AP-01; spätere Arbeitspakete müssen die Domainregeln serverseitig und in RLS/Triggern audit-konform anbinden.
+- **Rollback-Hinweis:** PR beziehungsweise Commit `Implement AP-01 domain rules and status transitions` zurücksetzen; es sind keine Datenbankänderungen rückabzuwickeln.
+
+## AP-02 Implementation Result
+
+- **Audit-ID:** KG-AUDIT-2026-07-21-ADMIN-WORKFLOWS-V1
+- **Arbeitspaket:** AP-02 – Kunden anlegen und Kundendetail
+- **Implementierungsstatus:** Implementiert auf Branch `codex/ap-02-create-customer`; der Gesamt-Audit-Status bleibt unverändert und wird nicht rückwirkend umgeschrieben.
+- **Baseline-Commit:** `7cd46b3745f5e87364f5dfda1ad1fa2a38e25f73`
+- **Betroffene Dateien:**
+  - `app/(app)/customers/page.tsx`
+  - `app/(app)/customers/new/page.tsx`
+  - `app/(app)/customers/new/customer-form.tsx`
+  - `app/(app)/customers/[id]/page.tsx`
+  - `lib/actions/customers.ts`
+  - `lib/actions/customer-create-service.ts`
+  - `lib/domain/display.ts`
+  - `lib/domain/schemas.ts`
+  - `test/customer-create.test.ts`
+  - `docs/audits/2026-07-21-admin-workflows-audit.md`
+- **Implementierte Funktionen:** Kundenliste zeigt nur aktive Kunden und verlinkt Detailseiten; Admins sehen den Button `Kunde anlegen`; `/customers/new` enthält ein validiertes Anlageformular; erfolgreiche Anlage führt zur Kundendetailseite; `/customers/[id]` lädt validierte UUIDs, blendet gelöschte Kunden aus und zeigt optionale Felder sicher an.
+- **Rollenprüfung:** Die Kundenanlage lädt serverseitig Benutzer und Profil, validiert die Rolle mit `roleSchema` und prüft `canCreateCustomer(role)`. Reviewer und nicht authentifizierte Aufrufe werden serverseitig abgewiesen.
+- **Validierungsregeln:** `createCustomerSchema` erlaubt ausschließlich `first_name`, `last_name`, `email` und `phone`; Namen werden getrimmt und müssen nach Trim gefüllt sein; optionale leere E-Mail und Telefonnummer werden `null`; Telefonnummern werden außen getrimmt, interne Formatzeichen bleiben erhalten.
+- **Testumfang:** Unit-Tests für Kundenschema, Mass-Assignment-Schutz, Admin-/Reviewer-Berechtigung, Kundenanlage-Service mit Auth-/Profil-/Reviewer-/Validierungs-/Insert-Szenarien, serverseitiges `created_by`, neutrale Datenbankfehlermeldung und optionale Anzeige-Platzhalter.
+- **Merge-Gates:** Baseline vor Implementierung: `npm install`, `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich. Nach Implementierung: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich.
+- **Audit-Log-Status:** Kein sicherer, dokumentierter und getesteter Audit-Schreibmechanismus für `customer.created` existiert in AP-02. Es wurde kein Audit-Eintrag erzwungen, keine Migration erstellt, keine RLS-Änderung vorgenommen und kein Service-Role-Key verwendet.
+- **Bekannte Einschränkungen:** Vercel-Deployment des aktuellen main konnte lokal nicht unabhängig verifiziert werden; AP-02 enthält keine Kundenbearbeitung, kein Soft Delete, keine Suche, keine Filter, keine RLS-Härtung und keinen Audit-Log-Schreibpfad.
+- **Rollback-Anweisung:** PR beziehungsweise Commit `Implement AP-02 customer creation and detail view` zurücksetzen; es sind keine Datenbankänderungen rückabzuwickeln.
