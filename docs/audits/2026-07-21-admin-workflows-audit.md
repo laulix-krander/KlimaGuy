@@ -458,3 +458,30 @@ Jeder spätere PR muss folgende Gates erfüllen:
 9. **Offene Entscheidungen:** Siehe Abschnitt 20.
 10. **Bestätigung:** Es wurde keinerlei funktionaler Code geändert.
 11. **Pull Request Link:** Wird nach Commit und PR-Erstellung ergänzt.
+
+## AP-01 Implementation Result
+
+- **Audit-ID:** KG-AUDIT-2026-07-21-ADMIN-WORKFLOWS-V1
+- **Arbeitspaket:** AP-01 – Domainregeln und Statusübergänge
+- **Implementierungsstatus:** Implementiert auf Branch `codex/ap-01-domain-rules`; der Gesamt-Audit-Status bleibt unverändert und wird nicht rückwirkend umgeschrieben.
+- **Betroffene Dateien:**
+  - `lib/domain/types.ts`
+  - `lib/domain/schemas.ts`
+  - `lib/domain/mappers.ts`
+  - `lib/domain/project-status.ts`
+  - `lib/domain/permissions.ts`
+  - `test/domain.test.ts`
+  - `docs/audits/2026-07-21-admin-workflows-audit.md`
+- **Umgesetzte Domainregeln:**
+  - Zentrale Typen und Konstanten für Rollen `admin` und `reviewer`, Projektstatuswerte `new`, `collecting_information`, `technical_review`, `quote_draft`, `human_review`, `quote_sent`, `accepted`, `rejected`, `closed` sowie Projektklassen `A`, `B`, `C`, `D`.
+  - Zentrale, unveränderliche Statusübergangsmatrix inklusive explizit leerer Folgeliste für `closed`.
+  - Reine Helfer für erlaubte Statusübergänge und abrufbare Folgestatus ohne Supabase-, HTTP- oder Datenbankabhängigkeit.
+  - Deutsche Labels für Status, Projektklassen und Rollen sowie Beschreibungen für Projektklassen.
+  - Zentraler Standard `DEFAULT_REQUIRES_HUMAN_REVIEW = true` und Zod-Default für neue Projektdaten.
+  - Reine Domain-Berechtigungshelfer für Kunden, Projekte, Human Review, Zusammenfassung und Notizen gemäß Admin-/Reviewer-Zielmodell. Diese Helfer ersetzen keine serverseitige Authentifizierung und keine RLS-Policies.
+- **Testumfang:** Unit-Tests für gültige und ungültige Statuswerte, alle erlaubten Matrixübergänge, definierte verbotene Übergänge, Unveränderlichkeit der Matrix, Projektklassen inklusive Nullable-Schema, Rollen, Human-Review-Default und ungültige Werte sowie Admin-/Reviewer-Berechtigungen inklusive Besitzprüfung für Notizen.
+- **Ausgeführte Merge Gates:**
+  - Baseline vor Implementierung: `npm install`, `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich.
+  - Nach Implementierung: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich.
+- **Bekannte Einschränkungen:** Keine Datenbankmigration, keine RLS-Änderung, keine Server Actions und keine UI-Änderung in AP-01; spätere Arbeitspakete müssen die Domainregeln serverseitig und in RLS/Triggern audit-konform anbinden.
+- **Rollback-Hinweis:** PR beziehungsweise Commit `Implement AP-01 domain rules and status transitions` zurücksetzen; es sind keine Datenbankänderungen rückabzuwickeln.
