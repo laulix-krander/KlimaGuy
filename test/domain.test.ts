@@ -31,6 +31,7 @@ import {
   canSoftDeleteProject,
 } from "@/lib/domain/permissions";
 import { projectClassToDescription, projectClassToLabel, roleToLabel, statusToLabel } from "@/lib/domain/mappers";
+import { humanReviewDisplay, projectClassDisplay, projectSummaryDisplay } from "@/lib/domain/display";
 
 describe("Projektstatus", () => {
   it("validiert alle neun Statuswerte und weist unbekannte oder leere Werte ab", () => {
@@ -177,5 +178,17 @@ describe("Berechtigungen Reviewer", () => {
     expect(canSoftDeleteAnyProjectNote("reviewer")).toBe(false);
     expect(canSoftDeleteOwnProjectNote("reviewer", actorId, ownNoteCreatedBy)).toBe(true);
     expect(canSoftDeleteOwnProjectNote("reviewer", actorId, otherNoteCreatedBy)).toBe(false);
+  });
+});
+
+
+describe("Anzeige-Helfer für Projekte", () => {
+  it("stellt Projektklasse, Human Review und optionale Zusammenfassung sicher dar", () => {
+    expect(projectClassDisplay(null)).toBe("Noch nicht klassifiziert");
+    expect(projectClassDisplay("A")).toBe("Standardprojekt");
+    expect(humanReviewDisplay(true)).toBe("Menschliche Prüfung erforderlich");
+    expect(humanReviewDisplay(false)).toBe("Keine menschliche Prüfung erforderlich");
+    expect(projectSummaryDisplay(null)).toBe("Noch keine Zusammenfassung vorhanden.");
+    expect(projectSummaryDisplay("  Kurzinfo  ")).toBe("Kurzinfo");
   });
 });

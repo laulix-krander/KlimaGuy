@@ -569,3 +569,31 @@ Jeder spätere PR muss folgende Gates erfüllen:
 - **Bekannte Einschränkungen:** Vercel-Production-Deployment von main konnte lokal nicht unabhängig verifiziert werden. AP-04 enthält keine Wiederherstellung, keine Papierkorbansicht, keine Suche, keine Filter, keine RLS-Härtung und keinen Audit-Schreibpfad.
 - **Hinweis zur fehlenden Atomarität:** Die Prüfung auf verknüpfte Projekte und das anschließende Soft Delete erfolgen in AP-04 auf Anwendungsebene und sind ohne neue Datenbankfunktion nicht vollständig atomar.
 - **Rollback-Anweisung:** PR beziehungsweise Commit `Implement AP-04 customer soft delete` zurücksetzen; es sind keine Datenbankänderungen rückabzuwickeln.
+
+## AP-05 Implementation Result
+
+- **Audit-ID:** KG-AUDIT-2026-07-21-ADMIN-WORKFLOWS-V1
+- **Arbeitspaket:** AP-05 – Projekte anlegen und Projektdetailseite
+- **Implementierungsstatus:** Implementiert auf Branch `codex/ap-05-create-project`; der Gesamtstatus dieses Audits wurde nicht auf vollständig freigegeben geändert.
+- **Baseline-Commit:** `156f12b1ceb029b9d1a463b7b51a095c67bde423`
+- **Tatsächlich vorhandene und verwendete `projects`-Spalten:** Die vorhandene Tabelle enthält `id`, `customer_id`, `title`, `status`, `project_class`, `installation_address`, `postal_code`, `city`, `summary`, `requires_human_review`, `created_by`, `created_at`, `updated_at`, `deleted_at`. AP-05 verwendet für die Anlage ausschließlich `customer_id`, `title`, `summary`, `status`, `project_class`, `requires_human_review` und `created_by`; für Listen und Details zusätzlich lesend `id`, `created_at`, `updated_at` und `deleted_at`-Filter.
+- **Betroffene Dateien:** `app/(app)/projects/page.tsx`, `app/(app)/projects/new/page.tsx`, `app/(app)/projects/new/project-form.tsx`, `app/(app)/projects/[id]/page.tsx`, `app/(app)/customers/[id]/page.tsx`, `lib/actions/projects.ts`, `lib/actions/project-create-service.ts`, `lib/domain/schemas.ts`, `lib/domain/display.ts`, `test/project-create.test.ts`, `test/domain.test.ts` und diese Audit-Datei.
+- **Implementierte Routen:** `/projects`, `/projects/new`, `/projects/new?customer_id=<uuid>` und `/projects/[id]`.
+- **Implementierter Projektanlage-Workflow:** Admins wählen einen aktiven Kunden aus, geben eine Projektbezeichnung und optional eine interne Zusammenfassung ein, speichern über eine serverseitig geschützte Action und werden nach erfolgreicher Anlage zu `/projects/[id]?created=1` weitergeleitet.
+- **Projektanlage von Kundendetailseite:** Aktive Kundendetailseiten zeigen Admins einen Button `Projekt anlegen`, der mit validierbarer `customer_id` zur Projektanlage führt. Reviewer sehen diesen Button nicht.
+- **Rollenprüfung:** Die Projektanlage lädt serverseitig Benutzer und Profil, validiert die Rolle mit `roleSchema` und verwendet `canCreateProject(role)`. Reviewer erhalten keine nutzbare Anlageoberfläche und manipulierte Requests werden serverseitig abgewiesen.
+- **Zod-Validierung:** `createProjectSchema` akzeptiert ausschließlich `customer_id`, `title` und `summary`, validiert UUID und Pflichtbezeichnung, trimmt Texte und wandelt leere Zusammenfassungen in `null` um.
+- **Aktiver-Kunden-Prüfung:** Vor dem Insert wird der ausgewählte Kunde erneut über die authentifizierte Supabase-Sitzung mit `id = customer_id` und `deleted_at IS NULL` geprüft.
+- **Initiale Projektstandardwerte:** `status` wird serverseitig auf `PROJECT_STATUSES[0]` (`new`) gesetzt, `project_class` auf `null` und `requires_human_review` auf `DEFAULT_REQUIRES_HUMAN_REVIEW` (`true`).
+- **Insert-Payload:** Das Insert-Payload enthält ausschließlich `customer_id`, `title`, `summary`, `status`, `project_class`, `requires_human_review` und `created_by`; Systemfelder und manipulierte Clientwerte werden nicht übernommen.
+- **Mass-Assignment-Schutz:** FormData wird explizit auf eine Allowlist abgebildet. Clientseitige Werte für `status`, `project_class`, `requires_human_review`, `created_by`, `deleted_at`, `id` oder unbekannte Felder gelangen nicht in das Insert-Payload.
+- **IDOR-Schutz:** Projekt- und Kunden-IDs werden serverseitig als UUID validiert beziehungsweise über aktive Datensätze mit bestehender RLS geladen. Gelöschte Datensätze werden mit `deleted_at IS NULL` ausgeschlossen.
+- **Verhalten für soft gelöschte Kunden:** Soft gelöschte Kunden erscheinen nicht in der Auswahl, werden nicht vorausgewählt und werden in der Server Action vor dem Insert abgewiesen.
+- **Verhalten für soft gelöschte Projekte:** Projektübersicht und Projektdetail laden nur Projekte mit `deleted_at IS NULL`; unbekannte, ungültige oder gelöschte Projektdetail-IDs führen zu `notFound()`.
+- **Revalidierungsverhalten:** Nach erfolgreicher Anlage werden `/projects`, `/customers/[customerId]` und `/projects/[projectId]` revalidiert.
+- **Testumfang:** Ergänzt wurden Schema-, Berechtigungs-, Authentifizierungs-/Profil-, Kundenprüfungs-, Insert-Payload-, Fehler- und Default-Tests für AP-05 sowie Anzeigehelper-Tests.
+- **Ausgeführte Merge-Gates:** Vor Implementierung liefen `npm install`, `npm run typecheck`, `npm run lint`, `npm test` und `npm run build` erfolgreich. Nach Implementierung sind dieselben Gates erneut auszuführen und müssen grün sein.
+- **Audit-Log-Status:** Es wurde kein neuer Audit-Log-Schreibmechanismus eingeführt; `project.created` wird weiterhin nicht in `audit_log` geschrieben, bis ein sicherer, dokumentierter und getesteter Mechanismus freigegeben ist.
+- **Bekannte Einschränkungen:** Die vorhandene `summary`-Spalte wird für die optionale interne Zusammenfassung genutzt. Es wurden keine Adressfelder, Such-/Filterfunktionen, Projektbearbeitung, Statusänderungen, Projekt-Soft-Delete oder Notizen implementiert. Das erfolgreiche Vercel-Production-Deployment von `main` kann in dieser lokalen Umgebung nicht technisch verifiziert werden und muss extern bestätigt sein.
+- **Hinweis zur fehlenden Atomarität:** Die Prüfung des aktiven Kunden und die anschließende Projektanlage erfolgen in AP-05 auf Anwendungsebene und sind ohne neue Datenbankfunktion nicht vollständig atomar.
+- **Rollback-Anweisung:** Den AP-05-Commit beziehungsweise den Pull Request vollständig zurücksetzen; es wurden keine Migrationen, RLS-Policies, Trigger, Datenbankfunktionen, Tabellen oder Spalten geändert.

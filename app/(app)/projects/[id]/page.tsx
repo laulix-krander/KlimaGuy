@@ -1,8 +1,75 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
 import { Card, Badge } from "@/components/ui";
-import { createClient } from "@/lib/supabase/server";
-import { projectNoteSchema } from "@/lib/domain/schemas";
+import { humanReviewDisplay, projectClassDisplay, projectSummaryDisplay } from "@/lib/domain/display";
 import { statusToLabel } from "@/lib/domain/mappers";
-import type { ProjectStatus } from "@/lib/domain/types";
-import { revalidatePath } from "next/cache";
-async function addNote(formData: FormData) { "use server"; const supabase = await createClient(); const { data: { user } } = await supabase.auth.getUser(); if (!user) return; const parsed = projectNoteSchema.parse(Object.fromEntries(formData)); await supabase.from("project_notes").insert({ ...parsed, created_by: user.id }); revalidatePath(`/projects/${parsed.project_id}`); }
-export default async function ProjectDetail({ params }: { params: Promise<{ id: string }> }) { const { id } = await params; const supabase = await createClient(); const [{ data: p }, { data: notes }] = await Promise.all([supabase.from("projects").select("*,customers(first_name,last_name,email,phone)").eq("id", id).single(), supabase.from("project_notes").select("id,content,created_at").eq("project_id", id).order("created_at", { ascending: false })]); if (!p) return <Card>Projekt nicht gefunden.</Card>; return <div className="space-y-6"><h1 className="text-3xl font-bold">{p.title}</h1><Card><div className="grid gap-3 md:grid-cols-2"><p><strong>Kunde:</strong> {p.customers?.first_name} {p.customers?.last_name}</p><p><strong>Status:</strong> <Badge tone={p.requires_human_review ? "warn" : "default"}>{statusToLabel(p.status as ProjectStatus)}</Badge></p><p><strong>Adresse:</strong> {[p.installation_address,p.postal_code,p.city].filter(Boolean).join(", ") || "offen"}</p><p><strong>Projektklasse:</strong> {p.project_class ?? "offen"}</p><p><strong>Human Review:</strong> {p.requires_human_review ? "erforderlich" : "nicht markiert"}</p><p><strong>Aktualisiert:</strong> {new Date(p.updated_at).toLocaleString("de-DE")}</p><p className="md:col-span-2"><strong>Zusammenfassung:</strong><br/>{p.summary ?? "Noch keine Zusammenfassung."}</p></div></Card><Card><h2 className="mb-4 text-xl font-semibold">Notizen</h2><div className="mb-4 space-y-2">{(notes??[]).map(n=><div key={n.id} className="rounded border p-3"><p>{n.content}</p><small>{new Date(n.created_at).toLocaleString("de-DE")}</small></div>)}</div><form action={addNote} className="space-y-3"><input type="hidden" name="project_id" value={id}/><textarea name="content" required className="w-full rounded border p-2" placeholder="Interne Notiz"/><button className="rounded bg-teal-700 p-2 text-white">Notiz speichern</button></form></Card></div>; }
+import type { ProjectClass, ProjectStatus } from "@/lib/domain/types";
+import { createClient } from "@/lib/supabase/server";
+import { z } from "zod";
+
+const projectIdSchema = z.string().uuid();
+
+function formatDate(value: string): string {
+  return new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function firstRelatedCustomer<T>(value: T | T[] | null): T | null {
+  return Array.isArray(value) ? value[0] ?? null : value;
+}
+
+export default async function ProjectDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string }> }) {
+  const { id } = await params;
+  const { created } = await searchParams;
+  const parsedId = projectIdSchema.safeParse(id);
+
+  if (!parsedId.success) {
+    notFound();
+  }
+
+  const supabase = await createClient();
+  const { data: project } = await supabase
+    .from("projects")
+    .select("id,title,status,project_class,requires_human_review,summary,created_at,updated_at,customers(id,first_name,last_name)")
+    .eq("id", parsedId.data)
+    .is("deleted_at", null)
+    .single();
+
+  if (!project) {
+    notFound();
+  }
+
+  const customer = firstRelatedCustomer(project.customers);
+
+  return (
+    <div className="space-y-6">
+      {created === "1" ? (
+        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
+          Projekt wurde angelegt.
+        </div>
+      ) : null}
+      <h1 className="text-3xl font-bold">{project.title}</h1>
+      <Card>
+        <dl className="grid gap-4 md:grid-cols-2">
+          <div>
+            <dt className="font-medium">Kunde</dt>
+            <dd>
+              {customer?.id ? (
+                <Link className="text-teal-700 underline-offset-2 hover:underline" href={`/customers/${customer.id}`}>
+                  {customer.first_name} {customer.last_name}
+                </Link>
+              ) : (
+                "Nicht angegeben"
+              )}
+            </dd>
+          </div>
+          <div><dt className="font-medium">Status</dt><dd><Badge tone={project.requires_human_review ? "warn" : "default"}>{statusToLabel(project.status as ProjectStatus)}</Badge></dd></div>
+          <div><dt className="font-medium">Projektklasse</dt><dd>{projectClassDisplay(project.project_class as ProjectClass | null)}</dd></div>
+          <div><dt className="font-medium">Human Review</dt><dd>{humanReviewDisplay(project.requires_human_review)}</dd></div>
+          <div><dt className="font-medium">Erstellt</dt><dd>{formatDate(project.created_at)}</dd></div>
+          <div><dt className="font-medium">Zuletzt geändert</dt><dd>{formatDate(project.updated_at)}</dd></div>
+          <div className="md:col-span-2"><dt className="font-medium">Interne Zusammenfassung</dt><dd>{projectSummaryDisplay(project.summary)}</dd></div>
+        </dl>
+      </Card>
+    </div>
+  );
+}

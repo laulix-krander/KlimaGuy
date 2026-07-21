@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Card } from "@/components/ui";
+import { Card, Badge } from "@/components/ui";
 import { optionalFieldDisplay } from "@/lib/domain/display";
-import { canEditCustomer, canSoftDeleteCustomer } from "@/lib/domain/permissions";
+import { statusToLabel } from "@/lib/domain/mappers";
+import { canCreateProject, canEditCustomer, canSoftDeleteCustomer } from "@/lib/domain/permissions";
 import { roleSchema } from "@/lib/domain/schemas";
+import type { ProjectStatus } from "@/lib/domain/types";
 import { createClient } from "@/lib/supabase/server";
 import { DeleteCustomerForm } from "./delete-customer-form";
 import { z } from "zod";
@@ -33,6 +35,7 @@ export default async function CustomerDetailPage({ params, searchParams }: { par
   const parsedRole = roleSchema.safeParse(profile?.role);
   const mayEditCustomer = parsedRole.success && canEditCustomer(parsedRole.data);
   const maySoftDeleteCustomer = parsedRole.success && canSoftDeleteCustomer(parsedRole.data);
+  const mayCreateProject = parsedRole.success && canCreateProject(parsedRole.data);
 
   const { data: customer } = await supabase
     .from("customers")
@@ -47,7 +50,7 @@ export default async function CustomerDetailPage({ params, searchParams }: { par
 
   const { data: projects } = await supabase
     .from("projects")
-    .select("id,title")
+    .select("id,title,status")
     .eq("customer_id", customer.id)
     .is("deleted_at", null)
     .order("updated_at", { ascending: false })
@@ -63,8 +66,13 @@ export default async function CustomerDetailPage({ params, searchParams }: { par
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-3xl font-bold">{customer.first_name} {customer.last_name}</h1>
         <div className="flex flex-wrap gap-3">
+          {mayCreateProject ? (
+            <Link className="rounded-lg bg-teal-700 px-4 py-2 font-medium text-white hover:bg-teal-800" href={`/projects/new?customer_id=${customer.id}`}>
+              Projekt anlegen
+            </Link>
+          ) : null}
           {mayEditCustomer ? (
-            <Link className="rounded-lg bg-teal-700 px-4 py-2 font-medium text-white hover:bg-teal-800" href={`/customers/${customer.id}/edit`}>
+            <Link className="rounded-lg border px-4 py-2 font-medium hover:bg-slate-50" href={`/customers/${customer.id}/edit`}>
               Bearbeiten
             </Link>
           ) : null}
@@ -83,7 +91,14 @@ export default async function CustomerDetailPage({ params, searchParams }: { par
         <h2 className="mb-3 text-xl font-semibold">Zugehörige Projekte</h2>
         {projects && projects.length > 0 ? (
           <ul className="space-y-2">
-            {projects.map((project) => <li key={project.id}>{project.title}</li>)}
+            {projects.map((project) => (
+              <li key={project.id}>
+                <Link className="flex items-center justify-between rounded border p-3 hover:bg-slate-50" href={`/projects/${project.id}`}>
+                  <span>{project.title}</span>
+                  <Badge tone="default">{statusToLabel(project.status as ProjectStatus)}</Badge>
+                </Link>
+              </li>
+            ))}
           </ul>
         ) : (
           <p className="text-slate-600">Noch keine Projekte für diesen Kunden vorhanden.</p>
