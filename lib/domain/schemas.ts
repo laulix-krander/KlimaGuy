@@ -24,6 +24,7 @@ export const updateCustomerSchema = z.object(customerFields).strip();
 export const customerSchema = createCustomerSchema;
 
 export const projectIdSchema = z.string().uuid("Die Projekt-ID ist ungültig.");
+export const projectNoteIdSchema = z.string().uuid("Die Notiz-ID ist ungültig.");
 
 const projectCoreFields = {
   title: z.string().trim().min(1, "Projektbezeichnung ist erforderlich").max(180),
@@ -55,8 +56,27 @@ export const projectSchema = createProjectSchema.extend({
   city: optionalText,
   requires_human_review: requiresHumanReviewSchema,
 });
-export const projectNoteSchema = z.object({ project_id: z.string().uuid(), content: z.string().trim().min(1).max(4000) });
+const projectNoteContentSchema = z.string().trim().min(1, "Notiz ist erforderlich.").max(4000, "Notiz darf höchstens 4000 Zeichen lang sein.");
+
+export const projectNoteSchema = z.object({
+  project_id: projectIdSchema,
+  content: projectNoteContentSchema,
+}).strip();
+
+export const updateProjectNoteSchema = z.object({
+  note_id: projectNoteIdSchema,
+  project_id: projectIdSchema,
+  content: projectNoteContentSchema,
+}).strip();
+
+export const deleteProjectNoteSchema = z.object({
+  note_id: projectNoteIdSchema,
+  project_id: projectIdSchema,
+}).strip();
 export type CustomerInput = z.infer<typeof createCustomerSchema>;
 export type ProjectInput = z.infer<typeof createProjectSchema>;
 export type ProjectCoreUpdateInput = z.infer<typeof updateProjectCoreSchema>;
 export type ProjectReviewUpdateInput = z.infer<typeof updateProjectReviewSchema>;
+export type ProjectNoteInput = z.infer<typeof projectNoteSchema>;
+export type ProjectNoteUpdateInput = z.infer<typeof updateProjectNoteSchema>;
+export type ProjectNoteDeleteInput = z.infer<typeof deleteProjectNoteSchema>;
