@@ -2,11 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, Badge } from "@/components/ui";
 import { humanReviewDisplay, optionalFieldDisplay, projectClassDisplay, projectSummaryDisplay } from "@/lib/domain/display";
-import { canEditProjectCoreFields } from "@/lib/domain/permissions";
+import { canChangeHumanReview, canChangeProjectClass, canChangeProjectStatus, canEditProjectCoreFields } from "@/lib/domain/permissions";
 import { projectIdSchema, roleSchema } from "@/lib/domain/schemas";
 import { statusToLabel } from "@/lib/domain/mappers";
 import type { ProjectClass, ProjectStatus } from "@/lib/domain/types";
 import { createClient } from "@/lib/supabase/server";
+import { ProjectReviewForm } from "./project-review-form";
 
 
 function formatDate(value: string): string {
@@ -17,9 +18,9 @@ function firstRelatedCustomer<T>(value: T | T[] | null): T | null {
   return Array.isArray(value) ? value[0] ?? null : value;
 }
 
-export default async function ProjectDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string; updated?: string }> }) {
+export default async function ProjectDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string; updated?: string; review_updated?: string }> }) {
   const { id } = await params;
-  const { created, updated } = await searchParams;
+  const { created, updated, review_updated } = await searchParams;
   const parsedId = projectIdSchema.safeParse(id);
 
   if (!parsedId.success) {
@@ -43,6 +44,7 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
   const { data: profile } = authData.user ? await supabase.from("profiles").select("role").eq("id", authData.user.id).single() : { data: null };
   const parsedRole = roleSchema.safeParse(profile?.role);
   const mayEditProject = parsedRole.success && canEditProjectCoreFields(parsedRole.data);
+  const mayEditProjectReview = parsedRole.success && canChangeProjectStatus(parsedRole.data) && canChangeProjectClass(parsedRole.data) && canChangeHumanReview(parsedRole.data);
 
   return (
     <div className="space-y-6">
@@ -54,6 +56,11 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
       {updated === "1" ? (
         <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
           Projektdaten wurden aktualisiert.
+        </div>
+      ) : null}
+      {review_updated === "1" ? (
+        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
+          Projektprüfung wurde aktualisiert.
         </div>
       ) : null}
       <div className="flex items-start justify-between gap-4">
@@ -85,6 +92,15 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
           <div className="md:col-span-2"><dt className="font-medium">Interne Zusammenfassung</dt><dd>{projectSummaryDisplay(project.summary)}</dd></div>
         </dl>
       </Card>
+      {mayEditProjectReview ? (
+        <Card>
+          <div className="mb-4">
+            <h2 className="text-xl font-semibold">Projektprüfung</h2>
+            <p className="text-sm text-slate-600">Bearbeiten Sie ausschließlich Status, Projektklasse und die Kennzeichnung für menschliche Prüfung.</p>
+          </div>
+          <ProjectReviewForm projectId={project.id} status={project.status as ProjectStatus} projectClass={project.project_class as ProjectClass | null} requiresHumanReview={project.requires_human_review} />
+        </Card>
+      ) : null}
     </div>
   );
 }

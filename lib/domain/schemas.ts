@@ -41,6 +41,12 @@ export const createProjectSchema = z.object({
 
 export const updateProjectCoreSchema = z.object(projectCoreFields).strip();
 
+export const updateProjectReviewSchema = z.object({
+  status: projectStatusSchema,
+  project_class: projectClassSchema,
+  requires_human_review: requiresHumanReviewSchema,
+}).strip();
+
 export const projectSchema = createProjectSchema.extend({
   status: projectStatusSchema.default(PROJECT_STATUSES[0]),
   project_class: nullableProjectClassSchema.optional(),
@@ -53,3 +59,4 @@ export const projectNoteSchema = z.object({ project_id: z.string().uuid(), conte
 export type CustomerInput = z.infer<typeof createCustomerSchema>;
 export type ProjectInput = z.infer<typeof createProjectSchema>;
 export type ProjectCoreUpdateInput = z.infer<typeof updateProjectCoreSchema>;
+export type ProjectReviewUpdateInput = z.infer<typeof updateProjectReviewSchema>;
