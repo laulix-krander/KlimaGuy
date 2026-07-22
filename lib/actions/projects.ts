@@ -33,6 +33,18 @@ import {
   updateProjectReviewWithDataSource,
 } from "./project-review-service";
 
+import {
+  type ActiveProjectForNoteQuery,
+  type CreatedProjectNote,
+  type CreateProjectNoteDataSource,
+  type ProjectNoteActionResult,
+  type ProjectNoteInsert,
+  type ProjectNoteProfilesQuery,
+  type ProjectNotesInsertQuery,
+  createProjectNoteWithDataSource,
+  formDataToCreateProjectNoteInput,
+} from "./project-note-create-service";
+
 export async function createProjectAction(
   _previousState: ActionResult<CreatedProject>,
   formData: FormData,
@@ -302,4 +314,85 @@ export async function updateProjectReviewAction(
   revalidatePath(`/projects/${result.data.id}`);
   revalidatePath(`/customers/${result.data.customer_id}`);
   redirect(`/projects/${result.data.id}?review_updated=1`);
+}
+
+
+export async function createProjectNoteAction(
+  _previousState: ProjectNoteActionResult<CreatedProjectNote>,
+  formData: FormData,
+): Promise<ProjectNoteActionResult<CreatedProjectNote>> {
+  const supabase = await createClient();
+
+  function from(table: "profiles"): ProjectNoteProfilesQuery;
+  function from(table: "projects"): ActiveProjectForNoteQuery;
+  function from(table: "project_notes"): ProjectNotesInsertQuery;
+  function from(table: "profiles" | "projects" | "project_notes"): ProjectNoteProfilesQuery | ActiveProjectForNoteQuery | ProjectNotesInsertQuery {
+    if (table === "profiles") {
+      return {
+        select() {
+          return {
+            eq(_column: "id", value: string) {
+              return {
+                async single() {
+                  const { data, error } = await supabase.from("profiles").select("role").eq("id", value).single();
+                  return { data, error };
+                },
+              };
+            },
+          };
+        },
+      };
+    }
+
+    if (table === "projects") {
+      return {
+        select() {
+          return {
+            eq(_column: "id", projectId: string) {
+              return {
+                is(_deletedAtColumn: "deleted_at", value: null) {
+                  return {
+                    async single() {
+                      const { data, error } = await supabase.from("projects").select("id").eq("id", projectId).is("deleted_at", value).single();
+                      return { data, error };
+                    },
+                  };
+                },
+              };
+            },
+          };
+        },
+      };
+    }
+
+    return {
+      insert(payload: ProjectNoteInsert) {
+        return {
+          select() {
+            return {
+              async single() {
+                const { data, error } = await supabase.from("project_notes").insert(payload).select("id,project_id").single();
+                return { data, error };
+              },
+            };
+          },
+        };
+      },
+    };
+  }
+
+  const dataSource: CreateProjectNoteDataSource = {
+    auth: {
+      async getUser() {
+        return supabase.auth.getUser();
+      },
+    },
+    from,
+  };
+  const result = await createProjectNoteWithDataSource(dataSource, formDataToCreateProjectNoteInput(formData));
+
+  if (!result.success) return result;
+
+  revalidatePath(`/projects/${result.data.project_id}`);
+  redirect(`/projects/${result.data.project_id}?note_created=1`);
 }

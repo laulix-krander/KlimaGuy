@@ -2,11 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, Badge } from "@/components/ui";
 import { humanReviewDisplay, optionalFieldDisplay, projectClassDisplay, projectSummaryDisplay } from "@/lib/domain/display";
-import { canChangeHumanReview, canChangeProjectClass, canChangeProjectStatus, canEditProjectCoreFields } from "@/lib/domain/permissions";
+import { canChangeHumanReview, canChangeProjectClass, canChangeProjectStatus, canCreateProjectNote, canEditProjectCoreFields } from "@/lib/domain/permissions";
 import { projectIdSchema, roleSchema } from "@/lib/domain/schemas";
 import { statusToLabel } from "@/lib/domain/mappers";
 import type { ProjectClass, ProjectStatus } from "@/lib/domain/types";
 import { createClient } from "@/lib/supabase/server";
+import { ProjectNoteForm } from "./project-note-form";
 import { ProjectReviewForm } from "./project-review-form";
 
 
@@ -18,9 +19,20 @@ function firstRelatedCustomer<T>(value: T | T[] | null): T | null {
   return Array.isArray(value) ? value[0] ?? null : value;
 }
 
-export default async function ProjectDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string; updated?: string; review_updated?: string }> }) {
+type ProjectNoteRow = { id: string; content: string; created_by: string; created_at: string };
+type NoteAuthorProfile = { id: string; display_name: string | null; role: string | null };
+
+function authorDisplay(profile: NoteAuthorProfile | undefined): string {
+  if (!profile) return "Interner Benutzer";
+  if (profile.display_name?.trim()) return profile.display_name.trim();
+  if (profile.role === "admin") return "Admin";
+  if (profile.role === "reviewer") return "Reviewer";
+  return "Interner Benutzer";
+}
+
+export default async function ProjectDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string; updated?: string; review_updated?: string; note_created?: string }> }) {
   const { id } = await params;
-  const { created, updated, review_updated } = await searchParams;
+  const { created, updated, review_updated, note_created } = await searchParams;
   const parsedId = projectIdSchema.safeParse(id);
 
   if (!parsedId.success) {
@@ -45,6 +57,19 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
   const parsedRole = roleSchema.safeParse(profile?.role);
   const mayEditProject = parsedRole.success && canEditProjectCoreFields(parsedRole.data);
   const mayEditProjectReview = parsedRole.success && canChangeProjectStatus(parsedRole.data) && canChangeProjectClass(parsedRole.data) && canChangeHumanReview(parsedRole.data);
+  const mayCreateProjectNote = parsedRole.success && canCreateProjectNote(parsedRole.data);
+
+  const { data: notesData } = await supabase
+    .from("project_notes")
+    .select("id,content,created_by,created_at")
+    .eq("project_id", project.id)
+    .order("created_at", { ascending: false });
+  const notes: ProjectNoteRow[] = notesData ?? [];
+  const authorIds = Array.from(new Set(notes.map((note) => note.created_by)));
+  const { data: profilesData } = authorIds.length > 0
+    ? await supabase.from("profiles").select("id,display_name,role").in("id", authorIds)
+    : { data: [] };
+  const authorProfiles = new Map((profilesData ?? []).map((author) => [author.id, author as NoteAuthorProfile]));
 
   return (
     <div className="space-y-6">
@@ -61,6 +86,11 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
       {review_updated === "1" ? (
         <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
           Projektprüfung wurde aktualisiert.
+        </div>
+      ) : null}
+      {note_created === "1" ? (
+        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
+          Notiz wurde hinzugefügt.
         </div>
       ) : null}
       <div className="flex items-start justify-between gap-4">
@@ -101,6 +131,27 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
           <ProjectReviewForm projectId={project.id} status={project.status as ProjectStatus} projectClass={project.project_class as ProjectClass | null} requiresHumanReview={project.requires_human_review} />
         </Card>
       ) : null}
+      <Card>
+        <div className="mb-4">
+          <h2 className="text-xl font-semibold">Interne Notizen</h2>
+          <p className="text-sm text-slate-600">Diese Notizen sind nur für interne Benutzer sichtbar.</p>
+        </div>
+        {notes.length > 0 ? (
+          <ul className="mb-6 space-y-3">
+            {notes.map((note) => (
+              <li className="rounded-lg border bg-slate-50 p-4" key={note.id}>
+                <p className="whitespace-pre-wrap text-sm text-slate-900">{note.content}</p>
+                <p className="mt-3 text-xs text-slate-600">
+                  {authorDisplay(authorProfiles.get(note.created_by))} · {formatDate(note.created_at)}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mb-6 rounded-lg border border-dashed p-4 text-sm text-slate-600">Noch keine internen Notizen vorhanden.</p>
+        )}
+        {mayCreateProjectNote ? <ProjectNoteForm projectId={project.id} /> : null}
+      </Card>
     </div>
   );
 }

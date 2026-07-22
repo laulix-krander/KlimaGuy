@@ -55,8 +55,12 @@ export const projectSchema = createProjectSchema.extend({
   city: optionalText,
   requires_human_review: requiresHumanReviewSchema,
 });
-export const projectNoteSchema = z.object({ project_id: z.string().uuid(), content: z.string().trim().min(1).max(4000) });
+export const projectNoteSchema = z.object({
+  project_id: projectIdSchema,
+  content: z.string().trim().min(1, "Notiz ist erforderlich.").max(4000, "Notiz darf höchstens 4000 Zeichen lang sein."),
+}).strip();
 export type CustomerInput = z.infer<typeof createCustomerSchema>;
 export type ProjectInput = z.infer<typeof createProjectSchema>;
 export type ProjectCoreUpdateInput = z.infer<typeof updateProjectCoreSchema>;
 export type ProjectReviewUpdateInput = z.infer<typeof updateProjectReviewSchema>;
+export type ProjectNoteInput = z.infer<typeof projectNoteSchema>;
