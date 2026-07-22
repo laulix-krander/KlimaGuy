@@ -63,6 +63,7 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
     .from("project_notes")
     .select("id,content,created_by,created_at")
     .eq("project_id", project.id)
+    .is("deleted_at", null)
     .order("created_at", { ascending: false });
   const notes: ProjectNoteRow[] = notesData ?? [];
   const authorIds = Array.from(new Set(notes.map((note) => note.created_by)));

@@ -679,3 +679,29 @@ Jeder spätere PR muss folgende Gates erfüllen:
 - **Hinweis zur fehlenden Atomarität:** Die Prüfung des aktiven Projekts und die anschließende Notizanlage erfolgen in AP-08 auf Anwendungsebene und sind ohne neue Datenbankfunktion nicht vollständig atomar.
 - **Bekannte Einschränkungen:** `project_notes` besitzt weiterhin kein `deleted_at`; gelöschte Notizen können daher in AP-08 nicht gefiltert werden. Die bestehende RLS-Policy erlaubt Notiz-Updates für Admins und Reviewer, AP-08 stellt dafür jedoch keine UI und keine Action bereit. Ein sicherer Audit-Schreibmechanismus fehlt weiterhin.
 - **Rollback-Anweisung:** Commit `Implement AP-08 project note creation` revertieren; es sind keine Migrationen, RLS-Änderungen, Triggeränderungen oder neuen Abhängigkeiten zurückzurollen.
+
+## AP-09 Implementation Result
+
+- **Audit-ID:** KG-AUDIT-2026-07-21-ADMIN-WORKFLOWS-V1
+- **Arbeitspaket:** AP-09 – Projektnotizen: Soft-Delete-Datenmodell und RLS-Härtung
+- **Implementierungsstatus:** umgesetzt.
+- **Baseline-Commit:** `2bf7a11 Implement AP-08 project note creation`.
+- **Ausgangsschema von `project_notes`:** `id`, `project_id`, `content`, `created_by`, `created_at`, `updated_at`; `deleted_at` war nicht vorhanden.
+- **Neue Migration:** `supabase/migrations/202607220001_project_notes_soft_delete_rls.sql`.
+- **Hinzugefügte Spalte:** `deleted_at timestamptz null`; bestehende Datensätze bleiben mit `deleted_at = NULL` aktiv.
+- **Hinzugefügter Index:** `project_notes_active_project_created_idx` auf `project_notes(project_id, created_at desc) where deleted_at is null`.
+- **`updated_at`-Trigger-Status:** Der vorhandene Trigger `project_notes_updated` aus der Initialmigration wird nicht dupliziert; AP-09 erstellt keine zweite `set_updated_at`-Funktion.
+- **Alte RLS-Policies:** `notes read` erlaubte Admin/Reviewer alle Notizen ohne Soft-Delete-Filter; `notes insert` erlaubte Admin/Reviewer mit `created_by = auth.uid()` ohne `deleted_at`-Prüfung; `notes update` erlaubte Admin/Reviewer Updates ohne Autoren-, Aktiv- oder Spaltenschutz.
+- **Neue RLS-Policies:** `project notes read active`, `project notes insert active`, `project notes update active admin`, `project notes update own active reviewer`.
+- **Rollenregeln:** Admins und Reviewer lesen aktive Notizen und legen aktive Notizen an. Admins dürfen aktive Notizen unabhängig vom Autor aktualisieren. Reviewer dürfen nur eigene aktive Notizen aktualisieren.
+- **Hard-Delete-Schutz:** Es wird keine DELETE-Policy erstellt; normale authentifizierte Benutzer erhalten dadurch keinen Hard-Delete-Pfad für `project_notes`.
+- **Schutz unveränderlicher Felder:** Der Trigger `project_notes_protected_fields_guard` mit Funktion `prevent_project_note_protected_field_updates()` verhindert Änderungen an `id`, `project_id`, `created_by` und `created_at`.
+- **Wiederherstellungsschutz:** Der Trigger verhindert, dass eine bereits soft gelöschte Notiz durch normales UPDATE wiederhergestellt oder auf einen anderen `deleted_at`-Zeitstempel geändert wird.
+- **Anpassung der AP-08-Notizabfrage:** Die Projektdetailseite filtert Notizen zusätzlich mit `deleted_at IS NULL` und behält `project_id`-Filter sowie `created_at DESC` bei.
+- **Unverändertes AP-08-Insert-Payload:** Das Insert-Payload bleibt ausschließlich `project_id`, `content`, `created_by`; `deleted_at` wird nicht gesetzt.
+- **Testumfang:** `test/project-note-security.test.ts` prüft Migrationstext, neue Spalte, Erhalt bestehender Spalten, keine Datenlöschung, aktiven Index, keine `updated_at`-Trigger-Duplizierung, gezielte Policy-Ersetzung, keine DELETE-Policy, SELECT-/INSERT-/UPDATE-Regeln, Schutz unveränderlicher Felder, Wiederherstellungsschutz, AP-08-Notizlistenfilter und unverändertes AP-08-Insert-Payload.
+- **Merge-Gates:** Baseline vor Implementierung: `npm install`, `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich. Nach Implementierung wurden `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `git diff --check` sowie Suchprüfungen für Schema-Deklarationen, `console.log`, Service-Role-Begriffe, Delete-Aufrufe und `dangerouslySetInnerHTML` ausgeführt.
+- **Manuelle Supabase-Prüfliste:** Schema: `project_notes.deleted_at` vorhanden; bestehende Notizen haben `deleted_at = NULL`; Notizen bleiben sichtbar; `project_notes_updated` existiert genau einmal; `project_notes_active_project_created_idx` existiert. Admin: aktive Notizen lesen; neue Notiz anlegen; eigene und fremde aktive Notiz aktualisieren; aktive Notiz per UPDATE soft löschen; Hard Delete schlägt fehl; `project_id`-, `created_by`- und Restore-Versuche schlagen fehl. Reviewer: aktive Notizen lesen; neue Notiz anlegen; eigene aktive Notiz aktualisieren und soft löschen; fremde Notiz nicht aktualisieren oder soft löschen; Hard Delete schlägt fehl; `project_id`-, `created_by`- und Restore-Versuche schlagen fehl. Anwendung: Projektdetailseite zeigt aktive Notizen; soft gelöschte Notiz erscheint nicht; neue Notiz kann weiterhin über AP-08 angelegt werden; kein Edit-, Delete- oder Restore-Button vorhanden.
+- **Audit-Log-Status:** Es wurde kein Audit-Log-Schreibmechanismus implementiert. Die neuen Trigger schreiben keine Audit-Events.
+- **Bekannte Einschränkungen:** Es gibt weiterhin keine echte Supabase-RLS-Integrationstestumgebung im Repository; AP-09 testet Migration und Policydefinitionen textbasiert. Ein sicherer Audit-Log-Schreibpfad fehlt weiterhin. Restore bleibt bewusst gesperrt und benötigt ein späteres separates Arbeitspaket.
+- **Rollback-Anweisung:** Anwendungscode-Commit zurücksetzen. Datenbankänderung nur über eine neue, ausdrücklich freigegebene Gegenmigration zurücknehmen; eine bereits angewandte Migration nicht aus der Historie löschen oder verändern. Vor Entfernen von `deleted_at` prüfen, ob soft gelöschte Notizen existieren, und keine Daten verlieren.
