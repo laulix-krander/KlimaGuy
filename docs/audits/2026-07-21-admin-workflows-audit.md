@@ -648,3 +648,34 @@ Jeder spätere PR muss folgende Gates erfüllen:
 - **Kein Audit-Log-Schreibmechanismus:** AP-07 schreibt keine Audit-Log-Einträge und führt keinen Audit-Log-Schreibpfad ein.
 - **Bekannte Einschränkungen:** Kein Vercel-Production-Deployment wurde in dieser lokalen Umgebung extern verifiziert. Die Concurrency-Prüfung nutzt ohne Migration bewusst den aktuellen Status statt einer Versionsspalte.
 - **Rollback-Anweisung:** Den AP-07-Commit beziehungsweise den Pull Request vollständig zurücksetzen; es sind keine Datenbankänderungen rückabzuwickeln.
+
+## AP-08 Implementation Result
+
+- **Audit-ID:** KG-AUDIT-2026-07-21-ADMIN-WORKFLOWS-V1
+- **Arbeitspaket:** AP-08 – Projektnotizen anlegen
+- **Implementierungsstatus:** umgesetzt.
+- **Bereitgestellter Baseline-Commit:** `8f61cb3 Merge pull request #13 from laulix-krander/codex/implementiere-ap-07-projektprufung-workflow`.
+- **Analysiertes `project_notes`-Schema:** Die vorhandene Tabelle besitzt `id uuid primary key default gen_random_uuid()`, `project_id uuid not null references projects(id) on delete cascade`, `content text not null`, `created_by uuid not null references auth.users(id)`, `created_at timestamptz not null default now()` und `updated_at timestamptz not null default now()`. Ein `deleted_at`-Feld ist nicht vorhanden.
+- **Vorhandene RLS-Policies und Trigger:** RLS ist für `project_notes` aktiviert. Vorhanden sind Select für Admin/Reviewer, Insert für Admin/Reviewer mit `created_by = auth.uid()` und Update für Admin/Reviewer. Der Trigger `project_notes_updated` aktualisiert `updated_at`. AP-08 ändert keine Policies und keine Trigger.
+- **Tatsächlich verwendete `project_notes`-Spalten:** `id`, `project_id`, `content`, `created_by`, `created_at`. `updated_at` bleibt ungenutzt, weil AP-08 keine Bearbeitung ermöglicht. `deleted_at` kann nicht verwendet werden, weil die Spalte nicht existiert.
+- **Betroffene Dateien:** `app/(app)/projects/[id]/page.tsx`, `app/(app)/projects/[id]/project-note-form.tsx`, `lib/actions/projects.ts`, `lib/actions/project-note-create-service.ts`, `lib/domain/schemas.ts`, `test/project-note-create.test.ts`, `docs/audits/2026-07-21-admin-workflows-audit.md`.
+- **Implementierter Notizworkflow:** Die Projektdetailseite zeigt den Abschnitt „Interne Notizen“, vorhandene Notizen und für berechtigte Benutzer ein Formular zum Anlegen einer neuen Notiz. Nach erfolgreicher Anlage wird auf `/projects/[id]?note_created=1` zurückgeleitet.
+- **Rollenprüfung:** Die UI und die Server Action prüfen die validierte Rolle. Admins und Reviewer dürfen Notizen anlegen.
+- **Verwendete AP-01-Berechtigungshelper:** `canCreateProjectNote(role)` wird für UI-Gating und serverseitige Mutationsprüfung verwendet.
+- **Projektvalidierung:** Die Projekt-ID wird als UUID validiert. Vor dem Insert wird `projects` minimal mit `select("id")`, `eq("id", project_id)` und `is("deleted_at", null)` geprüft.
+- **Zod-Validierung:** `projectNoteSchema` validiert ausschließlich `project_id` und `content`, trimmt den Inhalt, weist leere Inhalte mit „Notiz ist erforderlich.“ ab und begrenzt die Länge auf 4000 Zeichen.
+- **Insert-Allowlist:** Das Insert-Payload enthält ausschließlich `project_id`, `content` und `created_by`.
+- **Mass-Assignment-Schutz:** FormData wird auf `project_id` und `content` abgebildet. Clientseitige Felder wie `id`, `created_by`, `created_at`, `updated_at`, `deleted_at`, Rollen, Projektobjekte, Profilobjekte und unbekannte Metadaten werden nicht übernommen.
+- **Serverseitiges `created_by`:** `created_by` wird ausschließlich aus dem authentifizierten Supabase-Benutzer gesetzt.
+- **IDOR-Schutz:** Die Notizanlage kombiniert Authentifizierung, Profilprüfung, Rollenvalidierung, Berechtigungshelper, UUID-Validierung, aktive Projektprüfung und vorhandene RLS.
+- **Schutz gelöschter Projekte:** Soft gelöschte Projekte werden durch `deleted_at IS NULL` vor dem Insert abgewiesen.
+- **Verhalten gelöschter Notizen:** `project_notes` besitzt kein `deleted_at`. AP-08 ergänzt keine Spalte und keine Migration; deshalb werden die vorhandenen Datensätze nach Projekt-ID angezeigt.
+- **Autoranzeige:** Die Seite lädt sichere Profildaten (`display_name`, `role`) für bekannte Autoren, zeigt bevorzugt den Anzeigenamen, danach Rollenlabel und sonst „Interner Benutzer“. Rohe Benutzer-UUIDs werden nicht angezeigt. Wenn Profile aufgrund von RLS nicht lesbar sind, bleibt der neutrale Platzhalter sichtbar.
+- **Revalidierungsverhalten:** Nach erfolgreicher Anlage wird ausschließlich `/projects/[id]` revalidiert.
+- **Testumfang:** `test/project-note-create.test.ts` deckt Schema-Validierung, Berechtigungen, Authentifizierung, Profilprüfung, Projektprüfung, Insert-Allowlist, Mass-Assignment-Schutz, neutrale Datenbankfehler, fehlende Insert-ID und FormData-Mapping ab.
+- **Ausgeführte Merge-Gates:** Baseline vor Implementierung: `npm install`, `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich. Nach Implementierung: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `git diff --check` erfolgreich.
+- **Audit-Log-Status:** Es wurde kein Audit-Log-Schreibmechanismus implementiert. `project_note.created` wird in AP-08 noch nicht in `audit_log` geschrieben.
+- **Fehlende Bearbeiten-/Löschen-Funktion:** AP-08 ermöglicht ausschließlich das Anlegen und Lesen von Projektnotizen. Bearbeiten, Löschen und Wiederherstellen von Notizen sind nicht Bestandteil dieses Arbeitspakets.
+- **Hinweis zur fehlenden Atomarität:** Die Prüfung des aktiven Projekts und die anschließende Notizanlage erfolgen in AP-08 auf Anwendungsebene und sind ohne neue Datenbankfunktion nicht vollständig atomar.
+- **Bekannte Einschränkungen:** `project_notes` besitzt weiterhin kein `deleted_at`; gelöschte Notizen können daher in AP-08 nicht gefiltert werden. Die bestehende RLS-Policy erlaubt Notiz-Updates für Admins und Reviewer, AP-08 stellt dafür jedoch keine UI und keine Action bereit. Ein sicherer Audit-Schreibmechanismus fehlt weiterhin.
+- **Rollback-Anweisung:** Commit `Implement AP-08 project note creation` revertieren; es sind keine Migrationen, RLS-Änderungen, Triggeränderungen oder neuen Abhängigkeiten zurückzurollen.
