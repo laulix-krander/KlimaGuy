@@ -14,6 +14,15 @@ import {
   createProjectWithDataSource,
   formDataToCreateProjectInput,
 } from "./project-create-service";
+import {
+  type ProjectCoreUpdate,
+  type ProjectUpdateProfilesQuery,
+  type ProjectsUpdateQuery,
+  type UpdateProjectDataSource,
+  type UpdatedProject,
+  formDataToUpdateProjectCoreInput,
+  updateProjectCoreWithDataSource,
+} from "./project-update-service";
 
 export async function createProjectAction(
   _previousState: ActionResult<CreatedProject>,
@@ -102,4 +111,82 @@ export async function createProjectAction(
   revalidatePath(`/customers/${result.data.customer_id}`);
   revalidatePath(`/projects/${result.data.id}`);
   redirect(`/projects/${result.data.id}?created=1`);
+}
+
+
+export async function updateProjectCoreAction(
+  _previousState: ActionResult<UpdatedProject>,
+  formData: FormData,
+): Promise<ActionResult<UpdatedProject>> {
+  const supabase = await createClient();
+
+  function from(table: "profiles"): ProjectUpdateProfilesQuery;
+  function from(table: "projects"): ProjectsUpdateQuery;
+  function from(table: "profiles" | "projects"): ProjectUpdateProfilesQuery | ProjectsUpdateQuery {
+    if (table === "profiles") {
+      return {
+        select() {
+          return {
+            eq(_column: "id", value: string) {
+              return {
+                async single() {
+                  const { data, error } = await supabase.from("profiles").select("role").eq("id", value).single();
+                  return { data, error };
+                },
+              };
+            },
+          };
+        },
+      };
+    }
+
+    return {
+      update(payload: ProjectCoreUpdate) {
+        return {
+          eq(_column: "id", projectId: string) {
+            return {
+              is(_deletedAtColumn: "deleted_at", value: null) {
+                return {
+                  select() {
+                    return {
+                      async single() {
+                        const { data, error } = await supabase
+                          .from("projects")
+                          .update(payload)
+                          .eq("id", projectId)
+                          .is("deleted_at", value)
+                          .select("id,customer_id")
+                          .single();
+                        return { data, error };
+                      },
+                    };
+                  },
+                };
+              },
+            };
+          },
+        };
+      },
+    };
+  }
+
+  const dataSource: UpdateProjectDataSource = {
+    auth: {
+      async getUser() {
+        return supabase.auth.getUser();
+      },
+    },
+    from,
+  };
+  const { projectId, values } = formDataToUpdateProjectCoreInput(formData);
+  const result = await updateProjectCoreWithDataSource(dataSource, projectId, values);
+
+  if (!result.success) {
+    return result;
+  }
+
+  revalidatePath("/projects");
+  revalidatePath(`/projects/${result.data.id}`);
+  revalidatePath(`/customers/${result.data.customer_id}`);
+  redirect(`/projects/${result.data.id}?updated=1`);
 }

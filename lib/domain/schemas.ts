@@ -23,11 +23,23 @@ export const createCustomerSchema = z.object(customerFields).strip();
 export const updateCustomerSchema = z.object(customerFields).strip();
 export const customerSchema = createCustomerSchema;
 
+export const projectIdSchema = z.string().uuid("Die Projekt-ID ist ungültig.");
+
+const projectCoreFields = {
+  title: z.string().trim().min(1, "Projektbezeichnung ist erforderlich").max(180),
+  installation_address: optionalText,
+  postal_code: optionalText,
+  city: optionalText,
+  summary: optionalProjectSummary,
+};
+
 export const createProjectSchema = z.object({
   customer_id: z.string().uuid("Die Kunden-ID ist ungültig."),
-  title: z.string().trim().min(1, "Projektbezeichnung ist erforderlich").max(180),
-  summary: optionalProjectSummary,
+  title: projectCoreFields.title,
+  summary: projectCoreFields.summary,
 }).strip();
+
+export const updateProjectCoreSchema = z.object(projectCoreFields).strip();
 
 export const projectSchema = createProjectSchema.extend({
   status: projectStatusSchema.default(PROJECT_STATUSES[0]),
@@ -40,3 +52,4 @@ export const projectSchema = createProjectSchema.extend({
 export const projectNoteSchema = z.object({ project_id: z.string().uuid(), content: z.string().trim().min(1).max(4000) });
 export type CustomerInput = z.infer<typeof createCustomerSchema>;
 export type ProjectInput = z.infer<typeof createProjectSchema>;
+export type ProjectCoreUpdateInput = z.infer<typeof updateProjectCoreSchema>;
