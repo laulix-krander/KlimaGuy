@@ -2,12 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, Badge } from "@/components/ui";
 import { humanReviewDisplay, optionalFieldDisplay, projectClassDisplay, projectSummaryDisplay } from "@/lib/domain/display";
-import { canChangeHumanReview, canChangeProjectClass, canChangeProjectStatus, canCreateProjectNote, canEditProjectCoreFields } from "@/lib/domain/permissions";
+import { canChangeHumanReview, canChangeProjectClass, canChangeProjectStatus, canCreateProjectNote, canEditAnyProjectNote, canEditOwnProjectNote, canEditProjectCoreFields, canSoftDeleteAnyProjectNote, canSoftDeleteOwnProjectNote } from "@/lib/domain/permissions";
 import { projectIdSchema, roleSchema } from "@/lib/domain/schemas";
 import { statusToLabel } from "@/lib/domain/mappers";
 import type { ProjectClass, ProjectStatus } from "@/lib/domain/types";
 import { createClient } from "@/lib/supabase/server";
 import { ProjectNoteForm } from "./project-note-form";
+import { ProjectNoteItem } from "./project-note-item";
 import { ProjectReviewForm } from "./project-review-form";
 
 
@@ -30,9 +31,9 @@ function authorDisplay(profile: NoteAuthorProfile | undefined): string {
   return "Interner Benutzer";
 }
 
-export default async function ProjectDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string; updated?: string; review_updated?: string; note_created?: string }> }) {
+export default async function ProjectDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string; updated?: string; review_updated?: string; note_created?: string; note_updated?: string; note_deleted?: string }> }) {
   const { id } = await params;
-  const { created, updated, review_updated, note_created } = await searchParams;
+  const { created, updated, review_updated, note_created, note_updated, note_deleted } = await searchParams;
   const parsedId = projectIdSchema.safeParse(id);
 
   if (!parsedId.success) {
@@ -94,6 +95,16 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
           Notiz wurde hinzugefügt.
         </div>
       ) : null}
+      {note_updated === "1" ? (
+        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
+          Notiz wurde aktualisiert.
+        </div>
+      ) : null}
+      {note_deleted === "1" ? (
+        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
+          Notiz wurde gelöscht.
+        </div>
+      ) : null}
       <div className="flex items-start justify-between gap-4">
         <h1 className="text-3xl font-bold">{project.title}</h1>
         {mayEditProject ? <Link className="rounded-lg bg-teal-700 px-4 py-2 font-medium text-white hover:bg-teal-800" href={`/projects/${project.id}/edit`}>Bearbeiten</Link> : null}
@@ -139,14 +150,21 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
         </div>
         {notes.length > 0 ? (
           <ul className="mb-6 space-y-3">
-            {notes.map((note) => (
-              <li className="rounded-lg border bg-slate-50 p-4" key={note.id}>
-                <p className="whitespace-pre-wrap text-sm text-slate-900">{note.content}</p>
-                <p className="mt-3 text-xs text-slate-600">
-                  {authorDisplay(authorProfiles.get(note.created_by))} · {formatDate(note.created_at)}
-                </p>
-              </li>
-            ))}
+            {notes.map((note) => {
+              const canEditNote = parsedRole.success && (canEditAnyProjectNote(parsedRole.data) || canEditOwnProjectNote(parsedRole.data, authData.user?.id ?? "", note.created_by));
+              const canDeleteNote = parsedRole.success && (canSoftDeleteAnyProjectNote(parsedRole.data) || canSoftDeleteOwnProjectNote(parsedRole.data, authData.user?.id ?? "", note.created_by));
+              return (
+                <ProjectNoteItem
+                  canDelete={canDeleteNote}
+                  canEdit={canEditNote}
+                  content={note.content}
+                  key={note.id}
+                  meta={`${authorDisplay(authorProfiles.get(note.created_by))} · ${formatDate(note.created_at)}`}
+                  noteId={note.id}
+                  projectId={project.id}
+                />
+              );
+            })}
           </ul>
         ) : (
           <p className="mb-6 rounded-lg border border-dashed p-4 text-sm text-slate-600">Noch keine internen Notizen vorhanden.</p>

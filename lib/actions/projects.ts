@@ -45,6 +45,28 @@ import {
   formDataToCreateProjectNoteInput,
 } from "./project-note-create-service";
 
+import {
+  type ActiveProjectForNoteUpdateQuery,
+  type ProjectNoteMutationResult,
+  type ProjectNoteUpdatePatch,
+  type ProjectNoteUpdateProfilesQuery,
+  type ProjectNoteUpdateQuery,
+  type UpdateProjectNoteDataSource,
+  type UpdatedProjectNote,
+  formDataToUpdateProjectNoteInput,
+  updateProjectNoteWithDataSource,
+} from "./project-note-update-service";
+import {
+  type ActiveProjectForNoteDeleteQuery,
+  type ProjectNoteDeletePatch,
+  type ProjectNoteDeleteProfilesQuery,
+  type ProjectNoteDeleteQuery,
+  type SoftDeleteProjectNoteDataSource,
+  type SoftDeletedProjectNote,
+  formDataToDeleteProjectNoteInput,
+  softDeleteProjectNoteWithDataSource,
+} from "./project-note-delete-service";
+
 export async function createProjectAction(
   _previousState: ActionResult<CreatedProject>,
   formData: FormData,
@@ -395,4 +417,145 @@ export async function createProjectNoteAction(
 
   revalidatePath(`/projects/${result.data.project_id}`);
   redirect(`/projects/${result.data.project_id}?note_created=1`);
+}
+
+
+function buildProjectNoteMutationDataSource(supabase: Awaited<ReturnType<typeof createClient>>): UpdateProjectNoteDataSource & SoftDeleteProjectNoteDataSource {
+  function from(table: "profiles"): ProjectNoteUpdateProfilesQuery & ProjectNoteDeleteProfilesQuery;
+  function from(table: "projects"): ActiveProjectForNoteUpdateQuery & ActiveProjectForNoteDeleteQuery;
+  function from(table: "project_notes"): ProjectNoteUpdateQuery & ProjectNoteDeleteQuery;
+  function from(table: "profiles" | "projects" | "project_notes"): (ProjectNoteUpdateProfilesQuery & ProjectNoteDeleteProfilesQuery) | (ActiveProjectForNoteUpdateQuery & ActiveProjectForNoteDeleteQuery) | (ProjectNoteUpdateQuery & ProjectNoteDeleteQuery) {
+    if (table === "profiles") {
+      return {
+        select() {
+          return {
+            eq(_column: "id", value: string) {
+              return {
+                async single() {
+                  const { data, error } = await supabase.from("profiles").select("role").eq("id", value).single();
+                  return { data, error };
+                },
+              };
+            },
+          };
+        },
+      };
+    }
+
+    if (table === "projects") {
+      return {
+        select() {
+          return {
+            eq(_column: "id", projectId: string) {
+              return {
+                is(_deletedAtColumn: "deleted_at", value: null) {
+                  return {
+                    async single() {
+                      const { data, error } = await supabase.from("projects").select("id").eq("id", projectId).is("deleted_at", value).single();
+                      return { data, error };
+                    },
+                  };
+                },
+              };
+            },
+          };
+        },
+      };
+    }
+
+    return {
+      select() {
+        return {
+          eq(_idColumn: "id", noteId: string) {
+            return {
+              eq(_projectIdColumn: "project_id", projectId: string) {
+                return {
+                  is(_deletedAtColumn: "deleted_at", value: null) {
+                    return {
+                      async single() {
+                        const { data, error } = await supabase
+                          .from("project_notes")
+                          .select("id,project_id,created_by")
+                          .eq("id", noteId)
+                          .eq("project_id", projectId)
+                          .is("deleted_at", value)
+                          .single();
+                        return { data, error };
+                      },
+                    };
+                  },
+                };
+              },
+            };
+          },
+        };
+      },
+      update(payload: ProjectNoteUpdatePatch | ProjectNoteDeletePatch) {
+        return {
+          eq(_idColumn: "id", noteId: string) {
+            return {
+              eq(_projectIdColumn: "project_id", projectId: string) {
+                return {
+                  is(_deletedAtColumn: "deleted_at", value: null) {
+                    return {
+                      select() {
+                        return {
+                          async single() {
+                            const { data, error } = await supabase
+                              .from("project_notes")
+                              .update(payload)
+                              .eq("id", noteId)
+                              .eq("project_id", projectId)
+                              .is("deleted_at", value)
+                              .select("id,project_id")
+                              .single();
+                            return { data, error };
+                          },
+                        };
+                      },
+                    };
+                  },
+                };
+              },
+            };
+          },
+        };
+      },
+    };
+  }
+
+  return {
+    auth: {
+      async getUser() {
+        return supabase.auth.getUser();
+      },
+    },
+    from,
+  };
+}
+
+export async function updateProjectNoteAction(
+  _previousState: ProjectNoteMutationResult<UpdatedProjectNote>,
+  formData: FormData,
+): Promise<ProjectNoteMutationResult<UpdatedProjectNote>> {
+  const supabase = await createClient();
+  const result = await updateProjectNoteWithDataSource(buildProjectNoteMutationDataSource(supabase), formDataToUpdateProjectNoteInput(formData));
+
+  if (!result.success) return result;
+
+  revalidatePath(`/projects/${result.data.project_id}`);
+  redirect(`/projects/${result.data.project_id}?note_updated=1`);
+}
+
+export async function softDeleteProjectNoteAction(
+  _previousState: ProjectNoteMutationResult<SoftDeletedProjectNote>,
+  formData: FormData,
+): Promise<ProjectNoteMutationResult<SoftDeletedProjectNote>> {
+  const supabase = await createClient();
+  const result = await softDeleteProjectNoteWithDataSource(buildProjectNoteMutationDataSource(supabase), formDataToDeleteProjectNoteInput(formData));
+
+  if (!result.success) return result;
+
+  revalidatePath(`/projects/${result.data.project_id}`);
+  redirect(`/projects/${result.data.project_id}?note_deleted=1`);
 }

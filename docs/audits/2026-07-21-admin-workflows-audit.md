@@ -705,3 +705,34 @@ Jeder spätere PR muss folgende Gates erfüllen:
 - **Audit-Log-Status:** Es wurde kein Audit-Log-Schreibmechanismus implementiert. Die neuen Trigger schreiben keine Audit-Events.
 - **Bekannte Einschränkungen:** Es gibt weiterhin keine echte Supabase-RLS-Integrationstestumgebung im Repository; AP-09 testet Migration und Policydefinitionen textbasiert. Ein sicherer Audit-Log-Schreibpfad fehlt weiterhin. Restore bleibt bewusst gesperrt und benötigt ein späteres separates Arbeitspaket.
 - **Rollback-Anweisung:** Anwendungscode-Commit zurücksetzen. Datenbankänderung nur über eine neue, ausdrücklich freigegebene Gegenmigration zurücknehmen; eine bereits angewandte Migration nicht aus der Historie löschen oder verändern. Vor Entfernen von `deleted_at` prüfen, ob soft gelöschte Notizen existieren, und keine Daten verlieren.
+
+## AP-10 Implementation Result
+
+- **Audit-ID:** KG-AUDIT-2026-07-21-ADMIN-WORKFLOWS-V1
+- **Arbeitspaket:** AP-10 – Projektnotizen bearbeiten und soft löschen
+- **Baseline-Commit:** `f483aa2 Add internal project notes (creation UI, server action, schemas, soft-delete migration)`.
+- **Betroffene Dateien:** `app/(app)/projects/[id]/page.tsx`, `app/(app)/projects/[id]/project-note-item.tsx`, `lib/actions/projects.ts`, `lib/actions/project-note-update-service.ts`, `lib/actions/project-note-delete-service.ts`, `lib/domain/schemas.ts`, `test/project-note-update-delete.test.ts`, `docs/audits/2026-07-21-admin-workflows-audit.md`.
+- **Bearbeitungsworkflow:** Berechtigte Benutzer öffnen eine aktive Notiz inline mit „Bearbeiten“, ändern den Text in einer Textarea und speichern mit „Änderungen speichern“. „Abbrechen“ beendet die Bearbeitung ohne Speicherung.
+- **Soft-Delete-Workflow:** Berechtigte Benutzer starten „Löschen“, bestätigen die Sicherheitsabfrage und setzen anschließend serverseitig `deleted_at`. Es wird kein physisches DELETE verwendet.
+- **Bestätigungsablauf:** Die UI zeigt vor Soft Delete: „Möchten Sie diese Notiz wirklich löschen? Sie wird aus der normalen Ansicht entfernt und kann in der aktuellen Oberfläche nicht wiederhergestellt werden.“ mit „Notiz löschen“ und „Abbrechen“.
+- **Rollenprüfung:** UI und Server Actions verwenden die validierte Rolle. Admins dürfen alle aktiven Notizen bearbeiten und soft löschen; Reviewer ausschließlich eigene aktive Notizen.
+- **Ownership-Regel:** Ownership stammt ausschließlich aus der geladenen aktiven Notiz (`created_by`) und wird gegen den authentifizierten Benutzer geprüft.
+- **Verwendete AP-01-Helper:** `canEditAnyProjectNote`, `canEditOwnProjectNote`, `canSoftDeleteAnyProjectNote`, `canSoftDeleteOwnProjectNote`.
+- **Zod-Schemas:** `updateProjectNoteSchema` validiert `note_id`, `project_id`, getrimmten Pflichtinhalt und 4000-Zeichen-Limit. `deleteProjectNoteSchema` validiert ausschließlich `note_id` und `project_id`.
+- **Aktive Projektprüfung:** Update und Soft Delete prüfen `projects.id = project_id` und `projects.deleted_at IS NULL`.
+- **Aktive Notizprüfung:** Update und Soft Delete laden nur aktive Notizen mit `id`, `project_id` und `deleted_at IS NULL` und lesen `created_by` aus der Datenbank.
+- **Update-Allowlist:** Das Update-Payload enthält ausschließlich `content`.
+- **Delete-Allowlist:** Das Soft-Delete-Payload enthält ausschließlich `deleted_at`.
+- **Serverseitiges `deleted_at`:** `deleted_at` wird ausschließlich serverseitig über `new Date().toISOString()` beziehungsweise eine injizierte Test-Zeitquelle erzeugt.
+- **Mass-Assignment-Schutz:** FormData-Mapping liest für Updates ausschließlich `note_id`, `project_id`, `content` und für Soft Delete ausschließlich `note_id`, `project_id`. Clientseitige Systemfelder, Rollen, Autoren und Metadaten werden nicht übernommen.
+- **IDOR-Schutz:** Die Services kombinieren Authentifizierung, Profilprüfung, Rollenvalidierung, UUID-Validierung, aktive Projektprüfung, aktive Notizprüfung mit Projektzugehörigkeit, Ownership-Prüfung und RLS.
+- **RLS-Nutzung:** Es wird der normale authentifizierte Supabase-Server-Client verwendet; AP-10 umgeht RLS nicht und verwendet keinen Service-Role-Key.
+- **Verhalten gelöschter Notizen:** Gelöschte Notizen bleiben aus der normalen Liste ausgeschlossen, werden von Update- und Soft-Delete-Services über `deleted_at IS NULL` nicht mehr gefunden und können nicht wiederhergestellt werden.
+- **Revalidierung:** Nach erfolgreicher Bearbeitung oder Soft Delete wird ausschließlich `/projects/[projectId]` revalidiert.
+- **Tests:** `test/project-note-update-delete.test.ts` deckt Update-/Delete-Schemas, Rollen- und Ownership-Regeln, Auth-/Profil-/Rollenfehler, Projekt- und Notizprüfung, Update- und Delete-Allowlists, serverseitiges `deleted_at`, neutrale Datenbankfehler, No-Row-Fälle und FormData-Mapping ab.
+- **Merge-Gates:** Baseline vor Implementierung: `npm install`, `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` erfolgreich. Nach Implementierung wurden `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `git diff --check` sowie Suchprüfungen für Migrationen, RLS-/Triggeränderungen, Service-Role-Begriffe, Hard Delete, Restore und `dangerouslySetInnerHTML` ausgeführt.
+- **Audit-Log-Status:** Es wurde kein Audit-Log-Schreibmechanismus implementiert. `project_note.updated` und `project_note.deleted` werden in AP-10 nicht geschrieben.
+- **Last-Write-Wins-Hinweis:** AP-10 verwendet für Notizinhalte keine Versionsspalte und kein Optimistic Locking. Parallele Bearbeitungen können daher nach dem Last-Write-Wins-Prinzip enden.
+- **Keine Wiederherstellung:** AP-10 bietet keine UI, Action oder Datenbankänderung zur Wiederherstellung gelöschter Notizen.
+- **Bekannte Einschränkungen:** Es gibt weiterhin keine echte Supabase-RLS-Integrationstestumgebung im Repository. Echte RLS-Wirkung muss in einer Entwicklungs- oder Preview-Datenbank mit angewendeter AP-09-Migration manuell geprüft werden. Ein sicherer Audit-Log-Schreibpfad fehlt weiterhin.
+- **Rollback:** AP-10-Anwendungscode-Commit revertieren. Da AP-10 keine Migration enthält, sind keine Datenbankänderungen aus AP-10 rückgängig zu machen; die AP-09-Migration bleibt Voraussetzung für den Notiz-Soft-Delete-Datenbestand.
