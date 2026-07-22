@@ -47,6 +47,8 @@ export const updateProjectReviewSchema = z.object({
   requires_human_review: requiresHumanReviewSchema,
 }).strip();
 
+export const updateProjectCoreSchema = z.object(projectCoreFields).strip();
+
 export const projectSchema = createProjectSchema.extend({
   status: projectStatusSchema.default(PROJECT_STATUSES[0]),
   project_class: nullableProjectClassSchema.optional(),
