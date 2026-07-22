@@ -14,7 +14,7 @@ Projektakte mit Kunde, Titel, Status, optionaler Projektklasse A-D, Montageadres
 
 ## project_notes
 
-Interne Notizen je Projekt mit Inhalt, Ersteller und Zeitstempeln.
+Interne Notizen je Projekt mit Inhalt, Ersteller, Zeitstempeln und `deleted_at` für Soft Delete. Aktive Notizen haben `deleted_at IS NULL`; bestehende Notizen bleiben nach der AP-09-Migration aktiv.
 
 ## audit_log
 
