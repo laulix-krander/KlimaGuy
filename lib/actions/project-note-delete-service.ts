@@ -6,12 +6,13 @@ export type SoftDeletedProjectNote = { id: string; project_id: string };
 export type ProjectNoteDeletePatch = { deleted_at: string };
 
 type QueryResult<T> = Promise<{ data: T | null; error: unknown }>;
+type CountMutationResult = Promise<{ error: unknown; count: number | null }>;
 type AuthQuery = { getUser(): Promise<{ data: { user: { id: string } | null } }> };
 export type ProjectNoteDeleteProfilesQuery = { select(columns: "role"): { eq(column: "id", value: string): { single(): QueryResult<{ role: string | null }> } } };
 export type ActiveProjectForNoteDeleteQuery = { select(columns: "id"): { eq(column: "id", value: string): { is(column: "deleted_at", value: null): { single(): QueryResult<ActiveProjectForNoteMutation> } } } };
 export type ProjectNoteDeleteQuery = {
   select(columns: "id,project_id,created_by"): { eq(column: "id", value: string): { eq(column: "project_id", value: string): { is(column: "deleted_at", value: null): { single(): QueryResult<ActiveProjectNoteForMutation> } } } };
-  update(payload: ProjectNoteDeletePatch): { eq(column: "id", value: string): { eq(column: "project_id", value: string): { is(column: "deleted_at", value: null): { select(columns: "id,project_id"): { single(): QueryResult<SoftDeletedProjectNote> } } } } };
+  update(payload: ProjectNoteDeletePatch, options: { count: "exact" }): { eq(column: "id", value: string): { eq(column: "project_id", value: string): { is(column: "deleted_at", value: null): CountMutationResult } } };
 };
 
 export type SoftDeleteProjectNoteDataSource = {
@@ -62,10 +63,12 @@ export async function softDeleteProjectNoteWithDataSource(
   if (!mayDelete) return { success: false, error: "Sie sind nicht berechtigt, diese Notiz zu löschen." };
 
   const patch: ProjectNoteDeletePatch = { deleted_at: now() };
-  const { data: deletedNote, error } = await dataSource.from("project_notes").update(patch).eq("id", parsedInput.data.note_id).eq("project_id", parsedInput.data.project_id).is("deleted_at", null).select("id,project_id").single();
-  if (error || !deletedNote?.id || deletedNote.project_id !== parsedInput.data.project_id) return { success: false, error: "Die Notiz konnte nicht gelöscht werden. Bitte versuchen Sie es erneut." };
+  const { error, count } = await dataSource.from("project_notes").update(patch, { count: "exact" }).eq("id", parsedInput.data.note_id).eq("project_id", parsedInput.data.project_id).is("deleted_at", null);
+  if (error) return { success: false, error: "Die Notiz konnte nicht gelöscht werden. Bitte versuchen Sie es erneut." };
+  if (count === 0) return { success: false, error: "Die Notiz wurde nicht gefunden oder ist nicht mehr verfügbar." };
+  if (count !== 1) return { success: false, error: "Die Notiz konnte nicht gelöscht werden. Bitte versuchen Sie es erneut." };
 
-  return { success: true, data: deletedNote };
+  return { success: true, data: { id: parsedInput.data.note_id, project_id: note.project_id } };
 }
 
 function getIds(input: unknown): { note_id?: unknown; project_id?: unknown } {
