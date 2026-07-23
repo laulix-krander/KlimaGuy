@@ -3,16 +3,15 @@ import { deleteProjectNoteSchema, projectIdSchema, projectNoteIdSchema, roleSche
 import type { ActiveProjectForNoteMutation, ActiveProjectNoteForMutation, ProjectNoteMutationResult } from "./project-note-update-service";
 
 export type SoftDeletedProjectNote = { id: string; project_id: string };
-export type ProjectNoteDeletePatch = { deleted_at: string };
+export type ProjectNoteSoftDeleteRpcArgs = { target_note_id: string; target_project_id: string };
 
 type QueryResult<T> = Promise<{ data: T | null; error: unknown }>;
-type CountMutationResult = Promise<{ error: unknown; count: number | null }>;
+type RpcResult<T> = Promise<{ data: T | null; error: unknown }>;
 type AuthQuery = { getUser(): Promise<{ data: { user: { id: string } | null } }> };
 export type ProjectNoteDeleteProfilesQuery = { select(columns: "role"): { eq(column: "id", value: string): { single(): QueryResult<{ role: string | null }> } } };
 export type ActiveProjectForNoteDeleteQuery = { select(columns: "id"): { eq(column: "id", value: string): { is(column: "deleted_at", value: null): { single(): QueryResult<ActiveProjectForNoteMutation> } } } };
 export type ProjectNoteDeleteQuery = {
   select(columns: "id,project_id,created_by"): { eq(column: "id", value: string): { eq(column: "project_id", value: string): { is(column: "deleted_at", value: null): { single(): QueryResult<ActiveProjectNoteForMutation> } } } };
-  update(payload: ProjectNoteDeletePatch, options: { count: "exact" }): { eq(column: "id", value: string): { eq(column: "project_id", value: string): { is(column: "deleted_at", value: null): CountMutationResult } } };
 };
 
 export type SoftDeleteProjectNoteDataSource = {
@@ -20,6 +19,7 @@ export type SoftDeleteProjectNoteDataSource = {
   from(table: "profiles"): ProjectNoteDeleteProfilesQuery;
   from(table: "projects"): ActiveProjectForNoteDeleteQuery;
   from(table: "project_notes"): ProjectNoteDeleteQuery;
+  rpc(functionName: "soft_delete_project_note", args: ProjectNoteSoftDeleteRpcArgs): RpcResult<boolean>;
 };
 
 export function formDataToDeleteProjectNoteInput(formData: FormData): Record<string, FormDataEntryValue | null> {
@@ -31,8 +31,7 @@ export function formDataToDeleteProjectNoteInput(formData: FormData): Record<str
 
 export async function softDeleteProjectNoteWithDataSource(
   dataSource: SoftDeleteProjectNoteDataSource,
-  input: unknown,
-  now: () => string = () => new Date().toISOString(),
+  input: unknown
 ): Promise<ProjectNoteMutationResult<SoftDeletedProjectNote>> {
   const { data: authData } = await dataSource.auth.getUser();
   const user = authData.user;
@@ -62,11 +61,12 @@ export async function softDeleteProjectNoteWithDataSource(
   const mayDelete = canSoftDeleteAnyProjectNote(parsedRole.data) || canSoftDeleteOwnProjectNote(parsedRole.data, user.id, note.created_by);
   if (!mayDelete) return { success: false, error: "Sie sind nicht berechtigt, diese Notiz zu löschen." };
 
-  const patch: ProjectNoteDeletePatch = { deleted_at: now() };
-  const { error, count } = await dataSource.from("project_notes").update(patch, { count: "exact" }).eq("id", parsedInput.data.note_id).eq("project_id", parsedInput.data.project_id).is("deleted_at", null);
+  const { data: wasDeleted, error } = await dataSource.rpc("soft_delete_project_note", {
+    target_note_id: parsedInput.data.note_id,
+    target_project_id: parsedInput.data.project_id,
+  });
   if (error) return { success: false, error: "Die Notiz konnte nicht gelöscht werden. Bitte versuchen Sie es erneut." };
-  if (count === 0) return { success: false, error: "Die Notiz wurde nicht gefunden oder ist nicht mehr verfügbar." };
-  if (count !== 1) return { success: false, error: "Die Notiz konnte nicht gelöscht werden. Bitte versuchen Sie es erneut." };
+  if (wasDeleted !== true) return { success: false, error: "Die Notiz wurde nicht gefunden oder ist nicht mehr verfügbar." };
 
   return { success: true, data: { id: parsedInput.data.note_id, project_id: note.project_id } };
 }

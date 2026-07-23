@@ -12,7 +12,7 @@ import {
 } from "@/lib/actions/project-note-update-service";
 import {
   type ActiveProjectForNoteDeleteQuery,
-  type ProjectNoteDeletePatch,
+  type ProjectNoteSoftDeleteRpcArgs,
   type ProjectNoteDeleteProfilesQuery,
   type ProjectNoteDeleteQuery,
   type SoftDeleteProjectNoteDataSource,
@@ -27,7 +27,7 @@ const otherUserId = "44444444-4444-4444-8444-444444444444";
 const deletedAt = "2026-07-22T14:00:00.000Z";
 const longContent = "x".repeat(4000);
 
-type Options = { user?: boolean; role?: string | null; project?: { id: string } | null; note?: { id: string; project_id: string; created_by: string } | null; row?: { id: string; project_id: string } | null; error?: unknown; count?: number | null };
+type Options = { user?: boolean; role?: string | null; project?: { id: string } | null; note?: { id: string; project_id: string; created_by: string } | null; row?: { id: string; project_id: string } | null; error?: unknown; rpcResult?: boolean | null };
 
 function updateSource(options: Options = {}) {
   const calls = { updatePayload: undefined as ProjectNoteUpdatePatch | undefined, eq: [] as Array<[string, string]>, is: [] as Array<[string, null]>, select: [] as string[] };
@@ -47,7 +47,14 @@ function updateSource(options: Options = {}) {
 }
 
 function deleteSource(options: Options = {}) {
-  const calls = { deletePayload: undefined as ProjectNoteDeletePatch | undefined, updateOptions: undefined as { count: "exact" } | undefined, deleteCalls: 0, hardDeleteCalls: 0, eq: [] as Array<[string, string]>, is: [] as Array<[string, null]>, select: [] as string[], postUpdateSelect: [] as string[], singleAfterUpdateCalls: 0 };
+  const calls = {
+    rpcCalls: [] as Array<{ functionName: "soft_delete_project_note"; args: ProjectNoteSoftDeleteRpcArgs }>,
+    updateCalls: 0,
+    hardDeleteCalls: 0,
+    eq: [] as Array<[string, string]>,
+    is: [] as Array<[string, null]>,
+    select: [] as string[],
+  };
   function from(table: "profiles"): ProjectNoteDeleteProfilesQuery;
   function from(table: "projects"): ActiveProjectForNoteDeleteQuery;
   function from(table: "project_notes"): ProjectNoteDeleteQuery;
@@ -56,10 +63,16 @@ function deleteSource(options: Options = {}) {
     if (table === "projects") return { select(columns: "id") { calls.select.push(columns); return { eq(column: "id", value: string) { calls.eq.push([column, value]); return { is(column: "deleted_at", value: null) { calls.is.push([column, value]); return { single: async () => ({ data: options.project === undefined ? { id: projectId } : options.project, error: null }) }; } }; } }; } };
     return {
       select(columns: "id,project_id,created_by") { calls.select.push(columns); return { eq(column: "id", value: string) { calls.eq.push([column, value]); return { eq(column2: "project_id", value2: string) { calls.eq.push([column2, value2]); return { is(column3: "deleted_at", value3: null) { calls.is.push([column3, value3]); return { single: async () => ({ data: options.note === undefined ? { id: noteId, project_id: projectId, created_by: userId } : options.note, error: null }) }; } }; } }; } }; },
-      update(payload: ProjectNoteDeletePatch, updateOptions: { count: "exact" }) { calls.deleteCalls += 1; calls.deletePayload = payload; calls.updateOptions = updateOptions; return { eq(column: "id", value: string) { calls.eq.push([column, value]); return { eq(column2: "project_id", value2: string) { calls.eq.push([column2, value2]); return { is(column3: "deleted_at", value3: null) { calls.is.push([column3, value3]); return Promise.resolve({ error: options.error ?? null, count: options.count === undefined ? 1 : options.count }); } }; } }; } }; },
     };
   }
-  const dataSource: SoftDeleteProjectNoteDataSource = { auth: { async getUser() { return { data: { user: options.user === false ? null : { id: userId } } }; } }, from };
+  const dataSource: SoftDeleteProjectNoteDataSource = {
+    auth: { async getUser() { return { data: { user: options.user === false ? null : { id: userId } } }; } },
+    from,
+    async rpc(functionName: "soft_delete_project_note", args: ProjectNoteSoftDeleteRpcArgs) {
+      calls.rpcCalls.push({ functionName, args });
+      return { data: options.rpcResult === undefined ? true : options.rpcResult, error: options.error ?? null };
+    },
+  };
   return { dataSource, calls };
 }
 
@@ -79,13 +92,13 @@ describe("AP-10 permissions", () => {
   });
   it("rejects reviewer updates and deletes on foreign notes", async () => {
     await expect(updateProjectNoteWithDataSource(updateSource({ role: "reviewer", note: { id: noteId, project_id: projectId, created_by: otherUserId } }).dataSource, { note_id: noteId, project_id: projectId, content: "Text" })).resolves.toMatchObject({ success: false, error: "Sie sind nicht berechtigt, diese Notiz zu bearbeiten." });
-    await expect(softDeleteProjectNoteWithDataSource(deleteSource({ role: "reviewer", note: { id: noteId, project_id: projectId, created_by: otherUserId } }).dataSource, { note_id: noteId, project_id: projectId }, () => deletedAt)).resolves.toMatchObject({ success: false, error: "Sie sind nicht berechtigt, diese Notiz zu löschen." });
+    await expect(softDeleteProjectNoteWithDataSource(deleteSource({ role: "reviewer", note: { id: noteId, project_id: projectId, created_by: otherUserId } }).dataSource, { note_id: noteId, project_id: projectId })).resolves.toMatchObject({ success: false, error: "Sie sind nicht berechtigt, diese Notiz zu löschen." });
   });
   it("allows admin foreign-note and reviewer own-note updates/deletes", async () => {
     await expect(updateProjectNoteWithDataSource(updateSource({ role: "admin", note: { id: noteId, project_id: projectId, created_by: otherUserId } }).dataSource, { note_id: noteId, project_id: projectId, content: "Text" })).resolves.toMatchObject({ success: true });
     await expect(updateProjectNoteWithDataSource(updateSource({ role: "reviewer" }).dataSource, { note_id: noteId, project_id: projectId, content: "Text" })).resolves.toMatchObject({ success: true });
-    await expect(softDeleteProjectNoteWithDataSource(deleteSource({ role: "admin", note: { id: noteId, project_id: projectId, created_by: otherUserId } }).dataSource, { note_id: noteId, project_id: projectId }, () => deletedAt)).resolves.toMatchObject({ success: true });
-    await expect(softDeleteProjectNoteWithDataSource(deleteSource({ role: "reviewer" }).dataSource, { note_id: noteId, project_id: projectId }, () => deletedAt)).resolves.toMatchObject({ success: true });
+    await expect(softDeleteProjectNoteWithDataSource(deleteSource({ role: "admin", note: { id: noteId, project_id: projectId, created_by: otherUserId } }).dataSource, { note_id: noteId, project_id: projectId })).resolves.toMatchObject({ success: true });
+    await expect(softDeleteProjectNoteWithDataSource(deleteSource({ role: "reviewer" }).dataSource, { note_id: noteId, project_id: projectId })).resolves.toMatchObject({ success: true });
   });
 });
 
@@ -113,45 +126,42 @@ describe("AP-10 update service", () => {
 
 describe("AP-10 delete service", () => {
   it("rejects auth/profile/role and validates IDs", async () => {
-    await expect(softDeleteProjectNoteWithDataSource(deleteSource({ user: false }).dataSource, { note_id: noteId, project_id: projectId }, () => deletedAt)).resolves.toMatchObject({ success: false, error: "Sie müssen angemeldet sein." });
-    await expect(softDeleteProjectNoteWithDataSource(deleteSource({ role: null }).dataSource, { note_id: noteId, project_id: projectId }, () => deletedAt)).resolves.toMatchObject({ success: false, error: "Ihr Benutzerprofil konnte nicht überprüft werden." });
-    await expect(softDeleteProjectNoteWithDataSource(deleteSource({ role: "owner" }).dataSource, { note_id: noteId, project_id: projectId }, () => deletedAt)).resolves.toMatchObject({ success: false, error: "Ihr Benutzerprofil konnte nicht überprüft werden." });
-    await expect(softDeleteProjectNoteWithDataSource(deleteSource().dataSource, { note_id: "x", project_id: projectId }, () => deletedAt)).resolves.toMatchObject({ success: false, error: "Die Notiz-ID ist ungültig." });
-    await expect(softDeleteProjectNoteWithDataSource(deleteSource().dataSource, { note_id: noteId, project_id: "x" }, () => deletedAt)).resolves.toMatchObject({ success: false, error: "Die Projekt-ID ist ungültig." });
+    await expect(softDeleteProjectNoteWithDataSource(deleteSource({ user: false }).dataSource, { note_id: noteId, project_id: projectId })).resolves.toMatchObject({ success: false, error: "Sie müssen angemeldet sein." });
+    await expect(softDeleteProjectNoteWithDataSource(deleteSource({ role: null }).dataSource, { note_id: noteId, project_id: projectId })).resolves.toMatchObject({ success: false, error: "Ihr Benutzerprofil konnte nicht überprüft werden." });
+    await expect(softDeleteProjectNoteWithDataSource(deleteSource({ role: "owner" }).dataSource, { note_id: noteId, project_id: projectId })).resolves.toMatchObject({ success: false, error: "Ihr Benutzerprofil konnte nicht überprüft werden." });
+    await expect(softDeleteProjectNoteWithDataSource(deleteSource().dataSource, { note_id: "x", project_id: projectId })).resolves.toMatchObject({ success: false, error: "Die Notiz-ID ist ungültig." });
+    await expect(softDeleteProjectNoteWithDataSource(deleteSource().dataSource, { note_id: noteId, project_id: "x" })).resolves.toMatchObject({ success: false, error: "Die Projekt-ID ist ungültig." });
   });
   it("checks active project and active note before delete update", async () => {
-    const noProject = deleteSource({ project: null }); await softDeleteProjectNoteWithDataSource(noProject.dataSource, { note_id: noteId, project_id: projectId }, () => deletedAt); expect(noProject.calls.deletePayload).toBeUndefined(); expect(noProject.calls.eq).toContainEqual(["id", projectId]); expect(noProject.calls.is).toContainEqual(["deleted_at", null]);
-    const noNote = deleteSource({ note: null }); await softDeleteProjectNoteWithDataSource(noNote.dataSource, { note_id: noteId, project_id: projectId }, () => deletedAt); expect(noNote.calls.deletePayload).toBeUndefined(); expect(noNote.calls.eq).toContainEqual(["id", noteId]); expect(noNote.calls.eq).toContainEqual(["project_id", projectId]); expect(noNote.calls.is).toContainEqual(["deleted_at", null]);
+    const noProject = deleteSource({ project: null }); await softDeleteProjectNoteWithDataSource(noProject.dataSource, { note_id: noteId, project_id: projectId }); expect(noProject.calls.rpcCalls).toHaveLength(0); expect(noProject.calls.eq).toContainEqual(["id", projectId]); expect(noProject.calls.is).toContainEqual(["deleted_at", null]);
+    const noNote = deleteSource({ note: null }); await softDeleteProjectNoteWithDataSource(noNote.dataSource, { note_id: noteId, project_id: projectId }); expect(noNote.calls.rpcCalls).toHaveLength(0); expect(noNote.calls.eq).toContainEqual(["id", noteId]); expect(noNote.calls.eq).toContainEqual(["project_id", projectId]); expect(noNote.calls.is).toContainEqual(["deleted_at", null]);
   });
-  it("uses server-generated deleted_at only and does not hard delete", async () => {
-    const mock = deleteSource(); await softDeleteProjectNoteWithDataSource(mock.dataSource, { note_id: noteId, project_id: projectId, deleted_at: "client", created_by: otherUserId }, () => deletedAt);
-    expect(mock.calls.deletePayload).toEqual({ deleted_at: deletedAt }); expect(Object.keys(mock.calls.deletePayload ?? {})).toEqual(["deleted_at"]); expect(mock.calls.eq).toContainEqual(["id", noteId]); expect(mock.calls.eq).toContainEqual(["project_id", projectId]); expect(mock.calls.is).toContainEqual(["deleted_at", null]);
-  });
-  it("uses exact update count without requesting a post-update returned row", async () => {
-    const mock = deleteSource({ count: 1 });
-    const result = await softDeleteProjectNoteWithDataSource(mock.dataSource, { note_id: noteId, project_id: projectId }, () => deletedAt);
+  it("uses the soft-delete RPC with only note and project IDs", async () => {
+    const mock = deleteSource();
+    const result = await softDeleteProjectNoteWithDataSource(mock.dataSource, { note_id: noteId, project_id: projectId, deleted_at: "client", created_by: otherUserId });
     expect(result).toEqual({ success: true, data: { id: noteId, project_id: projectId } });
-    expect(mock.calls.updateOptions).toEqual({ count: "exact" });
-    expect(mock.calls.deleteCalls).toBe(1);
-    expect(mock.calls.select).toEqual(["id", "id,project_id,created_by"]);
+    expect(mock.calls.rpcCalls).toEqual([{ functionName: "soft_delete_project_note", args: { target_note_id: noteId, target_project_id: projectId } }]);
+    expect(Object.keys(mock.calls.rpcCalls[0]?.args ?? {})).toEqual(["target_note_id", "target_project_id"]);
+    expect(JSON.stringify(mock.calls.rpcCalls)).not.toContain("deleted_at");
+    expect(mock.calls.updateCalls).toBe(0);
     expect(mock.calls.hardDeleteCalls).toBe(0);
   });
 
-  it("treats count zero, unknown count and raw database errors as safe failures", async () => {
-    await expect(softDeleteProjectNoteWithDataSource(deleteSource({ count: 0 }).dataSource, { note_id: noteId, project_id: projectId }, () => deletedAt)).resolves.toMatchObject({ success: false, error: "Die Notiz wurde nicht gefunden oder ist nicht mehr verfügbar." });
-    await expect(softDeleteProjectNoteWithDataSource(deleteSource({ count: null }).dataSource, { note_id: noteId, project_id: projectId }, () => deletedAt)).resolves.toMatchObject({ success: false, error: "Die Notiz konnte nicht gelöscht werden. Bitte versuchen Sie es erneut." });
-    const result = await softDeleteProjectNoteWithDataSource(deleteSource({ error: { message: "raw SQL" } }).dataSource, { note_id: noteId, project_id: projectId }, () => deletedAt);
+  it("treats RPC false and raw database errors as safe failures", async () => {
+    await expect(softDeleteProjectNoteWithDataSource(deleteSource({ rpcResult: false }).dataSource, { note_id: noteId, project_id: projectId })).resolves.toMatchObject({ success: false, error: "Die Notiz wurde nicht gefunden oder ist nicht mehr verfügbar." });
+    await expect(softDeleteProjectNoteWithDataSource(deleteSource({ rpcResult: null }).dataSource, { note_id: noteId, project_id: projectId })).resolves.toMatchObject({ success: false, error: "Die Notiz wurde nicht gefunden oder ist nicht mehr verfügbar." });
+    const result = await softDeleteProjectNoteWithDataSource(deleteSource({ error: { message: "raw SQL" } }).dataSource, { note_id: noteId, project_id: projectId });
     expect(result.success ? "" : result.error).toBe("Die Notiz konnte nicht gelöscht werden. Bitte versuchen Sie es erneut.");
     expect(result.success ? "" : result.error).not.toContain("raw SQL");
   });
 
-  it("regresses the production RLS failure by succeeding without post-update select when count is one", async () => {
-    const mock = deleteSource({ count: 1, note: { id: noteId, project_id: projectId, created_by: userId } });
-    const result = await softDeleteProjectNoteWithDataSource(mock.dataSource, { note_id: noteId, project_id: projectId }, () => deletedAt);
+  it("regresses the production RLS failure by using RPC without a direct soft-delete update", async () => {
+    const mock = deleteSource({ rpcResult: true, note: { id: noteId, project_id: projectId, created_by: userId } });
+    const result = await softDeleteProjectNoteWithDataSource(mock.dataSource, { note_id: noteId, project_id: projectId });
     expect(result).toEqual({ success: true, data: { id: noteId, project_id: projectId } });
     expect(mock.calls.select).toEqual(["id", "id,project_id,created_by"]);
-    expect(mock.calls.deleteCalls).toBe(1);
-    expect(mock.calls.updateOptions).toEqual({ count: "exact" });
+    expect(mock.calls.rpcCalls).toHaveLength(1);
+    expect(mock.calls.updateCalls).toBe(0);
   });
 });
 
