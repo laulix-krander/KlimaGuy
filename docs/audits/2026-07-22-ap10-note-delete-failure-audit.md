@@ -430,3 +430,16 @@ Für dieses Diagnose-Audit wurden die Baseline-Gates ausgeführt und waren erfol
 - **Merge-Gates:** Typecheck, Lint, Vitest, Build und `git diff --check` sind vor Merge auszuführen. Zusätzlich ist zu prüfen: genau eine neue Migration, keine bestehende Migration geändert, keine SELECT-Policy gelockert, keine RLS-Erweiterung für gelöschte Notizen, kein Hard Delete, keine Wiederherstellung, kein Service-Role-Key, keine neue npm-Abhängigkeit und keine Notizinhalte in Logs oder RPC-Rückgaben.
 - **Preview-/Production-Validierung:** Ausstehend. Manuell zu prüfen: Migration anwenden; Funktionseigenschaften und Grants in Supabase kontrollieren; als Admin fremde und eigene aktive Notiz löschen; als Reviewer eigene aktive Notiz löschen; als Reviewer fremde Notiz ablehnen; bereits gelöschte Notiz liefert neutral `false`; normale Notizliste zeigt gelöschte Notizen weiterhin nicht; Hard Delete und Restore bleiben blockiert.
 - **Rollback:** Anwendungscode-Commit zurücksetzen. Die Datenbankfunktion nach Anwendung der Migration ausschließlich über eine neue freigegebene Gegenmigration entfernen; angewandte Migrationen niemals löschen oder nachträglich verändern. Bestehende soft gelöschte Notizen bleiben erhalten; es werden keine Daten gelöscht.
+- Production Validation Result
+
+Migration 202607230001_project_note_soft_delete_rpc.sql erfolgreich auf Supabase angewendet.
+Soft Delete in Preview/Production erfolgreich getestet.
+deleted_at wird korrekt gesetzt.
+Notizen verschwinden aus der Standardansicht.
+Die RPC public.soft_delete_project_note(uuid, uuid) ist als SECURITY DEFINER installiert.
+EXECUTE für anon wurde nach der Migration wieder entzogen.
+Verbleibende Grants:
+authenticated
+postgres
+service_role
+Manueller Smoke-Test erfolgreich abgeschlossen.
