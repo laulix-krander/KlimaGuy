@@ -744,6 +744,7 @@ AP-10-HF-01 wurde als gezielter Hotfix umgesetzt. Der Projektnotiz-Soft-Delete v
 ## AP-10-HF-02 Implementation Result
 
 - AP-10-HF-02 ergänzt für Projektnotizen einen eng begrenzten, serverseitig autorisierten RPC-Soft-Delete-Pfad `public.soft_delete_project_note(target_note_id uuid, target_project_id uuid)` als `SECURITY DEFINER` mit festem `search_path = public, pg_temp`.
+- AP-10-HF-02 wurde erfolgreich in Production validiert. Die zusätzliche manuelle Sicherheitsmaßnahme (REVOKE EXECUTE FROM anon) wurde durchgeführt und verifiziert.
 - Die normale `project_notes`-SELECT-Policy bleibt unverändert: aktive Notizen bleiben sichtbar, soft gelöschte Notizen bleiben regulär unsichtbar.
 - Der Delete-Service nutzt nach unveränderten Defense-in-Depth-Prüfungen künftig die RPC statt eines direkten `project_notes`-UPDATEs und wertet `true`, `false` sowie Datenbankfehler neutral aus.
 - Preview-/Production-Validierung bleibt ausstehend; der Gesamtstatus dieses Hauptaudits wird durch diesen Nachtrag nicht geändert.
