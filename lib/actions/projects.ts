@@ -58,9 +58,9 @@ import {
 } from "./project-note-update-service";
 import {
   type ActiveProjectForNoteDeleteQuery,
-  type ProjectNoteDeletePatch,
   type ProjectNoteDeleteProfilesQuery,
   type ProjectNoteDeleteQuery,
+  type ProjectNoteSoftDeleteRpcArgs,
   type SoftDeleteProjectNoteDataSource,
   type SoftDeletedProjectNote,
   formDataToDeleteProjectNoteInput,
@@ -490,16 +490,13 @@ function buildProjectNoteMutationDataSource(supabase: Awaited<ReturnType<typeof 
           },
         };
       },
-      update: ((payload: ProjectNoteUpdatePatch | ProjectNoteDeletePatch, options?: { count: "exact" }) => {
+      update(payload: ProjectNoteUpdatePatch) {
         return {
           eq(_idColumn: "id", noteId: string) {
             return {
               eq(_projectIdColumn: "project_id", projectId: string) {
                 return {
                   is(_deletedAtColumn: "deleted_at", value: null) {
-                    if (options) {
-                      return supabase.from("project_notes").update(payload, options).eq("id", noteId).eq("project_id", projectId).is("deleted_at", value);
-                    }
                     return {
                       select() {
                         return {
@@ -523,7 +520,7 @@ function buildProjectNoteMutationDataSource(supabase: Awaited<ReturnType<typeof 
             };
           },
         };
-      }) as unknown as ProjectNoteUpdateQuery["update"] & ProjectNoteDeleteQuery["update"],
+      },
     };
   }
 
@@ -534,6 +531,10 @@ function buildProjectNoteMutationDataSource(supabase: Awaited<ReturnType<typeof 
       },
     },
     from,
+    async rpc(functionName: "soft_delete_project_note", args: ProjectNoteSoftDeleteRpcArgs) {
+      const { data, error } = await supabase.rpc(functionName, args);
+      return { data, error };
+    },
   };
 }
 

@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const migrationPath = "supabase/migrations/202607220001_project_notes_soft_delete_rls.sql";
+const rpcMigrationPath = "supabase/migrations/202607230001_project_note_soft_delete_rpc.sql";
 const migration = readFileSync(migrationPath, "utf8");
+const rpcMigration = readFileSync(rpcMigrationPath, "utf8");
 const projectPage = readFileSync("app/(app)/projects/[id]/page.tsx", "utf8");
 const createService = readFileSync("lib/actions/project-note-create-service.ts", "utf8");
 
@@ -73,5 +75,53 @@ describe("AP-09 application compatibility", () => {
     expect(createService).toContain("content: parsedInput.data.content");
     expect(createService).toContain("created_by: user.id");
     expect(createService).not.toMatch(/deleted_at:\s*/);
+  });
+});
+
+
+describe("AP-10-HF-02 project note soft-delete RPC migration", () => {
+  it("creates the bounded SECURITY DEFINER RPC with fixed search_path and boolean return", () => {
+    expect(rpcMigration).toContain("create or replace function public.soft_delete_project_note(");
+    expect(rpcMigration).toContain("target_note_id uuid");
+    expect(rpcMigration).toContain("target_project_id uuid");
+    expect(rpcMigration).toContain("returns boolean");
+    expect(rpcMigration).toMatch(/security\s+definer/i);
+    expect(rpcMigration).toMatch(/set\s+search_path\s+=\s+public,\s*pg_temp/i);
+  });
+
+  it("checks authenticated user, app role, active project and active note ownership inside the function", () => {
+    expect(rpcMigration).toContain("actor_id uuid := auth.uid()");
+    expect(rpcMigration).toContain("actor_role text := public.current_app_role()");
+    expect(rpcMigration).toMatch(/actor_id\s+is\s+null[\s\S]*return\s+false/i);
+    expect(rpcMigration).toMatch(/actor_role\s+not\s+in\s+\('admin',\s*'reviewer'\)/i);
+    expect(rpcMigration).toMatch(/from\s+public\.projects[\s\S]*public\.projects\.id\s+=\s+target_project_id[\s\S]*public\.projects\.deleted_at\s+is\s+null/i);
+    expect(rpcMigration).toMatch(/public\.project_notes\.id\s+=\s+target_note_id[\s\S]*public\.project_notes\.project_id\s+=\s+target_project_id[\s\S]*public\.project_notes\.deleted_at\s+is\s+null/i);
+    expect(rpcMigration).toMatch(/actor_role\s+=\s+'admin'/i);
+    expect(rpcMigration).toMatch(/actor_role\s+=\s+'reviewer'[\s\S]*public\.project_notes\.created_by\s+=\s+actor_id/i);
+  });
+
+  it("updates only deleted_at with a server timestamp and avoids hard delete, restore and content returns", () => {
+    expect(rpcMigration).toMatch(/update\s+public\.project_notes\s+set\s+deleted_at\s+=\s+statement_timestamp\(\)/i);
+    const setClause = rpcMigration.match(/update\s+public\.project_notes\s+set\s+([\s\S]*?)\s+where/i)?.[1] ?? "";
+    expect(setClause).toBe("deleted_at = statement_timestamp()");
+    expect(setClause).not.toMatch(/\b(id|project_id|content|created_by|created_at)\s*=/i);
+    expect(rpcMigration).toMatch(/get\s+diagnostics\s+affected_rows\s+=\s+row_count/i);
+    expect(rpcMigration).toMatch(/return\s+affected_rows\s+=\s+1/i);
+    expect(rpcMigration).not.toMatch(/\bdelete\s+from\b/i);
+    expect(rpcMigration).not.toMatch(/deleted_at\s+=\s+null/i);
+    expect(rpcMigration).not.toMatch(/returns\s+table/i);
+    expect(rpcMigration).not.toMatch(/\bcontent\b/i);
+  });
+
+  it("grants execution only to authenticated users and not PUBLIC", () => {
+    expect(rpcMigration).toMatch(/revoke\s+all\s+on\s+function\s+public\.soft_delete_project_note\(uuid,\s*uuid\)\s+from\s+public/i);
+    expect(rpcMigration).toMatch(/grant\s+execute\s+on\s+function\s+public\.soft_delete_project_note\(uuid,\s*uuid\)\s+to\s+authenticated/i);
+    expect(rpcMigration).not.toMatch(/grant\s+execute[\s\S]*\bto\s+anon\b/i);
+  });
+
+  it("does not relax the normal active-note SELECT policy", () => {
+    expect(migration).toMatch(/create policy "project notes read active"[\s\S]*for select[\s\S]*deleted_at is null/i);
+    expect(rpcMigration).not.toMatch(/create\s+policy[\s\S]*for\s+select/i);
+    expect(rpcMigration).not.toMatch(/alter\s+policy[\s\S]*project notes read active/i);
   });
 });

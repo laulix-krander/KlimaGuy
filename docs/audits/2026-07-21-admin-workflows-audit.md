@@ -740,3 +740,10 @@ Jeder spätere PR muss folgende Gates erfüllen:
 ## AP-10-HF-01 Implementation Result
 
 AP-10-HF-01 wurde als gezielter Hotfix umgesetzt. Der Projektnotiz-Soft-Delete verlangt nach dem UPDATE keine per SELECT-RLS nicht mehr sichtbare Return-Representation mehr, sondern nutzt den von `@supabase/supabase-js` `2.110.8` unterstützten exakten UPDATE-Count. Die bestehenden Authentifizierungs-, Rollen-, Ownership-, aktive-Projekt-, aktive-Notiz-, RLS- und Triggerregeln bleiben unverändert. Preview-/Production-Validierung steht weiterhin aus; der Gesamtstatus dieses Hauptaudits wird durch diesen Abschnitt nicht geändert.
+
+## AP-10-HF-02 Implementation Result
+
+- AP-10-HF-02 ergänzt für Projektnotizen einen eng begrenzten, serverseitig autorisierten RPC-Soft-Delete-Pfad `public.soft_delete_project_note(target_note_id uuid, target_project_id uuid)` als `SECURITY DEFINER` mit festem `search_path = public, pg_temp`.
+- Die normale `project_notes`-SELECT-Policy bleibt unverändert: aktive Notizen bleiben sichtbar, soft gelöschte Notizen bleiben regulär unsichtbar.
+- Der Delete-Service nutzt nach unveränderten Defense-in-Depth-Prüfungen künftig die RPC statt eines direkten `project_notes`-UPDATEs und wertet `true`, `false` sowie Datenbankfehler neutral aus.
+- Preview-/Production-Validierung bleibt ausstehend; der Gesamtstatus dieses Hauptaudits wird durch diesen Nachtrag nicht geändert.
