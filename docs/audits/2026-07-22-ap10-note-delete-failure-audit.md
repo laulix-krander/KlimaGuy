@@ -443,3 +443,17 @@ authenticated
 postgres
 service_role
 Manueller Smoke-Test erfolgreich abgeschlossen.
+
+## Production Validation Result
+
+- **Status:** Production erfolgreich validiert.
+- Die Migration für AP-10-HF-02 wurde erfolgreich auf Supabase Production angewendet.
+- Die RPC `public.soft_delete_project_note(uuid, uuid)` existiert in Production.
+- `SECURITY DEFINER` ist für die RPC aktiv.
+- Soft Delete für Projektnotizen funktioniert in Production.
+- `deleted_at` wird beim Soft Delete korrekt gesetzt.
+- Die soft gelöschte Notiz verschwindet aus der normalen Oberfläche.
+- Der physische Datensatz bleibt nach dem Soft Delete erhalten.
+- `EXECUTE` für `anon` wurde wieder entzogen.
+- Verbleibende `EXECUTE`-Grants sind `authenticated`, `postgres` und `service_role`.
+- Die manuellen Smoke Tests wurden erfolgreich abgeschlossen.

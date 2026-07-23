@@ -748,3 +748,11 @@ AP-10-HF-01 wurde als gezielter Hotfix umgesetzt. Der Projektnotiz-Soft-Delete v
 - Die normale `project_notes`-SELECT-Policy bleibt unverändert: aktive Notizen bleiben sichtbar, soft gelöschte Notizen bleiben regulär unsichtbar.
 - Der Delete-Service nutzt nach unveränderten Defense-in-Depth-Prüfungen künftig die RPC statt eines direkten `project_notes`-UPDATEs und wertet `true`, `false` sowie Datenbankfehler neutral aus.
 - Preview-/Production-Validierung bleibt ausstehend; der Gesamtstatus dieses Hauptaudits wird durch diesen Nachtrag nicht geändert.
+
+### AP-10-HF-02 Production Validation
+
+- Migration erfolgreich angewendet.
+- Production erfolgreich validiert.
+- RPC erfolgreich installiert.
+- `anon`-`EXECUTE` erfolgreich entfernt.
+- Soft Delete vollständig funktionsfähig.
