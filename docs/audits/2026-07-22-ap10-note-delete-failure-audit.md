@@ -4,7 +4,7 @@
 
 - **Audit-ID:** KG-AUDIT-2026-07-22-AP10-NOTE-DELETE-FAILURE-V1
 - **Referenz-Audit:** KG-AUDIT-2026-07-21-ADMIN-WORKFLOWS-V1
-- **Status:** DRAFT – DIAGNOSE, NICHT ZUR IMPLEMENTIERUNG FREIGEGEBEN
+- **Status:** IMPLEMENTED – VALIDIERUNG IN PREVIEW/PRODUCTION AUSSTEHEND
 - **Auftrag:** ausschließlich Diagnose; keine Reparatur, keine Migration, keine RLS-/Trigger-/Action-/UI-/Teständerung.
 
 ## 2. Datum
@@ -390,3 +390,23 @@ Für dieses Diagnose-Audit wurden die Baseline-Gates ausgeführt und waren erfol
 - Für den späteren Hotfix: Anwendungscode-Commit revertieren, falls die Änderung nur den Service betrifft.
 - Falls eine spätere Datenbankänderung freigegeben wird, muss der Rollback über eine neue Gegenmigration erfolgen; angewendete Migrationen nicht aus der Historie löschen.
 - Vor jeder Datenbank-Gegenmigration prüfen, ob bereits soft gelöschte Notizen existieren, damit keine fachlichen Löschmarkierungen verloren gehen.
+
+## AP-10-HF-01 Implementation Result
+
+- **Implementierungsstatus:** IMPLEMENTED – VALIDIERUNG IN PREVIEW/PRODUCTION AUSSTEHEND.
+- **Baseline-Commit:** `523b177 Merge pull request #17 from laulix-krander/codex/fuhre-diagnose-audit-zum-soft-delete-durch`.
+- **Supabase-JS-Version:** tatsächlich installiert ist `@supabase/supabase-js` `2.110.8`; die installierten `@supabase/postgrest-js`-Typen unterstützen `update(values, { count: "exact" })`.
+- **Bisherige fehlerhafte Abfrage:** Der Delete-Service setzte `deleted_at` und forderte anschließend über `.select("id,project_id").single()` eine Return-Representation an.
+- **Neue Abfrage:** Der Delete-Service führt `update({ deleted_at }, { count: "exact" })` mit den unveränderten Filtern `id`, `project_id` und `deleted_at IS NULL` aus.
+- **Entfernte Return-Representation-Abhängigkeit:** Der Soft-Delete-Pfad verlangt nach dem UPDATE keine anschließend durch SELECT-RLS unsichtbare gelöschte Notizzeile mehr.
+- **Erfolgsprüfung:** Der Erfolg wird ausschließlich über den exakten UPDATE-Count bestimmt.
+- **Verhalten bei `count = 1`:** Der Service meldet Erfolg und gibt die validierte Notiz-ID sowie die zuvor bestätigte Projekt-ID zurück.
+- **Verhalten bei `count = 0`:** Der Service meldet „Die Notiz wurde nicht gefunden oder ist nicht mehr verfügbar.“ und täuscht keinen Erfolg vor.
+- **Verhalten bei `count = null`:** Der Service behandelt den Erfolg als nicht nachweisbar und gibt die neutrale Löschfehlermeldung zurück.
+- **Datenbankfehler:** Rohe Supabase-/SQL-Fehler werden nicht weitergereicht; der Service gibt „Die Notiz konnte nicht gelöscht werden. Bitte versuchen Sie es erneut.“ zurück.
+- **Unveränderte RLS-Regeln:** Es wurde keine Migration geändert oder erstellt; SELECT-, INSERT- und UPDATE-Policies bleiben unverändert.
+- **Unveränderte Triggerregeln:** Es wurde keine Triggerfunktion und kein Trigger geändert.
+- **Neue Regressionstests:** Die AP-10-Delete-Tests prüfen exact-count-Erfolg, `count = 0`, `count = null`, neutrale Datenbankfehler, ausschließliches `deleted_at`-Payload, serverseitigen Zeitstempel, Filter auf `id`, `project_id`, `deleted_at IS NULL`, keine Hard Deletes und keinen Post-Update-SELECT im Soft-Delete-Pfad.
+- **Merge-Gates:** Typecheck, Lint, Unit Tests, Build und `git diff --check` wurden nach der Implementierung ausgeführt.
+- **Bekannte Einschränkungen:** Preview-/Production-Smoke-Tests müssen gegen die echte Supabase-Umgebung noch ausgeführt werden; Unit Tests verwenden keine Produktions-Supabase-Instanz.
+- **Rollback:** Commit `Fix AP-10 project note soft delete under RLS` revertieren; dadurch wird der vorherige Return-Representation-basierte Soft-Delete-Pfad wiederhergestellt.

@@ -490,13 +490,16 @@ function buildProjectNoteMutationDataSource(supabase: Awaited<ReturnType<typeof 
           },
         };
       },
-      update(payload: ProjectNoteUpdatePatch | ProjectNoteDeletePatch) {
+      update: ((payload: ProjectNoteUpdatePatch | ProjectNoteDeletePatch, options?: { count: "exact" }) => {
         return {
           eq(_idColumn: "id", noteId: string) {
             return {
               eq(_projectIdColumn: "project_id", projectId: string) {
                 return {
                   is(_deletedAtColumn: "deleted_at", value: null) {
+                    if (options) {
+                      return supabase.from("project_notes").update(payload, options).eq("id", noteId).eq("project_id", projectId).is("deleted_at", value);
+                    }
                     return {
                       select() {
                         return {
@@ -520,7 +523,7 @@ function buildProjectNoteMutationDataSource(supabase: Awaited<ReturnType<typeof 
             };
           },
         };
-      },
+      }) as unknown as ProjectNoteUpdateQuery["update"] & ProjectNoteDeleteQuery["update"],
     };
   }
 

@@ -736,3 +736,7 @@ Jeder spätere PR muss folgende Gates erfüllen:
 - **Keine Wiederherstellung:** AP-10 bietet keine UI, Action oder Datenbankänderung zur Wiederherstellung gelöschter Notizen.
 - **Bekannte Einschränkungen:** Es gibt weiterhin keine echte Supabase-RLS-Integrationstestumgebung im Repository. Echte RLS-Wirkung muss in einer Entwicklungs- oder Preview-Datenbank mit angewendeter AP-09-Migration manuell geprüft werden. Ein sicherer Audit-Log-Schreibpfad fehlt weiterhin.
 - **Rollback:** AP-10-Anwendungscode-Commit revertieren. Da AP-10 keine Migration enthält, sind keine Datenbankänderungen aus AP-10 rückgängig zu machen; die AP-09-Migration bleibt Voraussetzung für den Notiz-Soft-Delete-Datenbestand.
+
+## AP-10-HF-01 Implementation Result
+
+AP-10-HF-01 wurde als gezielter Hotfix umgesetzt. Der Projektnotiz-Soft-Delete verlangt nach dem UPDATE keine per SELECT-RLS nicht mehr sichtbare Return-Representation mehr, sondern nutzt den von `@supabase/supabase-js` `2.110.8` unterstützten exakten UPDATE-Count. Die bestehenden Authentifizierungs-, Rollen-, Ownership-, aktive-Projekt-, aktive-Notiz-, RLS- und Triggerregeln bleiben unverändert. Preview-/Production-Validierung steht weiterhin aus; der Gesamtstatus dieses Hauptaudits wird durch diesen Abschnitt nicht geändert.

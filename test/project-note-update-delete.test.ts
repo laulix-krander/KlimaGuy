@@ -27,7 +27,7 @@ const otherUserId = "44444444-4444-4444-8444-444444444444";
 const deletedAt = "2026-07-22T14:00:00.000Z";
 const longContent = "x".repeat(4000);
 
-type Options = { user?: boolean; role?: string | null; project?: { id: string } | null; note?: { id: string; project_id: string; created_by: string } | null; row?: { id: string; project_id: string } | null; error?: unknown };
+type Options = { user?: boolean; role?: string | null; project?: { id: string } | null; note?: { id: string; project_id: string; created_by: string } | null; row?: { id: string; project_id: string } | null; error?: unknown; count?: number | null };
 
 function updateSource(options: Options = {}) {
   const calls = { updatePayload: undefined as ProjectNoteUpdatePatch | undefined, eq: [] as Array<[string, string]>, is: [] as Array<[string, null]>, select: [] as string[] };
@@ -47,7 +47,7 @@ function updateSource(options: Options = {}) {
 }
 
 function deleteSource(options: Options = {}) {
-  const calls = { deletePayload: undefined as ProjectNoteDeletePatch | undefined, eq: [] as Array<[string, string]>, is: [] as Array<[string, null]>, select: [] as string[] };
+  const calls = { deletePayload: undefined as ProjectNoteDeletePatch | undefined, updateOptions: undefined as { count: "exact" } | undefined, deleteCalls: 0, hardDeleteCalls: 0, eq: [] as Array<[string, string]>, is: [] as Array<[string, null]>, select: [] as string[], postUpdateSelect: [] as string[], singleAfterUpdateCalls: 0 };
   function from(table: "profiles"): ProjectNoteDeleteProfilesQuery;
   function from(table: "projects"): ActiveProjectForNoteDeleteQuery;
   function from(table: "project_notes"): ProjectNoteDeleteQuery;
@@ -56,7 +56,7 @@ function deleteSource(options: Options = {}) {
     if (table === "projects") return { select(columns: "id") { calls.select.push(columns); return { eq(column: "id", value: string) { calls.eq.push([column, value]); return { is(column: "deleted_at", value: null) { calls.is.push([column, value]); return { single: async () => ({ data: options.project === undefined ? { id: projectId } : options.project, error: null }) }; } }; } }; } };
     return {
       select(columns: "id,project_id,created_by") { calls.select.push(columns); return { eq(column: "id", value: string) { calls.eq.push([column, value]); return { eq(column2: "project_id", value2: string) { calls.eq.push([column2, value2]); return { is(column3: "deleted_at", value3: null) { calls.is.push([column3, value3]); return { single: async () => ({ data: options.note === undefined ? { id: noteId, project_id: projectId, created_by: userId } : options.note, error: null }) }; } }; } }; } }; },
-      update(payload: ProjectNoteDeletePatch) { calls.deletePayload = payload; return { eq(column: "id", value: string) { calls.eq.push([column, value]); return { eq(column2: "project_id", value2: string) { calls.eq.push([column2, value2]); return { is(column3: "deleted_at", value3: null) { calls.is.push([column3, value3]); return { select(columns: "id,project_id") { calls.select.push(columns); return { single: async () => ({ data: options.row === undefined ? { id: noteId, project_id: projectId } : options.row, error: options.error ?? null }) }; } }; } }; } }; } }; },
+      update(payload: ProjectNoteDeletePatch, updateOptions: { count: "exact" }) { calls.deleteCalls += 1; calls.deletePayload = payload; calls.updateOptions = updateOptions; return { eq(column: "id", value: string) { calls.eq.push([column, value]); return { eq(column2: "project_id", value2: string) { calls.eq.push([column2, value2]); return { is(column3: "deleted_at", value3: null) { calls.is.push([column3, value3]); return Promise.resolve({ error: options.error ?? null, count: options.count === undefined ? 1 : options.count }); } }; } }; } }; },
     };
   }
   const dataSource: SoftDeleteProjectNoteDataSource = { auth: { async getUser() { return { data: { user: options.user === false ? null : { id: userId } } }; } }, from };
@@ -127,9 +127,31 @@ describe("AP-10 delete service", () => {
     const mock = deleteSource(); await softDeleteProjectNoteWithDataSource(mock.dataSource, { note_id: noteId, project_id: projectId, deleted_at: "client", created_by: otherUserId }, () => deletedAt);
     expect(mock.calls.deletePayload).toEqual({ deleted_at: deletedAt }); expect(Object.keys(mock.calls.deletePayload ?? {})).toEqual(["deleted_at"]); expect(mock.calls.eq).toContainEqual(["id", noteId]); expect(mock.calls.eq).toContainEqual(["project_id", projectId]); expect(mock.calls.is).toContainEqual(["deleted_at", null]);
   });
-  it("treats second delete/no row and raw database errors as neutral failures", async () => {
-    await expect(softDeleteProjectNoteWithDataSource(deleteSource({ row: null }).dataSource, { note_id: noteId, project_id: projectId }, () => deletedAt)).resolves.toMatchObject({ success: false, error: "Die Notiz konnte nicht gelöscht werden. Bitte versuchen Sie es erneut." });
-    const result = await softDeleteProjectNoteWithDataSource(deleteSource({ error: { message: "raw SQL" } }).dataSource, { note_id: noteId, project_id: projectId }, () => deletedAt); expect(result.success ? "" : result.error).not.toContain("raw SQL");
+  it("uses exact update count without requesting a post-update returned row", async () => {
+    const mock = deleteSource({ count: 1 });
+    const result = await softDeleteProjectNoteWithDataSource(mock.dataSource, { note_id: noteId, project_id: projectId }, () => deletedAt);
+    expect(result).toEqual({ success: true, data: { id: noteId, project_id: projectId } });
+    expect(mock.calls.updateOptions).toEqual({ count: "exact" });
+    expect(mock.calls.deleteCalls).toBe(1);
+    expect(mock.calls.select).toEqual(["id", "id,project_id,created_by"]);
+    expect(mock.calls.hardDeleteCalls).toBe(0);
+  });
+
+  it("treats count zero, unknown count and raw database errors as safe failures", async () => {
+    await expect(softDeleteProjectNoteWithDataSource(deleteSource({ count: 0 }).dataSource, { note_id: noteId, project_id: projectId }, () => deletedAt)).resolves.toMatchObject({ success: false, error: "Die Notiz wurde nicht gefunden oder ist nicht mehr verfügbar." });
+    await expect(softDeleteProjectNoteWithDataSource(deleteSource({ count: null }).dataSource, { note_id: noteId, project_id: projectId }, () => deletedAt)).resolves.toMatchObject({ success: false, error: "Die Notiz konnte nicht gelöscht werden. Bitte versuchen Sie es erneut." });
+    const result = await softDeleteProjectNoteWithDataSource(deleteSource({ error: { message: "raw SQL" } }).dataSource, { note_id: noteId, project_id: projectId }, () => deletedAt);
+    expect(result.success ? "" : result.error).toBe("Die Notiz konnte nicht gelöscht werden. Bitte versuchen Sie es erneut.");
+    expect(result.success ? "" : result.error).not.toContain("raw SQL");
+  });
+
+  it("regresses the production RLS failure by succeeding without post-update select when count is one", async () => {
+    const mock = deleteSource({ count: 1, note: { id: noteId, project_id: projectId, created_by: userId } });
+    const result = await softDeleteProjectNoteWithDataSource(mock.dataSource, { note_id: noteId, project_id: projectId }, () => deletedAt);
+    expect(result).toEqual({ success: true, data: { id: noteId, project_id: projectId } });
+    expect(mock.calls.select).toEqual(["id", "id,project_id,created_by"]);
+    expect(mock.calls.deleteCalls).toBe(1);
+    expect(mock.calls.updateOptions).toEqual({ count: "exact" });
   });
 });
 
