@@ -35,6 +35,16 @@ import {
 } from "./project-review-service";
 
 import {
+  type ActiveProjectStatusQuery,
+  type ProjectStatusProfilesQuery,
+  type ProjectStatusUpdate,
+  type UpdateProjectStatusDataSource,
+  type UpdatedProjectStatus,
+  formDataToUpdateProjectStatusInput,
+  updateProjectStatusWithDataSource,
+} from "./project-status-update-service";
+
+import {
   type ActiveProjectForNoteQuery,
   type CreatedProjectNote,
   type CreateProjectNoteDataSource,
@@ -337,6 +347,110 @@ export async function updateProjectReviewAction(
     revalidatePath(path);
   }
   redirect(`/projects/${result.data.id}?review_updated=1`);
+}
+
+
+export async function updateProjectStatusAction(
+  _previousState: ActionResult<UpdatedProjectStatus>,
+  formData: FormData,
+): Promise<ActionResult<UpdatedProjectStatus>> {
+  const supabase = await createClient();
+
+  function from(table: "profiles"): ProjectStatusProfilesQuery;
+  function from(table: "projects"): ActiveProjectStatusQuery;
+  function from(table: "profiles" | "projects"): ProjectStatusProfilesQuery | ActiveProjectStatusQuery {
+    if (table === "profiles") {
+      return {
+        select() {
+          return {
+            eq(_column: "id", value: string) {
+              return {
+                async single() {
+                  const { data, error } = await supabase.from("profiles").select("role").eq("id", value).single();
+                  return { data, error };
+                },
+              };
+            },
+          };
+        },
+      };
+    }
+
+    return {
+      select() {
+        return {
+          eq(_column: "id", projectId: string) {
+            return {
+              is(_deletedAtColumn: "deleted_at", value: null) {
+                return {
+                  async single() {
+                    const { data, error } = await supabase
+                      .from("projects")
+                      .select("id,customer_id,status")
+                      .eq("id", projectId)
+                      .is("deleted_at", value)
+                      .single();
+                    return { data, error };
+                  },
+                };
+              },
+            };
+          },
+        };
+      },
+      update(payload: ProjectStatusUpdate) {
+        return {
+          eq(_idColumn: "id", projectId: string) {
+            return {
+              eq(_statusColumn: "status", currentStatus: import("@/lib/domain/types").ProjectStatus) {
+                return {
+                  is(_deletedAtColumn: "deleted_at", value: null) {
+                    return {
+                      select() {
+                        return {
+                          async single() {
+                            const { data, error } = await supabase
+                              .from("projects")
+                              .update(payload)
+                              .eq("id", projectId)
+                              .eq("status", currentStatus)
+                              .is("deleted_at", value)
+                              .select("id,customer_id")
+                              .single();
+                            return { data, error };
+                          },
+                        };
+                      },
+                    };
+                  },
+                };
+              },
+            };
+          },
+        };
+      },
+    };
+  }
+
+  const dataSource: UpdateProjectStatusDataSource = {
+    auth: {
+      async getUser() {
+        return supabase.auth.getUser();
+      },
+    },
+    from,
+  };
+  const { projectId, values } = formDataToUpdateProjectStatusInput(formData);
+  const result = await updateProjectStatusWithDataSource(dataSource, projectId, values);
+
+  if (!result.success) {
+    return result;
+  }
+
+  for (const path of getProjectCoreRevalidationPaths(result.data)) {
+    revalidatePath(path);
+  }
+  redirect(`/projects/${result.data.id}?status_updated=1`);
 }
 
 
