@@ -18,7 +18,7 @@ export default async function EditProjectPage({ params }: { params: Promise<{ id
 
   const { data: project } = await supabase
     .from("projects")
-    .select("id,title,installation_address,postal_code,city,summary")
+    .select("id,title,installation_address,postal_code,city")
     .eq("id", parsedId.data)
     .is("deleted_at", null)
     .single();

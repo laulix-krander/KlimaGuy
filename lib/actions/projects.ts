@@ -157,6 +157,10 @@ export async function createProjectAction(
 }
 
 
+export function getProjectCoreRevalidationPaths(project: UpdatedProject): string[] {
+  return ["/projects", `/projects/${project.id}`, `/customers/${project.customer_id}`];
+}
+
 export async function updateProjectCoreAction(
   _previousState: ActionResult<UpdatedProject>,
   formData: FormData,
@@ -228,9 +232,9 @@ export async function updateProjectCoreAction(
     return result;
   }
 
-  revalidatePath("/projects");
-  revalidatePath(`/projects/${result.data.id}`);
-  revalidatePath(`/customers/${result.data.customer_id}`);
+  for (const path of getProjectCoreRevalidationPaths(result.data)) {
+    revalidatePath(path);
+  }
   redirect(`/projects/${result.data.id}?updated=1`);
 }
 
@@ -332,9 +336,9 @@ export async function updateProjectReviewAction(
     return result;
   }
 
-  revalidatePath("/projects");
-  revalidatePath(`/projects/${result.data.id}`);
-  revalidatePath(`/customers/${result.data.customer_id}`);
+  for (const path of getProjectCoreRevalidationPaths(result.data)) {
+    revalidatePath(path);
+  }
   redirect(`/projects/${result.data.id}?review_updated=1`);
 }
 

@@ -1,14 +1,13 @@
 "use client";
 
-import Link from "next/link";
-import { useActionState } from "react";
+import { useState, useActionState } from "react";
 import { Button } from "@/components/ui";
 import { updateProjectCoreAction } from "@/lib/actions/projects";
 import type { ActionResult } from "@/lib/actions/project-create-service";
 import type { UpdatedProject } from "@/lib/actions/project-update-service";
 import { optionalFormValue } from "@/lib/domain/display";
 
-type ProjectEditFormProps = {
+type ProjectMetadataFormProps = {
   project: {
     id: string;
     title: string;
@@ -24,8 +23,17 @@ function firstFieldError(state: ActionResult<UpdatedProject>, field: string): st
   return state.success ? undefined : state.fieldErrors?.[field]?.[0];
 }
 
-export function ProjectEditForm({ project }: ProjectEditFormProps) {
+export function ProjectMetadataForm({ project }: ProjectMetadataFormProps) {
+  const [isEditing, setIsEditing] = useState(false);
   const [state, formAction, isPending] = useActionState(updateProjectCoreAction, initialState);
+
+  if (!isEditing) {
+    return (
+      <Button type="button" onClick={() => setIsEditing(true)}>
+        Stammdaten bearbeiten
+      </Button>
+    );
+  }
 
   return (
     <form action={formAction} className="space-y-4" noValidate>
@@ -57,10 +65,9 @@ export function ProjectEditForm({ project }: ProjectEditFormProps) {
         <p id="city-error" className="text-sm text-red-700">{firstFieldError(state, "city")}</p>
       </div>
 
-
       <div className="flex gap-3">
-        <Button type="submit" disabled={isPending}>{isPending ? "Wird gespeichert …" : "Änderungen speichern"}</Button>
-        <Link className="rounded-lg border px-4 py-2 font-medium text-slate-700" href={`/projects/${project.id}`}>Abbrechen</Link>
+        <Button type="submit" disabled={isPending}>{isPending ? "Wird gespeichert …" : "Stammdaten speichern"}</Button>
+        <button type="button" className="rounded-lg border px-4 py-2 font-medium text-slate-700" onClick={() => setIsEditing(false)} disabled={isPending}>Abbrechen</button>
       </div>
     </form>
   );
