@@ -45,6 +45,16 @@ import {
 } from "./project-status-update-service";
 
 import {
+  type ActiveProjectClassQuery,
+  type ProjectClassProfilesQuery,
+  type ProjectClassUpdate,
+  type UpdateProjectClassDataSource,
+  type UpdatedProjectClass,
+  formDataToUpdateProjectClassInput,
+  updateProjectClassWithDataSource,
+} from "./project-class-update-service";
+
+import {
   type ActiveProjectForNoteQuery,
   type CreatedProjectNote,
   type CreateProjectNoteDataSource,
@@ -451,6 +461,111 @@ export async function updateProjectStatusAction(
     revalidatePath(path);
   }
   redirect(`/projects/${result.data.id}?status_updated=1`);
+}
+
+
+export async function updateProjectClassAction(
+  _previousState: ActionResult<UpdatedProjectClass>,
+  formData: FormData,
+): Promise<ActionResult<UpdatedProjectClass>> {
+  const supabase = await createClient();
+
+  function from(table: "profiles"): ProjectClassProfilesQuery;
+  function from(table: "projects"): ActiveProjectClassQuery;
+  function from(table: "profiles" | "projects"): ProjectClassProfilesQuery | ActiveProjectClassQuery {
+    if (table === "profiles") {
+      return {
+        select() {
+          return {
+            eq(_column: "id", value: string) {
+              return {
+                async single() {
+                  const { data, error } = await supabase.from("profiles").select("role").eq("id", value).single();
+                  return { data, error };
+                },
+              };
+            },
+          };
+        },
+      };
+    }
+
+    return {
+      select() {
+        return {
+          eq(_column: "id", projectId: string) {
+            return {
+              is(_deletedAtColumn: "deleted_at", value: null) {
+                return {
+                  async single() {
+                    const { data, error } = await supabase
+                      .from("projects")
+                      .select("id,customer_id,project_class")
+                      .eq("id", projectId)
+                      .is("deleted_at", value)
+                      .single();
+                    return { data, error };
+                  },
+                };
+              },
+            };
+          },
+        };
+      },
+      update(payload: ProjectClassUpdate) {
+        return {
+          eq(_idColumn: "id", projectId: string) {
+            return {
+              matchProjectClass(currentProjectClass: import("@/lib/domain/types").ProjectClass | null) {
+                const query = supabase.from("projects").update(payload).eq("id", projectId);
+                const filteredQuery = currentProjectClass === null
+                  ? query.is("project_class", null)
+                  : query.eq("project_class", currentProjectClass);
+
+                return {
+                  is(_deletedAtColumn: "deleted_at", value: null) {
+                    return {
+                      select() {
+                        return {
+                          async single() {
+                            const { data, error } = await filteredQuery
+                              .is("deleted_at", value)
+                              .select("id,customer_id")
+                              .single();
+                            return { data, error };
+                          },
+                        };
+                      },
+                    };
+                  },
+                };
+              },
+            };
+          },
+        };
+      },
+    };
+  }
+
+  const dataSource: UpdateProjectClassDataSource = {
+    auth: {
+      async getUser() {
+        return supabase.auth.getUser();
+      },
+    },
+    from,
+  };
+  const { projectId, values } = formDataToUpdateProjectClassInput(formData);
+  const result = await updateProjectClassWithDataSource(dataSource, projectId, values);
+
+  if (!result.success) {
+    return result;
+  }
+
+  for (const path of getProjectCoreRevalidationPaths(result.data)) {
+    revalidatePath(path);
+  }
+  redirect(`/projects/${result.data.id}?class_updated=1`);
 }
 
 
