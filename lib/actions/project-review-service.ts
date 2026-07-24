@@ -9,7 +9,7 @@ export type UpdatedProjectReview = { id: string; customer_id: string };
 export type ProjectReviewUpdate = {
   status: ProjectStatus;
   project_class: ProjectClass;
-  requires_human_review: boolean;
+  requires_human_review?: boolean;
 };
 type AuthUser = { id: string };
 type ProfileRow = { role: string | null };
@@ -72,7 +72,7 @@ export async function updateProjectReviewWithDataSource(
   const { data: profile } = await dataSource.from("profiles").select("role").eq("id", user.id).single();
   const parsedRole = roleSchema.safeParse(profile?.role);
   if (!profile || !parsedRole.success) return { success: false, error: "Ihr Benutzerprofil konnte nicht überprüft werden." };
-  if (!canChangeProjectStatus(parsedRole.data) || !canChangeProjectClass(parsedRole.data) || !canChangeHumanReview(parsedRole.data)) {
+  if (!canChangeProjectStatus(parsedRole.data) || !canChangeProjectClass(parsedRole.data)) {
     return { success: false, error: "Sie sind nicht berechtigt, die Projektprüfung zu bearbeiten." };
   }
 
@@ -103,8 +103,11 @@ export async function updateProjectReviewWithDataSource(
   const payload: ProjectReviewUpdate = {
     status: targetStatus,
     project_class: parsedInput.data.project_class,
-    requires_human_review: parsedInput.data.requires_human_review,
   };
+
+  if (canChangeHumanReview(parsedRole.data)) {
+    payload.requires_human_review = parsedInput.data.requires_human_review;
+  }
 
   const { data: project, error } = await dataSource
     .from("projects")

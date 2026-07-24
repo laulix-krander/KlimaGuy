@@ -168,8 +168,8 @@ describe("Berechtigungen Reviewer", () => {
     expect(canEditProjectCoreFields("reviewer")).toBe(false);
     expect(canChangeProjectStatus("reviewer")).toBe(true);
     expect(canChangeProjectClass("reviewer")).toBe(true);
-    expect(canChangeHumanReview("reviewer")).toBe(true);
-    expect(canEditProjectSummary("reviewer")).toBe(true);
+    expect(canChangeHumanReview("reviewer")).toBe(false);
+    expect(canEditProjectSummary("reviewer")).toBe(false);
     expect(canSoftDeleteProject("reviewer")).toBe(false);
     expect(canCreateProjectNote("reviewer")).toBe(true);
     expect(canEditAnyProjectNote("reviewer")).toBe(false);

@@ -43,10 +43,20 @@ describe("updateProjectReviewSchema", () => {
 });
 
 describe("project review service", () => {
-  it("allows admins and reviewers to edit project review", async () => {
+  it("allows admins to edit status, class, and human review", async () => {
+    const mock = source({ role: "admin" });
     expect(canChangeProjectStatus("admin") && canChangeProjectClass("admin") && canChangeHumanReview("admin")).toBe(true);
-    expect(canChangeProjectStatus("reviewer") && canChangeProjectClass("reviewer") && canChangeHumanReview("reviewer")).toBe(true);
-    await expect(updateProjectReviewWithDataSource(source({ role: "reviewer" }).dataSource, validProjectId, validInput)).resolves.toMatchObject({ success: true });
+    await expect(updateProjectReviewWithDataSource(mock.dataSource, validProjectId, { ...validInput, requires_human_review: false })).resolves.toMatchObject({ success: true });
+    expect(Object.keys(mock.calls.payload ?? {}).sort()).toEqual(["project_class", "requires_human_review", "status"]);
+    expect(mock.calls.payload?.requires_human_review).toBe(false);
+  });
+  it("allows reviewers only to edit status and project class", async () => {
+    const mock = source({ role: "reviewer" });
+    expect(canChangeProjectStatus("reviewer") && canChangeProjectClass("reviewer")).toBe(true);
+    expect(canChangeHumanReview("reviewer")).toBe(false);
+    await expect(updateProjectReviewWithDataSource(mock.dataSource, validProjectId, { ...validInput, requires_human_review: false })).resolves.toMatchObject({ success: true });
+    expect(Object.keys(mock.calls.payload ?? {}).sort()).toEqual(["project_class", "status"]);
+    expect(mock.calls.payload).not.toHaveProperty("requires_human_review");
   });
   it("rejects invalid roles, missing auth, and missing profiles", async () => {
     await expect(updateProjectReviewWithDataSource(source({ role: "owner" }).dataSource, validProjectId, validInput)).resolves.toMatchObject({ success: false, error: "Ihr Benutzerprofil konnte nicht überprüft werden." });
@@ -68,9 +78,11 @@ describe("project review service", () => {
     expect(getAllowedProjectStatusTransitions("closed")).toEqual([]);
     await expect(updateProjectReviewWithDataSource(source({ current: { id: validProjectId, customer_id: customerId, status: "closed" } }).dataSource, validProjectId, { status: "closed", project_class: "B", requires_human_review: true })).resolves.toMatchObject({ success: true });
   });
-  it("same status plus class or human-review changes works", async () => {
+  it("same status plus class or admin human-review changes works", async () => {
     await expect(updateProjectReviewWithDataSource(source().dataSource, validProjectId, { status: "new", project_class: "D", requires_human_review: true })).resolves.toMatchObject({ success: true });
-    await expect(updateProjectReviewWithDataSource(source().dataSource, validProjectId, { status: "new", project_class: "A", requires_human_review: false })).resolves.toMatchObject({ success: true });
+    const mock = source({ role: "admin" });
+    await expect(updateProjectReviewWithDataSource(mock.dataSource, validProjectId, { status: "new", project_class: "A", requires_human_review: false })).resolves.toMatchObject({ success: true });
+    expect(mock.calls.payload?.requires_human_review).toBe(false);
   });
   it("filters updates by id, current status, and deleted_at", async () => {
     const mock = source(); await updateProjectReviewWithDataSource(mock.dataSource, validProjectId, validInput);
@@ -79,10 +91,17 @@ describe("project review service", () => {
   it("returns conflict when no row is affected", async () => {
     await expect(updateProjectReviewWithDataSource(source({ row: null }).dataSource, validProjectId, validInput)).resolves.toMatchObject({ success: false, error: "Das Projekt wurde zwischenzeitlich geändert. Bitte laden Sie die Seite neu." });
   });
-  it("builds an allowlisted patch and ignores protected fields", async () => {
-    const mock = source();
+  it("builds an admin allowlisted patch and ignores protected fields", async () => {
+    const mock = source({ role: "admin" });
     await updateProjectReviewWithDataSource(mock.dataSource, validProjectId, { ...validInput, title: "x", customer_id: "x", summary: "x", created_by: "x", deleted_at: "x" });
     expect(Object.keys(mock.calls.payload ?? {}).sort()).toEqual(["project_class", "requires_human_review", "status"]);
+    expect(mock.calls.payload).not.toHaveProperty("title"); expect(mock.calls.payload).not.toHaveProperty("customer_id"); expect(mock.calls.payload).not.toHaveProperty("summary"); expect(mock.calls.payload).not.toHaveProperty("created_by"); expect(mock.calls.payload).not.toHaveProperty("deleted_at");
+  });
+  it("builds a reviewer allowlisted patch without human-review or protected fields", async () => {
+    const mock = source({ role: "reviewer" });
+    await updateProjectReviewWithDataSource(mock.dataSource, validProjectId, { ...validInput, requires_human_review: false, title: "x", customer_id: "x", summary: "x", created_by: "x", deleted_at: "x" });
+    expect(Object.keys(mock.calls.payload ?? {}).sort()).toEqual(["project_class", "status"]);
+    expect(mock.calls.payload).not.toHaveProperty("requires_human_review");
     expect(mock.calls.payload).not.toHaveProperty("title"); expect(mock.calls.payload).not.toHaveProperty("customer_id"); expect(mock.calls.payload).not.toHaveProperty("summary"); expect(mock.calls.payload).not.toHaveProperty("created_by"); expect(mock.calls.payload).not.toHaveProperty("deleted_at");
   });
   it("does not expose raw Supabase errors", async () => {

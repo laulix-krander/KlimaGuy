@@ -29,11 +29,11 @@ export function canChangeProjectClass(role: Role): boolean {
 }
 
 export function canChangeHumanReview(role: Role): boolean {
-  return role === "admin" || role === "reviewer";
+  return role === "admin";
 }
 
 export function canEditProjectSummary(role: Role): boolean {
-  return role === "admin" || role === "reviewer";
+  return role === "admin";
 }
 
 export function canSoftDeleteProject(role: Role): boolean {
