@@ -61,6 +61,10 @@ export const updateProjectSummarySchema = z.object({
   summary: projectCoreFields.summary,
 }).strip();
 
+export const updateProjectHumanReviewSchema = z.object({
+  requires_human_review: z.boolean(),
+}).strip();
+
 export const updateProjectReviewSchema = z.object({
   status: projectStatusSchema,
   project_class: projectClassSchema,
@@ -99,6 +103,7 @@ export type ProjectMetadataUpdateInput = z.infer<typeof updateProjectMetadataSch
 export type ProjectStatusUpdateInput = z.infer<typeof updateProjectStatusSchema>;
 export type ProjectClassUpdateInput = z.infer<typeof updateProjectClassSchema>;
 export type ProjectSummaryUpdateInput = z.infer<typeof updateProjectSummarySchema>;
+export type ProjectHumanReviewUpdateInput = z.infer<typeof updateProjectHumanReviewSchema>;
 export type ProjectReviewUpdateInput = z.infer<typeof updateProjectReviewSchema>;
 export type ProjectNoteInput = z.infer<typeof projectNoteSchema>;
 export type ProjectNoteUpdateInput = z.infer<typeof updateProjectNoteSchema>;
