@@ -49,6 +49,18 @@ export const updateProjectMetadataSchema = z.object({
   city: projectCoreFields.city,
 }).strip();
 
+export const updateProjectStatusSchema = z.object({
+  status: projectStatusSchema,
+}).strip();
+
+export const updateProjectClassSchema = z.object({
+  project_class: projectClassSchema,
+}).strip();
+
+export const updateProjectSummarySchema = z.object({
+  summary: projectCoreFields.summary,
+}).strip();
+
 export const updateProjectReviewSchema = z.object({
   status: projectStatusSchema,
   project_class: projectClassSchema,
@@ -84,6 +96,9 @@ export type CustomerInput = z.infer<typeof createCustomerSchema>;
 export type ProjectInput = z.infer<typeof createProjectSchema>;
 export type ProjectCoreUpdateInput = z.infer<typeof updateProjectCoreSchema>;
 export type ProjectMetadataUpdateInput = z.infer<typeof updateProjectMetadataSchema>;
+export type ProjectStatusUpdateInput = z.infer<typeof updateProjectStatusSchema>;
+export type ProjectClassUpdateInput = z.infer<typeof updateProjectClassSchema>;
+export type ProjectSummaryUpdateInput = z.infer<typeof updateProjectSummarySchema>;
 export type ProjectReviewUpdateInput = z.infer<typeof updateProjectReviewSchema>;
 export type ProjectNoteInput = z.infer<typeof projectNoteSchema>;
 export type ProjectNoteUpdateInput = z.infer<typeof updateProjectNoteSchema>;
