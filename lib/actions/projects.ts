@@ -54,6 +54,17 @@ import {
   updateProjectClassWithDataSource,
 } from "./project-class-update-service";
 
+
+import {
+  type ActiveProjectHumanReviewQuery,
+  type ProjectHumanReviewProfilesQuery,
+  type ProjectHumanReviewUpdate,
+  type UpdateProjectHumanReviewDataSource,
+  type UpdatedProjectHumanReview,
+  formDataToUpdateProjectHumanReviewInput,
+  updateProjectHumanReviewWithDataSource,
+} from "./project-human-review-update-service";
+
 import {
   type ActiveProjectSummaryQuery,
   type ProjectSummaryProfilesQuery,
@@ -681,6 +692,110 @@ export async function updateProjectSummaryAction(
     revalidatePath(path);
   }
   redirect(`/projects/${result.data.id}?summary_updated=1`);
+}
+
+
+export async function updateProjectHumanReviewAction(
+  _previousState: ActionResult<UpdatedProjectHumanReview>,
+  formData: FormData,
+): Promise<ActionResult<UpdatedProjectHumanReview>> {
+  const supabase = await createClient();
+
+  function from(table: "profiles"): ProjectHumanReviewProfilesQuery;
+  function from(table: "projects"): ActiveProjectHumanReviewQuery;
+  function from(table: "profiles" | "projects"): ProjectHumanReviewProfilesQuery | ActiveProjectHumanReviewQuery {
+    if (table === "profiles") {
+      return {
+        select() {
+          return {
+            eq(_column: "id", value: string) {
+              return {
+                async single() {
+                  const { data, error } = await supabase.from("profiles").select("role").eq("id", value).single();
+                  return { data, error };
+                },
+              };
+            },
+          };
+        },
+      };
+    }
+
+    return {
+      select() {
+        return {
+          eq(_column: "id", projectId: string) {
+            return {
+              is(_deletedAtColumn: "deleted_at", value: null) {
+                return {
+                  async single() {
+                    const { data, error } = await supabase
+                      .from("projects")
+                      .select("id,customer_id,requires_human_review")
+                      .eq("id", projectId)
+                      .is("deleted_at", value)
+                      .single();
+                    return { data, error };
+                  },
+                };
+              },
+            };
+          },
+        };
+      },
+      update(payload: ProjectHumanReviewUpdate) {
+        return {
+          eq(_idColumn: "id", projectId: string) {
+            return {
+              eq(_humanReviewColumn: "requires_human_review", currentRequiresHumanReview: boolean) {
+                return {
+                  is(_deletedAtColumn: "deleted_at", value: null) {
+                    return {
+                      select() {
+                        return {
+                          async single() {
+                            const { data, error } = await supabase
+                              .from("projects")
+                              .update(payload)
+                              .eq("id", projectId)
+                              .eq("requires_human_review", currentRequiresHumanReview)
+                              .is("deleted_at", value)
+                              .select("id,customer_id")
+                              .single();
+                            return { data, error };
+                          },
+                        };
+                      },
+                    };
+                  },
+                };
+              },
+            };
+          },
+        };
+      },
+    };
+  }
+
+  const dataSource: UpdateProjectHumanReviewDataSource = {
+    auth: {
+      async getUser() {
+        return supabase.auth.getUser();
+      },
+    },
+    from,
+  };
+  const { projectId, values } = formDataToUpdateProjectHumanReviewInput(formData);
+  const result = await updateProjectHumanReviewWithDataSource(dataSource, projectId, values);
+
+  if (!result.success) {
+    return result;
+  }
+
+  for (const path of getProjectCoreRevalidationPaths(result.data)) {
+    revalidatePath(path);
+  }
+  redirect(`/projects/${result.data.id}?human_review_updated=1`);
 }
 
 
