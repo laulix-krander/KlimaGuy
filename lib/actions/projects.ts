@@ -23,6 +23,7 @@ import {
   formDataToUpdateProjectCoreInput,
   updateProjectCoreWithDataSource,
 } from "./project-update-service";
+import { getProjectCoreRevalidationPaths } from "./project-revalidation";
 import {
   type ActiveProjectReviewQuery,
   type ProjectReviewProfilesQuery,
@@ -156,10 +157,6 @@ export async function createProjectAction(
   redirect(`/projects/${result.data.id}?created=1`);
 }
 
-
-export function getProjectCoreRevalidationPaths(project: UpdatedProject): string[] {
-  return ["/projects", `/projects/${project.id}`, `/customers/${project.customer_id}`];
-}
 
 export async function updateProjectCoreAction(
   _previousState: ActionResult<UpdatedProject>,

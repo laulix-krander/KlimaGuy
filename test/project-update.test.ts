@@ -9,7 +9,7 @@ import {
   formDataToUpdateProjectCoreInput,
   updateProjectCoreWithDataSource,
 } from "@/lib/actions/project-update-service";
-import { getProjectCoreRevalidationPaths } from "@/lib/actions/projects";
+import { getProjectCoreRevalidationPaths } from "@/lib/actions/project-revalidation";
 
 const validProjectId = "11111111-1111-4111-8111-111111111111";
 const customerId = "22222222-2222-4222-8222-222222222222";
