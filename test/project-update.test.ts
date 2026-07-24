@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { canEditProjectCoreFields } from "@/lib/domain/permissions";
-import { projectIdSchema, updateProjectCoreSchema } from "@/lib/domain/schemas";
+import { projectIdSchema, updateProjectMetadataSchema } from "@/lib/domain/schemas";
 import {
   type ProjectCoreUpdate,
   type ProjectUpdateProfilesQuery,
@@ -9,6 +9,7 @@ import {
   formDataToUpdateProjectCoreInput,
   updateProjectCoreWithDataSource,
 } from "@/lib/actions/project-update-service";
+import { getProjectCoreRevalidationPaths } from "@/lib/actions/projects";
 
 const validProjectId = "11111111-1111-4111-8111-111111111111";
 const customerId = "22222222-2222-4222-8222-222222222222";
@@ -28,25 +29,25 @@ function source(options: { user?: boolean; role?: string | null; row?: { id: str
   return { dataSource, calls };
 }
 
-describe("updateProjectCoreSchema", () => {
+describe("updateProjectMetadataSchema", () => {
   it("accepts a full valid update", () => {
-    expect(updateProjectCoreSchema.parse({ title: "Projekt", installation_address: "Straße 1", postal_code: "12345", city: "Köln", summary: "Text" })).toEqual({ title: "Projekt", installation_address: "Straße 1", postal_code: "12345", city: "Köln", summary: "Text" });
+    expect(updateProjectMetadataSchema.parse({ title: "Projekt", installation_address: "Straße 1", postal_code: "12345", city: "Köln" })).toEqual({ title: "Projekt", installation_address: "Straße 1", postal_code: "12345", city: "Köln" });
   });
-  it("accepts only the required title", () => { expect(updateProjectCoreSchema.parse({ title: "Projekt" })).toMatchObject({ title: "Projekt" }); });
+  it("accepts only the required title", () => { expect(updateProjectMetadataSchema.parse({ title: "Projekt" })).toMatchObject({ title: "Projekt" }); });
   it("trims title and rejects empty title", () => {
-    expect(updateProjectCoreSchema.parse({ title: "  Projekt  " }).title).toBe("Projekt");
-    expect(() => updateProjectCoreSchema.parse({ title: "" })).toThrow();
-    expect(() => updateProjectCoreSchema.parse({ title: "   " })).toThrow();
+    expect(updateProjectMetadataSchema.parse({ title: "  Projekt  " }).title).toBe("Projekt");
+    expect(() => updateProjectMetadataSchema.parse({ title: "" })).toThrow();
+    expect(() => updateProjectMetadataSchema.parse({ title: "   " })).toThrow();
   });
   it("normalizes optional fields without aggressive postal code changes", () => {
-    expect(updateProjectCoreSchema.parse({ title: "P", installation_address: "", postal_code: "", city: "", summary: "" })).toEqual({ title: "P", installation_address: null, postal_code: null, city: null, summary: null });
-    expect(updateProjectCoreSchema.parse({ title: "P", installation_address: "  A  ", postal_code: "  12 345  ", city: "  Ort  ", summary: "  Text  " })).toEqual({ title: "P", installation_address: "A", postal_code: "12 345", city: "Ort", summary: "Text" });
+    expect(updateProjectMetadataSchema.parse({ title: "P", installation_address: "", postal_code: "", city: "" })).toEqual({ title: "P", installation_address: null, postal_code: null, city: null });
+    expect(updateProjectMetadataSchema.parse({ title: "P", installation_address: "  A  ", postal_code: "  12 345  ", city: "  Ort  " })).toEqual({ title: "P", installation_address: "A", postal_code: "12 345", city: "Ort" });
   });
-  it("strips unknown fields", () => { expect(updateProjectCoreSchema.parse({ title: "P", customer_id: customerId, status: "accepted", metadata: "x" })).not.toHaveProperty("customer_id"); });
+  it("strips unknown fields", () => { expect(updateProjectMetadataSchema.parse({ title: "P", customer_id: customerId, status: "accepted", metadata: "x" })).not.toHaveProperty("customer_id"); });
 });
 
 describe("project update service", () => {
-  const input = { title: "Neu", installation_address: "A", postal_code: "123", city: "Ort", summary: "S" };
+  const input = { title: "Neu", installation_address: "A", postal_code: "123", city: "Ort" };
   it("allows admins and rejects reviewers", async () => {
     expect(canEditProjectCoreFields("admin")).toBe(true);
     expect(canEditProjectCoreFields("reviewer")).toBe(false);
@@ -75,13 +76,13 @@ describe("project update service", () => {
   it("builds an allowlisted patch and ignores mass-assignment fields", async () => {
     const mock = source();
     await updateProjectCoreWithDataSource(mock.dataSource, validProjectId, { ...input, id: "x", customer_id: "x", status: "accepted", project_class: "A", requires_human_review: false, created_by: "x", created_at: "x", updated_at: "x", deleted_at: "x", role: "admin", metadata: { x: true } });
-    expect(Object.keys(mock.calls.payload ?? {}).sort()).toEqual(["city", "installation_address", "postal_code", "summary", "title"]);
+    expect(Object.keys(mock.calls.payload ?? {}).sort()).toEqual(["city", "installation_address", "postal_code", "title"]);
     expect(mock.calls.payload).toEqual(input);
   });
   it("does not trust manipulated FormData fields", () => {
     const form = new FormData();
     form.set("project_id", validProjectId); form.set("title", "P"); form.set("customer_id", "evil"); form.set("status", "accepted");
-    expect(formDataToUpdateProjectCoreInput(form)).toEqual({ projectId: validProjectId, values: { title: "P", installation_address: null, postal_code: null, city: null, summary: null } });
+    expect(formDataToUpdateProjectCoreInput(form)).toEqual({ projectId: validProjectId, values: { title: "P", installation_address: null, postal_code: null, city: null } });
   });
   it("treats unknown, deleted, or no-row updates as unavailable", async () => {
     await expect(updateProjectCoreWithDataSource(source({ row: null }).dataSource, validProjectId, input)).resolves.toMatchObject({ success: false, error: "Das Projekt wurde nicht gefunden oder ist nicht mehr verfügbar." });
@@ -92,6 +93,15 @@ describe("project update service", () => {
     expect(result).toMatchObject({ success: false, error: "Das Projekt konnte nicht aktualisiert werden. Bitte versuchen Sie es erneut." });
     expect(result.success ? "" : result.error).not.toContain("raw SQL");
   });
+
+  it("declares the detail, list, and customer paths for revalidation", () => {
+    expect(getProjectCoreRevalidationPaths({ id: validProjectId, customer_id: customerId })).toEqual([
+      "/projects",
+      `/projects/${validProjectId}`,
+      `/customers/${customerId}`,
+    ]);
+  });
+
   it("returns success with project and customer ids", async () => {
     await expect(updateProjectCoreWithDataSource(source().dataSource, validProjectId, input)).resolves.toEqual({ success: true, data: { id: validProjectId, customer_id: customerId } });
   });

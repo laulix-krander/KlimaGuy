@@ -42,6 +42,13 @@ export const createProjectSchema = z.object({
 
 export const updateProjectCoreSchema = z.object(projectCoreFields).strip();
 
+export const updateProjectMetadataSchema = z.object({
+  title: projectCoreFields.title,
+  installation_address: projectCoreFields.installation_address,
+  postal_code: projectCoreFields.postal_code,
+  city: projectCoreFields.city,
+}).strip();
+
 export const updateProjectReviewSchema = z.object({
   status: projectStatusSchema,
   project_class: projectClassSchema,
@@ -76,6 +83,7 @@ export const deleteProjectNoteSchema = z.object({
 export type CustomerInput = z.infer<typeof createCustomerSchema>;
 export type ProjectInput = z.infer<typeof createProjectSchema>;
 export type ProjectCoreUpdateInput = z.infer<typeof updateProjectCoreSchema>;
+export type ProjectMetadataUpdateInput = z.infer<typeof updateProjectMetadataSchema>;
 export type ProjectReviewUpdateInput = z.infer<typeof updateProjectReviewSchema>;
 export type ProjectNoteInput = z.infer<typeof projectNoteSchema>;
 export type ProjectNoteUpdateInput = z.infer<typeof updateProjectNoteSchema>;
