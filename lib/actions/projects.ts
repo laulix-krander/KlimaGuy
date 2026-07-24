@@ -23,6 +23,7 @@ import {
   formDataToUpdateProjectCoreInput,
   updateProjectCoreWithDataSource,
 } from "./project-update-service";
+import { getProjectCoreRevalidationPaths } from "./project-revalidation";
 import {
   type ActiveProjectReviewQuery,
   type ProjectReviewProfilesQuery,
@@ -228,9 +229,9 @@ export async function updateProjectCoreAction(
     return result;
   }
 
-  revalidatePath("/projects");
-  revalidatePath(`/projects/${result.data.id}`);
-  revalidatePath(`/customers/${result.data.customer_id}`);
+  for (const path of getProjectCoreRevalidationPaths(result.data)) {
+    revalidatePath(path);
+  }
   redirect(`/projects/${result.data.id}?updated=1`);
 }
 
@@ -332,9 +333,9 @@ export async function updateProjectReviewAction(
     return result;
   }
 
-  revalidatePath("/projects");
-  revalidatePath(`/projects/${result.data.id}`);
-  revalidatePath(`/customers/${result.data.customer_id}`);
+  for (const path of getProjectCoreRevalidationPaths(result.data)) {
+    revalidatePath(path);
+  }
   redirect(`/projects/${result.data.id}?review_updated=1`);
 }
 

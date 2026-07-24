@@ -7,6 +7,7 @@ import { projectIdSchema, roleSchema } from "@/lib/domain/schemas";
 import { statusToLabel } from "@/lib/domain/mappers";
 import type { ProjectClass, ProjectStatus } from "@/lib/domain/types";
 import { createClient } from "@/lib/supabase/server";
+import { ProjectMetadataForm } from "./project-metadata-form";
 import { ProjectNoteForm } from "./project-note-form";
 import { ProjectNoteItem } from "./project-note-item";
 import { ProjectReviewForm } from "./project-review-form";
@@ -107,9 +108,8 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
       ) : null}
       <div className="flex items-start justify-between gap-4">
         <h1 className="text-3xl font-bold">{project.title}</h1>
-        {mayEditProject ? <Link className="rounded-lg bg-teal-700 px-4 py-2 font-medium text-white hover:bg-teal-800" href={`/projects/${project.id}/edit`}>Bearbeiten</Link> : null}
       </div>
-      <Card>
+      <Card className="space-y-5">
         <dl className="grid gap-4 md:grid-cols-2">
           <div>
             <dt className="font-medium">Kunde</dt>
@@ -133,6 +133,11 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
           <div><dt className="font-medium">Zuletzt geändert</dt><dd>{formatDate(project.updated_at)}</dd></div>
           <div className="md:col-span-2"><dt className="font-medium">Interne Zusammenfassung</dt><dd>{projectSummaryDisplay(project.summary)}</dd></div>
         </dl>
+        {mayEditProject ? (
+          <div className="border-t pt-5">
+            <ProjectMetadataForm project={{ id: project.id, title: project.title, installation_address: project.installation_address, postal_code: project.postal_code, city: project.city }} />
+          </div>
+        ) : null}
       </Card>
       {mayEditProjectReview ? (
         <Card>

@@ -1,10 +1,10 @@
 import { z } from "zod";
 import { canEditProjectCoreFields } from "@/lib/domain/permissions";
-import { projectIdSchema, roleSchema, updateProjectCoreSchema } from "@/lib/domain/schemas";
+import { projectIdSchema, roleSchema, updateProjectMetadataSchema } from "@/lib/domain/schemas";
 import type { ActionResult } from "./project-create-service";
 
 export type UpdatedProject = { id: string; customer_id: string };
-export type ProjectCoreUpdate = z.infer<typeof updateProjectCoreSchema>;
+export type ProjectCoreUpdate = z.infer<typeof updateProjectMetadataSchema>;
 type AuthUser = { id: string };
 type ProfileRow = { role: string | null };
 type QueryResult<T> = Promise<{ data: T | null; error: unknown }>;
@@ -34,7 +34,6 @@ export function formDataToUpdateProjectCoreInput(formData: FormData): { projectI
       installation_address: formData.get("installation_address"),
       postal_code: formData.get("postal_code"),
       city: formData.get("city"),
-      summary: formData.get("summary"),
     },
   };
 }
@@ -63,7 +62,7 @@ export async function updateProjectCoreWithDataSource(
   const parsedId = projectIdSchema.safeParse(projectId);
   if (!parsedId.success) return { success: false, error: "Die Projekt-ID ist ungültig." };
 
-  const parsedInput = updateProjectCoreSchema.safeParse(input);
+  const parsedInput = updateProjectMetadataSchema.safeParse(input);
   if (!parsedInput.success) {
     return { success: false, error: "Bitte prüfen Sie die markierten Felder.", fieldErrors: fieldErrorsFromZod(parsedInput.error) };
   }
@@ -73,7 +72,6 @@ export async function updateProjectCoreWithDataSource(
     installation_address: parsedInput.data.installation_address,
     postal_code: parsedInput.data.postal_code,
     city: parsedInput.data.city,
-    summary: parsedInput.data.summary,
   };
 
   const { data: project, error } = await dataSource
