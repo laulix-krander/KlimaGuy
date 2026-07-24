@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, Badge } from "@/components/ui";
 import { humanReviewDisplay, optionalFieldDisplay, projectClassDisplay, projectSummaryDisplay } from "@/lib/domain/display";
-import { canChangeProjectClass, canChangeProjectStatus, canCreateProjectNote, canEditAnyProjectNote, canEditOwnProjectNote, canEditProjectCoreFields, canSoftDeleteAnyProjectNote, canSoftDeleteOwnProjectNote } from "@/lib/domain/permissions";
+import { canChangeProjectClass, canChangeProjectStatus, canCreateProjectNote, canEditAnyProjectNote, canEditOwnProjectNote, canEditProjectCoreFields, canEditProjectSummary, canSoftDeleteAnyProjectNote, canSoftDeleteOwnProjectNote } from "@/lib/domain/permissions";
 import { projectIdSchema, roleSchema } from "@/lib/domain/schemas";
 import { statusToLabel } from "@/lib/domain/mappers";
 import type { ProjectClass, ProjectStatus } from "@/lib/domain/types";
@@ -12,6 +12,7 @@ import { ProjectNoteForm } from "./project-note-form";
 import { ProjectNoteItem } from "./project-note-item";
 import { ProjectClassForm } from "./project-class-form";
 import { ProjectStatusForm } from "./project-status-form";
+import { ProjectSummaryForm } from "./project-summary-form";
 
 
 function formatDate(value: string): string {
@@ -33,9 +34,9 @@ function authorDisplay(profile: NoteAuthorProfile | undefined): string {
   return "Interner Benutzer";
 }
 
-export default async function ProjectDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string; updated?: string; status_updated?: string; class_updated?: string; note_created?: string; note_updated?: string; note_deleted?: string }> }) {
+export default async function ProjectDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string; updated?: string; status_updated?: string; class_updated?: string; summary_updated?: string; note_created?: string; note_updated?: string; note_deleted?: string }> }) {
   const { id } = await params;
-  const { created, updated, status_updated, class_updated, note_created, note_updated, note_deleted } = await searchParams;
+  const { created, updated, status_updated, class_updated, summary_updated, note_created, note_updated, note_deleted } = await searchParams;
   const parsedId = projectIdSchema.safeParse(id);
 
   if (!parsedId.success) {
@@ -61,6 +62,7 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
   const mayEditProject = parsedRole.success && canEditProjectCoreFields(parsedRole.data);
   const mayEditProjectStatus = parsedRole.success && canChangeProjectStatus(parsedRole.data);
   const mayEditProjectClass = parsedRole.success && canChangeProjectClass(parsedRole.data);
+  const mayEditProjectSummary = parsedRole.success && canEditProjectSummary(parsedRole.data);
   const mayCreateProjectNote = parsedRole.success && canCreateProjectNote(parsedRole.data);
 
   const { data: notesData } = await supabase
@@ -96,6 +98,11 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
       {class_updated === "1" ? (
         <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
           Projektklasse wurde aktualisiert.
+        </div>
+      ) : null}
+      {summary_updated === "1" ? (
+        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
+          Projektzusammenfassung wurde aktualisiert.
         </div>
       ) : null}
       {note_created === "1" ? (
@@ -138,7 +145,7 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
           <div><dt className="font-medium">Ort</dt><dd>{optionalFieldDisplay(project.city)}</dd></div>
           <div><dt className="font-medium">Erstellt</dt><dd>{formatDate(project.created_at)}</dd></div>
           <div><dt className="font-medium">Zuletzt geändert</dt><dd>{formatDate(project.updated_at)}</dd></div>
-          <div className="md:col-span-2"><dt className="font-medium">Interne Zusammenfassung</dt><dd>{projectSummaryDisplay(project.summary)}</dd></div>
+          <div className="md:col-span-2"><dt className="font-medium">Interne Zusammenfassung</dt><dd>{projectSummaryDisplay(project.summary)}{mayEditProjectSummary ? <ProjectSummaryForm projectId={project.id} summary={project.summary} /> : null}</dd></div>
         </dl>
         {mayEditProject ? (
           <div className="border-t pt-5">
