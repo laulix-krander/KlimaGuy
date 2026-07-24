@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, Badge } from "@/components/ui";
 import { humanReviewDisplay, optionalFieldDisplay, projectClassDisplay, projectSummaryDisplay } from "@/lib/domain/display";
-import { canChangeHumanReview, canChangeProjectClass, canChangeProjectStatus, canCreateProjectNote, canEditAnyProjectNote, canEditOwnProjectNote, canEditProjectCoreFields, canSoftDeleteAnyProjectNote, canSoftDeleteOwnProjectNote } from "@/lib/domain/permissions";
+import { canChangeProjectStatus, canCreateProjectNote, canEditAnyProjectNote, canEditOwnProjectNote, canEditProjectCoreFields, canSoftDeleteAnyProjectNote, canSoftDeleteOwnProjectNote } from "@/lib/domain/permissions";
 import { projectIdSchema, roleSchema } from "@/lib/domain/schemas";
 import { statusToLabel } from "@/lib/domain/mappers";
 import type { ProjectClass, ProjectStatus } from "@/lib/domain/types";
@@ -10,7 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 import { ProjectMetadataForm } from "./project-metadata-form";
 import { ProjectNoteForm } from "./project-note-form";
 import { ProjectNoteItem } from "./project-note-item";
-import { ProjectReviewForm } from "./project-review-form";
+import { ProjectStatusForm } from "./project-status-form";
 
 
 function formatDate(value: string): string {
@@ -32,9 +32,9 @@ function authorDisplay(profile: NoteAuthorProfile | undefined): string {
   return "Interner Benutzer";
 }
 
-export default async function ProjectDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string; updated?: string; review_updated?: string; note_created?: string; note_updated?: string; note_deleted?: string }> }) {
+export default async function ProjectDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string; updated?: string; status_updated?: string; note_created?: string; note_updated?: string; note_deleted?: string }> }) {
   const { id } = await params;
-  const { created, updated, review_updated, note_created, note_updated, note_deleted } = await searchParams;
+  const { created, updated, status_updated, note_created, note_updated, note_deleted } = await searchParams;
   const parsedId = projectIdSchema.safeParse(id);
 
   if (!parsedId.success) {
@@ -58,7 +58,7 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
   const { data: profile } = authData.user ? await supabase.from("profiles").select("role").eq("id", authData.user.id).single() : { data: null };
   const parsedRole = roleSchema.safeParse(profile?.role);
   const mayEditProject = parsedRole.success && canEditProjectCoreFields(parsedRole.data);
-  const mayEditProjectReview = parsedRole.success && canChangeProjectStatus(parsedRole.data) && canChangeProjectClass(parsedRole.data) && canChangeHumanReview(parsedRole.data);
+  const mayEditProjectStatus = parsedRole.success && canChangeProjectStatus(parsedRole.data);
   const mayCreateProjectNote = parsedRole.success && canCreateProjectNote(parsedRole.data);
 
   const { data: notesData } = await supabase
@@ -86,9 +86,9 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
           Projektdaten wurden aktualisiert.
         </div>
       ) : null}
-      {review_updated === "1" ? (
+      {status_updated === "1" ? (
         <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
-          Projektprüfung wurde aktualisiert.
+          Projektstatus wurde aktualisiert.
         </div>
       ) : null}
       {note_created === "1" ? (
@@ -123,7 +123,7 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
               )}
             </dd>
           </div>
-          <div><dt className="font-medium">Status</dt><dd><Badge tone={project.requires_human_review ? "warn" : "default"}>{statusToLabel(project.status as ProjectStatus)}</Badge></dd></div>
+          <div><dt className="font-medium">Status</dt><dd><Badge tone={project.requires_human_review ? "warn" : "default"}>{statusToLabel(project.status as ProjectStatus)}</Badge>{mayEditProjectStatus ? <ProjectStatusForm projectId={project.id} status={project.status as ProjectStatus} /> : null}</dd></div>
           <div><dt className="font-medium">Projektklasse</dt><dd>{projectClassDisplay(project.project_class as ProjectClass | null)}</dd></div>
           <div><dt className="font-medium">Human Review</dt><dd>{humanReviewDisplay(project.requires_human_review)}</dd></div>
           <div><dt className="font-medium">Installationsadresse</dt><dd>{optionalFieldDisplay(project.installation_address)}</dd></div>
@@ -139,15 +139,6 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
           </div>
         ) : null}
       </Card>
-      {mayEditProjectReview ? (
-        <Card>
-          <div className="mb-4">
-            <h2 className="text-xl font-semibold">Projektprüfung</h2>
-            <p className="text-sm text-slate-600">Bearbeiten Sie ausschließlich Status, Projektklasse und die Kennzeichnung für menschliche Prüfung.</p>
-          </div>
-          <ProjectReviewForm projectId={project.id} status={project.status as ProjectStatus} projectClass={project.project_class as ProjectClass | null} requiresHumanReview={project.requires_human_review} />
-        </Card>
-      ) : null}
       <Card>
         <div className="mb-4">
           <h2 className="text-xl font-semibold">Interne Notizen</h2>
