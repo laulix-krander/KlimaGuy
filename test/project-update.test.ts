@@ -9,7 +9,7 @@ import {
   formDataToUpdateProjectCoreInput,
   updateProjectCoreWithDataSource,
 } from "@/lib/actions/project-update-service";
-import { getProjectCoreRevalidationPaths } from "@/lib/actions/project-revalidation";
+import { getProjectAndCustomerRevalidationPaths } from "@/lib/actions/project-revalidation";
 
 const validProjectId = "11111111-1111-4111-8111-111111111111";
 const customerId = "22222222-2222-4222-8222-222222222222";
@@ -95,7 +95,7 @@ describe("project update service", () => {
   });
 
   it("declares the detail, list, and customer paths for revalidation", () => {
-    expect(getProjectCoreRevalidationPaths({ id: validProjectId, customer_id: customerId })).toEqual([
+    expect(getProjectAndCustomerRevalidationPaths({ id: validProjectId, customer_id: customerId })).toEqual([
       "/projects",
       `/projects/${validProjectId}`,
       `/customers/${customerId}`,

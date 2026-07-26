@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { canChangeHumanReview } from "@/lib/domain/permissions";
 import { updateProjectHumanReviewSchema } from "@/lib/domain/schemas";
-import { getProjectCoreRevalidationPaths } from "@/lib/actions/project-revalidation";
+import { getProjectOverviewRevalidationPaths } from "@/lib/actions/project-revalidation";
 import {
   type ActiveProjectHumanReviewQuery,
   type ProjectHumanReviewProfilesQuery,
@@ -83,7 +83,7 @@ describe("project human review update service", () => {
     const currentTrue = source({ current: { id: validProjectId, customer_id: customerId, requires_human_review: true } });
     await updateProjectHumanReviewWithDataSource(currentTrue.dataSource, validProjectId, { requires_human_review: false });
     expect(currentTrue.calls.eq).toContainEqual(["requires_human_review", true]);
-    expect(getProjectCoreRevalidationPaths({ id: validProjectId, customer_id: customerId })).toEqual(["/projects", `/projects/${validProjectId}`, `/customers/${customerId}`]);
+    expect(getProjectOverviewRevalidationPaths({ id: validProjectId, customer_id: customerId })).toEqual(["/projects", `/projects/${validProjectId}`]);
   });
 
   it("maps FormData explicitly to booleans and distinguishes missing fields", () => {

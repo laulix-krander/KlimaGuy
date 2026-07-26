@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { canEditProjectSummary } from "@/lib/domain/permissions";
 import { updateProjectSummarySchema } from "@/lib/domain/schemas";
-import { getProjectCoreRevalidationPaths } from "@/lib/actions/project-revalidation";
+import { getProjectDetailRevalidationPaths } from "@/lib/actions/project-revalidation";
 import {
   type ActiveProjectSummaryQuery,
   type ProjectSummaryProfilesQuery,
@@ -76,6 +76,6 @@ describe("project summary update service", () => {
     formData.set("status", "accepted");
     formData.set("project_class", "A");
     expect(formDataToUpdateProjectSummaryInput(formData)).toEqual({ projectId: validProjectId, values: { summary: "Text" } });
-    expect(getProjectCoreRevalidationPaths({ id: validProjectId, customer_id: customerId })).toEqual(["/projects", `/projects/${validProjectId}`, `/customers/${customerId}`]);
+    expect(getProjectDetailRevalidationPaths({ id: validProjectId, customer_id: customerId })).toEqual([`/projects/${validProjectId}`]);
   });
 });

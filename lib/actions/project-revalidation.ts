@@ -1,5 +1,24 @@
-import type { UpdatedProject } from "./project-update-service";
+type ProjectRevalidationTarget = {
+  id: string;
+  customer_id: string;
+};
 
-export function getProjectCoreRevalidationPaths(project: UpdatedProject): string[] {
-  return ["/projects", `/projects/${project.id}`, `/customers/${project.customer_id}`];
+function uniquePaths(paths: string[]): string[] {
+  return [...new Set(paths)];
+}
+
+export function getProjectDetailRevalidationPaths(project: ProjectRevalidationTarget): string[] {
+  return [`/projects/${project.id}`];
+}
+
+export function getProjectOverviewRevalidationPaths(project: ProjectRevalidationTarget): string[] {
+  return uniquePaths(["/projects", ...getProjectDetailRevalidationPaths(project)]);
+}
+
+export function getProjectAndCustomerRevalidationPaths(project: ProjectRevalidationTarget): string[] {
+  return uniquePaths([
+    ...getProjectOverviewRevalidationPaths(project),
+    ...getProjectDetailRevalidationPaths(project),
+    `/customers/${project.customer_id}`,
+  ]);
 }

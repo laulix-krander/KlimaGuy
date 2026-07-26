@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { canChangeProjectClass } from "@/lib/domain/permissions";
 import { updateProjectClassSchema } from "@/lib/domain/schemas";
 import type { ProjectClass } from "@/lib/domain/types";
-import { getProjectCoreRevalidationPaths } from "@/lib/actions/project-revalidation";
+import { getProjectOverviewRevalidationPaths } from "@/lib/actions/project-revalidation";
 import {
   type ActiveProjectClassQuery,
   type ProjectClassProfilesQuery,
@@ -77,6 +77,6 @@ describe("project class update service", () => {
     formData.set("status", "accepted");
     formData.set("summary", "Nicht erlaubt");
     expect(formDataToUpdateProjectClassInput(formData)).toEqual({ projectId: validProjectId, values: { project_class: "C" } });
-    expect(getProjectCoreRevalidationPaths({ id: validProjectId, customer_id: customerId })).toEqual(["/projects", `/projects/${validProjectId}`, `/customers/${customerId}`]);
+    expect(getProjectOverviewRevalidationPaths({ id: validProjectId, customer_id: customerId })).toEqual(["/projects", `/projects/${validProjectId}`]);
   });
 });
