@@ -6,6 +6,7 @@ import { updateProjectCoreAction } from "@/lib/actions/projects";
 import type { ActionResult } from "@/lib/actions/project-create-service";
 import type { UpdatedProject } from "@/lib/actions/project-update-service";
 import { optionalFormValue } from "@/lib/domain/display";
+import { firstProjectFieldError, ProjectFieldError, ProjectFormError } from "./project-form-errors";
 
 type ProjectMetadataFormProps = {
   project: {
@@ -18,10 +19,6 @@ type ProjectMetadataFormProps = {
 };
 
 const initialState: ActionResult<UpdatedProject> = { success: false, error: "" };
-
-function firstFieldError(state: ActionResult<UpdatedProject>, field: string): string | undefined {
-  return state.success ? undefined : state.fieldErrors?.[field]?.[0];
-}
 
 export function ProjectMetadataForm({ project }: ProjectMetadataFormProps) {
   const [isEditing, setIsEditing] = useState(false);
@@ -38,31 +35,31 @@ export function ProjectMetadataForm({ project }: ProjectMetadataFormProps) {
   return (
     <form action={formAction} aria-busy={isPending} className="space-y-4" noValidate>
       <input type="hidden" name="project_id" value={project.id} />
-      {!state.success && state.error ? <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">{state.error}</div> : null}
+      <ProjectFormError error={state.success ? undefined : state.error} />
 
       <div className="space-y-1">
         <label className="block font-medium" htmlFor="title">Projektbezeichnung</label>
-        <input id="title" name="title" required defaultValue={project.title} className="w-full rounded border p-2" aria-describedby="title-error" disabled={isPending} />
-        <p id="title-error" className="text-sm text-red-700">{firstFieldError(state, "title")}</p>
+        <input id="title" name="title" required defaultValue={project.title} className="w-full rounded border p-2" aria-describedby={firstProjectFieldError(state, "title") ? "title-error" : undefined} aria-invalid={firstProjectFieldError(state, "title") ? true : undefined} disabled={isPending} />
+        <ProjectFieldError id="title-error" error={firstProjectFieldError(state, "title")} />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-1">
           <label className="block font-medium" htmlFor="installation_address">Installationsadresse</label>
-          <input id="installation_address" name="installation_address" defaultValue={optionalFormValue(project.installation_address)} className="w-full rounded border p-2" aria-describedby="installation_address-error" disabled={isPending} />
-          <p id="installation_address-error" className="text-sm text-red-700">{firstFieldError(state, "installation_address")}</p>
+          <input id="installation_address" name="installation_address" defaultValue={optionalFormValue(project.installation_address)} className="w-full rounded border p-2" aria-describedby={firstProjectFieldError(state, "installation_address") ? "installation_address-error" : undefined} aria-invalid={firstProjectFieldError(state, "installation_address") ? true : undefined} disabled={isPending} />
+          <ProjectFieldError id="installation_address-error" error={firstProjectFieldError(state, "installation_address")} />
         </div>
         <div className="space-y-1">
           <label className="block font-medium" htmlFor="postal_code">Postleitzahl</label>
-          <input id="postal_code" name="postal_code" autoComplete="postal-code" defaultValue={optionalFormValue(project.postal_code)} className="w-full rounded border p-2" aria-describedby="postal_code-error" disabled={isPending} />
-          <p id="postal_code-error" className="text-sm text-red-700">{firstFieldError(state, "postal_code")}</p>
+          <input id="postal_code" name="postal_code" autoComplete="postal-code" defaultValue={optionalFormValue(project.postal_code)} className="w-full rounded border p-2" aria-describedby={firstProjectFieldError(state, "postal_code") ? "postal_code-error" : undefined} aria-invalid={firstProjectFieldError(state, "postal_code") ? true : undefined} disabled={isPending} />
+          <ProjectFieldError id="postal_code-error" error={firstProjectFieldError(state, "postal_code")} />
         </div>
       </div>
 
       <div className="space-y-1">
         <label className="block font-medium" htmlFor="city">Ort</label>
-        <input id="city" name="city" autoComplete="address-level2" defaultValue={optionalFormValue(project.city)} className="w-full rounded border p-2" aria-describedby="city-error" disabled={isPending} />
-        <p id="city-error" className="text-sm text-red-700">{firstFieldError(state, "city")}</p>
+        <input id="city" name="city" autoComplete="address-level2" defaultValue={optionalFormValue(project.city)} className="w-full rounded border p-2" aria-describedby={firstProjectFieldError(state, "city") ? "city-error" : undefined} aria-invalid={firstProjectFieldError(state, "city") ? true : undefined} disabled={isPending} />
+        <ProjectFieldError id="city-error" error={firstProjectFieldError(state, "city")} />
       </div>
 
       <div className="flex gap-3">
