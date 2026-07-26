@@ -40,6 +40,8 @@ function expectPendingForm(container: HTMLElement): void {
   expect(form?.getAttribute("aria-busy")).toBe("true");
   expect(submit.disabled).toBe(true);
   expect(submit.getAttribute("aria-disabled")).toBe("true");
+  expect(submit.textContent).toBe("Wird gespeichert …");
+  expect(container.querySelectorAll('button[type="submit"]')).toHaveLength(1);
 }
 
 beforeEach(() => {
