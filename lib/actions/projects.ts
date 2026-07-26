@@ -23,7 +23,11 @@ import {
   formDataToUpdateProjectCoreInput,
   updateProjectCoreWithDataSource,
 } from "./project-update-service";
-import { getProjectCoreRevalidationPaths } from "./project-revalidation";
+import {
+  getProjectAndCustomerRevalidationPaths,
+  getProjectDetailRevalidationPaths,
+  getProjectOverviewRevalidationPaths,
+} from "./project-revalidation";
 import {
   type ActiveProjectReviewQuery,
   type ProjectReviewProfilesQuery,
@@ -270,7 +274,7 @@ export async function updateProjectCoreAction(
     return result;
   }
 
-  for (const path of getProjectCoreRevalidationPaths(result.data)) {
+  for (const path of getProjectAndCustomerRevalidationPaths(result.data)) {
     revalidatePath(path);
   }
   redirect(`/projects/${result.data.id}?updated=1`);
@@ -374,7 +378,7 @@ export async function updateProjectReviewAction(
     return result;
   }
 
-  for (const path of getProjectCoreRevalidationPaths(result.data)) {
+  for (const path of getProjectAndCustomerRevalidationPaths(result.data)) {
     revalidatePath(path);
   }
   redirect(`/projects/${result.data.id}?review_updated=1`);
@@ -478,7 +482,7 @@ export async function updateProjectStatusAction(
     return result;
   }
 
-  for (const path of getProjectCoreRevalidationPaths(result.data)) {
+  for (const path of getProjectAndCustomerRevalidationPaths(result.data)) {
     revalidatePath(path);
   }
   redirect(`/projects/${result.data.id}?status_updated=1`);
@@ -583,7 +587,7 @@ export async function updateProjectClassAction(
     return result;
   }
 
-  for (const path of getProjectCoreRevalidationPaths(result.data)) {
+  for (const path of getProjectOverviewRevalidationPaths(result.data)) {
     revalidatePath(path);
   }
   redirect(`/projects/${result.data.id}?class_updated=1`);
@@ -688,7 +692,7 @@ export async function updateProjectSummaryAction(
     return result;
   }
 
-  for (const path of getProjectCoreRevalidationPaths(result.data)) {
+  for (const path of getProjectDetailRevalidationPaths(result.data)) {
     revalidatePath(path);
   }
   redirect(`/projects/${result.data.id}?summary_updated=1`);
@@ -792,7 +796,7 @@ export async function updateProjectHumanReviewAction(
     return result;
   }
 
-  for (const path of getProjectCoreRevalidationPaths(result.data)) {
+  for (const path of getProjectOverviewRevalidationPaths(result.data)) {
     revalidatePath(path);
   }
   redirect(`/projects/${result.data.id}?human_review_updated=1`);

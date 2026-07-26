@@ -3,7 +3,7 @@ import { canChangeProjectStatus } from "@/lib/domain/permissions";
 import { getAllowedProjectStatusTransitions, isProjectStatusTransitionAllowed } from "@/lib/domain/project-status";
 import { updateProjectStatusSchema } from "@/lib/domain/schemas";
 import type { ProjectStatus } from "@/lib/domain/types";
-import { getProjectCoreRevalidationPaths } from "@/lib/actions/project-revalidation";
+import { getProjectAndCustomerRevalidationPaths } from "@/lib/actions/project-revalidation";
 import {
   type ActiveProjectStatusQuery,
   type ProjectStatusProfilesQuery,
@@ -84,6 +84,6 @@ describe("project status update service", () => {
     formData.set("status", "new");
     formData.set("title", "Nicht erlaubt");
     expect(formDataToUpdateProjectStatusInput(formData)).toEqual({ projectId: validProjectId, values: { status: "new" } });
-    expect(getProjectCoreRevalidationPaths({ id: validProjectId, customer_id: customerId })).toEqual(["/projects", `/projects/${validProjectId}`, `/customers/${customerId}`]);
+    expect(getProjectAndCustomerRevalidationPaths({ id: validProjectId, customer_id: customerId })).toEqual(["/projects", `/projects/${validProjectId}`, `/customers/${customerId}`]);
   });
 });
