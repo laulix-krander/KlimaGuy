@@ -14,6 +14,7 @@ import { ProjectClassForm } from "./project-class-form";
 import { ProjectStatusForm } from "./project-status-form";
 import { ProjectSummaryForm } from "./project-summary-form";
 import { ProjectHumanReviewForm } from "./project-human-review-form";
+import { ProjectSuccessMessage, type ProjectSuccessSearchParams } from "./project-success-message";
 
 
 function formatDate(value: string): string {
@@ -35,9 +36,9 @@ function authorDisplay(profile: NoteAuthorProfile | undefined): string {
   return "Interner Benutzer";
 }
 
-export default async function ProjectDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string; updated?: string; status_updated?: string; class_updated?: string; summary_updated?: string; human_review_updated?: string; note_created?: string; note_updated?: string; note_deleted?: string }> }) {
+export default async function ProjectDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<ProjectSuccessSearchParams> }) {
   const { id } = await params;
-  const { created, updated, status_updated, class_updated, summary_updated, human_review_updated, note_created, note_updated, note_deleted } = await searchParams;
+  const successSearchParams = await searchParams;
   const parsedId = projectIdSchema.safeParse(id);
 
   if (!parsedId.success) {
@@ -82,51 +83,7 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
 
   return (
     <div className="space-y-6">
-      {created === "1" ? (
-        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
-          Projekt wurde angelegt.
-        </div>
-      ) : null}
-      {updated === "1" ? (
-        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
-          Projektdaten wurden aktualisiert.
-        </div>
-      ) : null}
-      {status_updated === "1" ? (
-        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
-          Projektstatus wurde aktualisiert.
-        </div>
-      ) : null}
-      {class_updated === "1" ? (
-        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
-          Projektklasse wurde aktualisiert.
-        </div>
-      ) : null}
-      {summary_updated === "1" ? (
-        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
-          Projektzusammenfassung wurde aktualisiert.
-        </div>
-      ) : null}
-      {human_review_updated === "1" ? (
-        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
-          Human Review wurde aktualisiert.
-        </div>
-      ) : null}
-      {note_created === "1" ? (
-        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
-          Notiz wurde hinzugefügt.
-        </div>
-      ) : null}
-      {note_updated === "1" ? (
-        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
-          Notiz wurde aktualisiert.
-        </div>
-      ) : null}
-      {note_deleted === "1" ? (
-        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
-          Notiz wurde gelöscht.
-        </div>
-      ) : null}
+      <ProjectSuccessMessage searchParams={successSearchParams} />
       <div className="flex items-start justify-between gap-4">
         <h1 className="text-3xl font-bold">{project.title}</h1>
       </div>
