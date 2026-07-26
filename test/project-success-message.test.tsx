@@ -19,6 +19,21 @@ describe("project success messages", () => {
     expect(getProjectSuccessMessage({ [parameter]: "1" })).toBe(message);
   });
 
+  it.each<[keyof ProjectSuccessSearchParams, string]>([
+    ["updated", "Projektdaten wurden aktualisiert."],
+    ["status_updated", "Projektstatus wurde aktualisiert."],
+    ["class_updated", "Projektklasse wurde aktualisiert."],
+    ["summary_updated", "Projektzusammenfassung wurde aktualisiert."],
+    ["human_review_updated", "Human Review wurde aktualisiert."],
+    ["review_updated", "Projektprüfung wurde aktualisiert."],
+  ])("renders exactly one status for the %s project workflow", (parameter, message) => {
+    render(<ProjectSuccessMessage searchParams={{ [parameter]: "1" }} />);
+
+    const statuses = screen.getAllByRole("status");
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]?.textContent).toBe(message);
+  });
+
   it("renders review_updated with the shared success component", () => {
     render(<ProjectSuccessMessage searchParams={{ review_updated: "1" }} />);
 

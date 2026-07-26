@@ -34,6 +34,20 @@ import { projectClassToDescription, projectClassToLabel, roleToLabel, statusToLa
 import { humanReviewDisplay, projectClassDisplay, projectSummaryDisplay } from "@/lib/domain/display";
 
 describe("Projektstatus", () => {
+  it("hält die Status-Allowlist geschlossen", () => {
+    expect(PROJECT_STATUSES).toEqual([
+      "new",
+      "collecting_information",
+      "technical_review",
+      "quote_draft",
+      "human_review",
+      "quote_sent",
+      "accepted",
+      "rejected",
+      "closed",
+    ]);
+  });
+
   it("validiert alle neun Statuswerte und weist unbekannte oder leere Werte ab", () => {
     expect(PROJECT_STATUSES).toHaveLength(9);
     for (const status of PROJECT_STATUSES) expect(projectStatusSchema.parse(status)).toBe(status);
@@ -94,6 +108,10 @@ describe("Projektstatus-Übergänge", () => {
 });
 
 describe("Projektklassen", () => {
+  it("hält die Projektklassen-Allowlist geschlossen", () => {
+    expect(PROJECT_CLASSES).toEqual(["A", "B", "C", "D"]);
+  });
+
   it("validiert A bis D, null im Nullable-Schema und weist E oder leere Strings ab", () => {
     for (const projectClass of PROJECT_CLASSES) expect(projectClassSchema.parse(projectClass)).toBe(projectClass);
     expect(nullableProjectClassSchema.parse(null)).toBeNull();
