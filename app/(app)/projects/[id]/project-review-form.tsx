@@ -20,7 +20,7 @@ export function ProjectReviewForm({ projectId, status, projectClass, requiresHum
   const statusOptions = [status, ...getAllowedProjectStatusTransitions(status)];
 
   return (
-    <form action={formAction} className="space-y-4">
+    <form action={formAction} aria-busy={pending} className="space-y-4">
       <input type="hidden" name="project_id" value={projectId} />
       {state.success === false && state.error ? (
         <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
@@ -29,7 +29,7 @@ export function ProjectReviewForm({ projectId, status, projectClass, requiresHum
       ) : null}
       <div>
         <label className="block text-sm font-medium" htmlFor="status">Projektstatus</label>
-        <select id="status" name="status" defaultValue={status} className="mt-1 w-full rounded border px-3 py-2">
+        <select id="status" name="status" defaultValue={status} className="mt-1 w-full rounded border px-3 py-2" disabled={pending}>
           {statusOptions.map((option) => (
             <option key={option} value={option}>{PROJECT_STATUS_LABELS[option]}</option>
           ))}
@@ -40,7 +40,7 @@ export function ProjectReviewForm({ projectId, status, projectClass, requiresHum
         <div className="grid gap-2 md:grid-cols-2">
           {PROJECT_CLASSES.map((value) => (
             <label key={value} className="rounded border p-3 text-sm">
-              <input className="mr-2" type="radio" name="project_class" value={value} defaultChecked={projectClass === value} required />
+              <input className="mr-2" type="radio" name="project_class" value={value} defaultChecked={projectClass === value} disabled={pending} required />
               <span className="font-medium">{value} – {PROJECT_CLASS_LABELS[value]}</span>
               <span className="mt-1 block text-slate-600">{PROJECT_CLASS_DESCRIPTIONS[value]}</span>
             </label>
@@ -48,10 +48,10 @@ export function ProjectReviewForm({ projectId, status, projectClass, requiresHum
         </div>
       </fieldset>
       <label className="flex items-center gap-2 text-sm font-medium">
-        <input type="checkbox" name="requires_human_review" defaultChecked={requiresHumanReview} />
+        <input type="checkbox" name="requires_human_review" defaultChecked={requiresHumanReview} disabled={pending} />
         Menschliche Prüfung erforderlich
       </label>
-      <button className="rounded-lg bg-teal-700 px-4 py-2 font-medium text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60" disabled={pending} type="submit">
+      <button aria-disabled={pending} className="rounded-lg bg-teal-700 px-4 py-2 font-medium text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60" disabled={pending} type="submit">
         {pending ? "Wird gespeichert …" : "Prüfung speichern"}
       </button>
     </form>
