@@ -26,6 +26,32 @@ export const customerSchema = createCustomerSchema;
 export const projectIdSchema = z.string().uuid("Die Projekt-ID ist ungültig.");
 export const projectNoteIdSchema = z.string().uuid("Die Notiz-ID ist ungültig.");
 
+export const PROJECT_MEDIA_MIME_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"] as const;
+export const PROJECT_MEDIA_CATEGORIES = [
+  "indoor_area", "outdoor_area", "indoor_unit_location", "outdoor_unit_location",
+  "pipe_route", "electrical_connection", "condensate_route", "facade", "roof",
+  "balcony", "floor_plan", "technical_document", "customer_document", "other",
+] as const;
+
+const uploadFilenameSchema = z.string().trim()
+  .min(1, "Der Dateiname ist erforderlich.")
+  .max(255, "Der Dateiname darf höchstens 255 Zeichen lang sein.")
+  .refine((value) => value !== "." && value !== "..", "Der Dateiname ist ungültig.")
+  .refine((value) => !/[\\/\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(value), "Der Dateiname ist ungültig.")
+  .transform((value) => value.normalize("NFC"));
+
+export const uploadReservationSchema = z.object({
+  project_id: projectIdSchema,
+  original_filename: uploadFilenameSchema,
+  mime_type: z.enum(PROJECT_MEDIA_MIME_TYPES),
+  file_size_bytes: z.number().int().positive("Die Datei darf nicht leer sein."),
+  category: z.enum(PROJECT_MEDIA_CATEGORIES),
+  source: z.literal("manual_upload"),
+}).strip().superRefine((value, context) => {
+  const max = value.mime_type === "application/pdf" ? 25_000_000 : 15_000_000;
+  if (value.file_size_bytes > max) context.addIssue({ code: z.ZodIssueCode.too_big, maximum: max, type: "number", inclusive: true, path: ["file_size_bytes"], message: `Die Datei darf höchstens ${max} Bytes groß sein.` });
+});
+
 const projectCoreFields = {
   title: z.string().trim().min(1, "Projektbezeichnung ist erforderlich").max(180),
   installation_address: optionalText,
@@ -102,3 +128,4 @@ export type ProjectHumanReviewUpdateInput = z.infer<typeof updateProjectHumanRev
 export type ProjectNoteInput = z.infer<typeof projectNoteSchema>;
 export type ProjectNoteUpdateInput = z.infer<typeof updateProjectNoteSchema>;
 export type ProjectNoteDeleteInput = z.infer<typeof deleteProjectNoteSchema>;
+export type UploadReservationInput = z.infer<typeof uploadReservationSchema>;

@@ -410,3 +410,11 @@ Statische Migrationstests allein sind dafür nicht ausreichend. Die Production-F
 - **nur Audit**.
 
 Dieses Dokument beschreibt spätere Bausteine ausschließlich als Anforderungen. Es erstellt keinen dieser Bausteine und erteilt keine Implementierungs- oder Productionfreigabe.
+
+## AP-12-02-00 Implementation Result
+
+AP-12-02-01 implementiert ausschließlich die serverseitige Upload-Reservierung: Eine dedizierte Server Action validiert über einen dedizierten Service Authentifizierung, Profil, Adminrolle, aktives Projekt und die eingefrorenen Datei-Metadaten. Der Service erzeugt UUIDs, den kanonischen privaten Pfad und eine explizit allowlistete `project_media`-INSERT-Payload im Status `pending`. Die Antwort enthält nur Reservierungsmetadaten; es gibt keine Revalidation und keinen Redirect.
+
+Gezielte Vitest-Tests decken Schema, Berechtigungen, Allowlists, exakte Bild-/PDF-Grenzen, Dateinamen, Pfad- und UUID-Generierung, Pending-Status und Mass Assignment ab. Der Reservierungspfad verwendet ausschließlich Auth-, Profil-, Projekt- und `project_media`-Datenbankoperationen: kein Storage API Call, kein Upload nach `storage.objects`, kein Bucket Write, keine Signed URL. Migrationen, RLS, Storage-Policies, UI, Download, KI, WhatsApp und `package.json` bleiben unverändert.
+
+Der Auditstatus **NICHT Production Ready** bleibt ausdrücklich unverändert. Insbesondere Magic-Byte-/Inhaltsprüfung, tatsächlicher Storage-Upload, Finalisierung, Cleanup, Reconciliation und die im Audit beschriebenen Production Gates bleiben nachfolgenden Arbeitspaketen vorbehalten.
