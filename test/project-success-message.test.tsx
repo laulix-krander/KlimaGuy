@@ -11,7 +11,6 @@ describe("project success messages", () => {
     ["class_updated", "Projektklasse wurde aktualisiert."],
     ["summary_updated", "Projektzusammenfassung wurde aktualisiert."],
     ["human_review_updated", "Human Review wurde aktualisiert."],
-    ["review_updated", "Projektprüfung wurde aktualisiert."],
     ["note_created", "Notiz wurde hinzugefügt."],
     ["note_updated", "Notiz wurde aktualisiert."],
     ["note_deleted", "Notiz wurde gelöscht."],
@@ -25,7 +24,6 @@ describe("project success messages", () => {
     ["class_updated", "Projektklasse wurde aktualisiert."],
     ["summary_updated", "Projektzusammenfassung wurde aktualisiert."],
     ["human_review_updated", "Human Review wurde aktualisiert."],
-    ["review_updated", "Projektprüfung wurde aktualisiert."],
   ])("renders exactly one status for the %s project workflow", (parameter, message) => {
     render(<ProjectSuccessMessage searchParams={{ [parameter]: "1" }} />);
 
@@ -34,10 +32,12 @@ describe("project success messages", () => {
     expect(statuses[0]?.textContent).toBe(message);
   });
 
-  it("renders review_updated with the shared success component", () => {
-    render(<ProjectSuccessMessage searchParams={{ review_updated: "1" }} />);
+  it("ignores the removed review_updated parameter", () => {
+    const searchParams = { review_updated: "1" } as ProjectSuccessSearchParams;
 
-    expect(screen.getByRole("status").textContent).toBe("Projektprüfung wurde aktualisiert.");
+    expect(getProjectSuccessMessage(searchParams)).toBeNull();
+    const { container } = render(<ProjectSuccessMessage searchParams={searchParams} />);
+    expect(container.childElementCount).toBe(0);
   });
 
   it("renders exactly one success message when multiple supported parameters are present", () => {

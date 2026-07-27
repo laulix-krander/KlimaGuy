@@ -196,3 +196,7 @@ Bis zu dieser fachlichen Klärung empfiehlt dieses Audit **weder Beibehalten noc
 ## 12. Audit-Bestätigung
 
 Dieses Dokument ist ausschließlich eine Analyse des bestehenden kombinierten Projektprüfungsworkflows. Es enthält keine Implementierung und trifft keine Produkt- oder Architekturentscheidung. Es wurden keine UI, Tests, Server Actions, Services, Schemas, Migrationen, SQL oder RLS geändert.
+
+## Decision and Implementation Result
+
+Die fachliche Entscheidung für Variante A wurde umgesetzt: Projektstatus, Projektklasse und Human Review bleiben unabhängige Projekteigenschaften und werden weiterhin ausschließlich über ihre spezialisierten Formulare, Server Actions und Services bearbeitet. Der alte Sammelworkflow einschließlich seiner exklusiven Action, seines Services und seines Schemas wurde entfernt; die spezialisierten Workflows bleiben erhalten. Da keine andere aktive Quelle bestand, wurde auch `review_updated` aus den unterstützten Erfolgsparametern entfernt. Production-Build, Tests, Typecheck und Lint wurden erfolgreich ausgeführt.

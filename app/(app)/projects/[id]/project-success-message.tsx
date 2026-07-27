@@ -7,7 +7,6 @@ export type ProjectSuccessSearchParams = {
   class_updated?: string;
   summary_updated?: string;
   human_review_updated?: string;
-  review_updated?: string;
   note_created?: string;
   note_updated?: string;
   note_deleted?: string;
@@ -22,7 +21,6 @@ const PROJECT_SUCCESS_MESSAGES = [
   ["class_updated", "Projektklasse wurde aktualisiert."],
   ["summary_updated", "Projektzusammenfassung wurde aktualisiert."],
   ["human_review_updated", "Human Review wurde aktualisiert."],
-  ["review_updated", "Projektprüfung wurde aktualisiert."],
   ["note_created", "Notiz wurde hinzugefügt."],
   ["note_updated", "Notiz wurde aktualisiert."],
   ["note_deleted", "Notiz wurde gelöscht."],

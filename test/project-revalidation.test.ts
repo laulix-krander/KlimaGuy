@@ -19,7 +19,6 @@ describe("project revalidation paths", () => {
     ["Projektklasse", getProjectOverviewRevalidationPaths, ["/projects", detailPath]],
     ["Projektzusammenfassung", getProjectDetailRevalidationPaths, [detailPath]],
     ["Human Review", getProjectOverviewRevalidationPaths, ["/projects", detailPath]],
-    ["Sammelworkflow", getProjectAndCustomerRevalidationPaths, ["/projects", detailPath, customerPath]],
   ])("declares only the visible dependencies for %s", (_workflow, getPaths, expected) => {
     expect(getPaths(project)).toEqual(expected);
   });
