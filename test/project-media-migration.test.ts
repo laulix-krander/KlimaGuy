@@ -4,6 +4,9 @@ import { describe, expect, it } from "vitest";
 const migrationPath = "supabase/migrations/202607270001_project_media_table_baseline.sql";
 const migration = readFileSync(migrationPath, "utf8");
 const normalized = migration.replace(/\s+/g, " ");
+const accessMigrationPath = "supabase/migrations/202607270002_project_media_rls_and_grants.sql";
+const accessMigration = readFileSync(accessMigrationPath, "utf8");
+const normalizedAccessMigration = accessMigration.replace(/\s+/g, " ");
 
 const expectedColumns = [
   "id", "project_id", "storage_bucket", "storage_path", "original_filename",
@@ -99,5 +102,69 @@ describe("AP-12-01-01 project_media migration", () => {
     expect(migration).not.toMatch(/\bgrant\b/i);
     expect(migration).not.toMatch(/storage\.(buckets|objects)/i);
     expect(migration).not.toMatch(/\b(drop|truncate|delete from)\b/i);
+  });
+});
+
+describe("AP-12-01-02 project_media RLS and grants migration", () => {
+  it("keeps RLS enabled without FORCE RLS", () => {
+    expect(normalizedAccessMigration).toContain("alter table public.project_media enable row level security");
+    expect(accessMigration).not.toMatch(/force row level security/i);
+  });
+
+  it("revokes broad access and grants authenticated only the required operations and columns", () => {
+    expect(normalizedAccessMigration).toContain("revoke all privileges on table public.project_media from public, anon, authenticated");
+    expect(normalizedAccessMigration).toContain("grant select, insert on table public.project_media to authenticated");
+    expect(normalizedAccessMigration).toContain("grant update (category, caption, upload_status) on table public.project_media to authenticated");
+    expect(accessMigration).not.toMatch(/^grant\b[^;]*\bto\s+(?:anon|public)\s*;/im);
+    expect(accessMigration).not.toMatch(/grant\s+all|grant[^;]*\b(delete|truncate|references|trigger)\b/i);
+  });
+
+  it("defines separate ready-only admin and reviewer SELECT policies", () => {
+    for (const [name, role] of [
+      ["project media select active admin", "admin"],
+      ["project media select active reviewer", "reviewer"],
+    ]) {
+      const policy = normalizedAccessMigration.match(new RegExp(`create policy "${name}"(.*?);`))?.[1] ?? "";
+      expect(policy).toContain("for select to authenticated using");
+      expect(policy).toContain("auth.uid() is not null");
+      expect(policy).toContain(`public.current_app_role() = '${role}'`);
+      expect(policy).toContain("project_media.deleted_at is null");
+      expect(policy).toContain("project_media.upload_status = 'ready'");
+      expect(policy).toContain("projects.id = project_media.project_id");
+      expect(policy).toContain("projects.deleted_at is null");
+    }
+  });
+
+  it("allows only active admins to insert pending manual-upload reservations for themselves", () => {
+    const policy = normalizedAccessMigration.match(/create policy "project media insert active admin"(.*?);/)?.[1] ?? "";
+    expect(policy).toContain("for insert to authenticated with check");
+    expect(policy).toContain("auth.uid() is not null");
+    expect(policy).toContain("public.current_app_role() = 'admin'");
+    expect(policy).toContain("project_media.uploaded_by = auth.uid()");
+    expect(policy).toContain("project_media.deleted_at is null");
+    expect(policy).toContain("project_media.storage_bucket = 'project-media'");
+    expect(policy).toContain("project_media.source = 'manual_upload'");
+    expect(policy).toContain("project_media.upload_status = 'pending'");
+    expect(policy).toContain("projects.deleted_at is null");
+  });
+
+  it("requires active admin, project and medium checks before and after UPDATE", () => {
+    const policy = normalizedAccessMigration.match(/create policy "project media update active admin"(.*?);/)?.[1] ?? "";
+    expect(policy).toContain("for update to authenticated using");
+    expect(policy).toContain("with check");
+    expect(policy.match(/auth\.uid\(\) is not null/g)).toHaveLength(2);
+    expect(policy.match(/public\.current_app_role\(\) = 'admin'/g)).toHaveLength(2);
+    expect(policy.match(/project_media\.deleted_at is null/g)).toHaveLength(2);
+    expect(policy.match(/projects\.deleted_at is null/g)).toHaveLength(2);
+    expect(policy).toContain("project_media.upload_status in ('pending', 'ready', 'failed')");
+  });
+
+  it("creates no reviewer mutations, DELETE path, open policy, Storage object, bucket or RPC", () => {
+    expect(accessMigration).not.toMatch(/create policy[^;]*reviewer[^;]*for (insert|update|delete)/i);
+    expect(accessMigration).not.toMatch(/create policy[^;]*for delete/i);
+    expect(accessMigration).not.toMatch(/using\s*\(\s*true\s*\)|with check\s*\(\s*true\s*\)/i);
+    expect(accessMigration).not.toMatch(/storage\.(objects|buckets)/i);
+    expect(accessMigration).not.toMatch(/create\s+(?:or\s+replace\s+)?function/i);
+    expect(accessMigration).not.toMatch(/security definer/i);
   });
 });
