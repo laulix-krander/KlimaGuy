@@ -1,4 +1,24 @@
+import { PROJECT_MEDIA_CATEGORIES } from "./schemas";
 import type { ProjectClass, ProjectStatus, Role } from "./types";
+
+export type ProjectMediaCategory = (typeof PROJECT_MEDIA_CATEGORIES)[number];
+
+export const PROJECT_MEDIA_CATEGORY_LABELS: Readonly<Record<ProjectMediaCategory, string>> = Object.freeze({
+  indoor_area: "Innenbereich",
+  outdoor_area: "Außenbereich",
+  indoor_unit_location: "Standort Innengerät",
+  outdoor_unit_location: "Standort Außengerät",
+  pipe_route: "Leitungsweg",
+  electrical_connection: "Elektroanschluss",
+  condensate_route: "Kondensatführung",
+  facade: "Fassade",
+  roof: "Dach",
+  balcony: "Balkon",
+  floor_plan: "Grundriss",
+  technical_document: "Technisches Dokument",
+  customer_document: "Kundendokument",
+  other: "Sonstiges",
+});
 
 export const PROJECT_STATUS_LABELS: Readonly<Record<ProjectStatus, string>> = Object.freeze({
   new: "Neu",
