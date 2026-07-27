@@ -8,6 +8,7 @@ import type { ActionResult } from "@/lib/actions/project-create-service";
 import type { UpdatedProject } from "@/lib/actions/project-update-service";
 import { optionalFormValue } from "@/lib/domain/display";
 import { firstProjectFieldError, ProjectFieldError, ProjectFormError } from "../project-form-errors";
+import { useProjectFormReset } from "../use-project-form-reset";
 
 type ProjectEditFormProps = {
   project: {
@@ -23,9 +24,10 @@ const initialState: ActionResult<UpdatedProject> = { success: false, error: "" }
 
 export function ProjectEditForm({ project }: ProjectEditFormProps) {
   const [state, formAction, isPending] = useActionState(updateProjectCoreAction, initialState);
+  const formRef = useProjectFormReset(state.success);
 
   return (
-    <form action={formAction} aria-busy={isPending} className="space-y-4" noValidate>
+    <form ref={formRef} action={formAction} aria-busy={isPending} className="space-y-4" noValidate>
       <input type="hidden" name="project_id" value={project.id} />
       <ProjectFormError error={state.success ? undefined : state.error} />
 

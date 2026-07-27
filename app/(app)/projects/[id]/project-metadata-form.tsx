@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useActionState } from "react";
+import { useCallback, useState, useActionState } from "react";
 import { Button } from "@/components/ui";
 import { updateProjectCoreAction } from "@/lib/actions/projects";
 import type { ActionResult } from "@/lib/actions/project-create-service";
 import type { UpdatedProject } from "@/lib/actions/project-update-service";
 import { optionalFormValue } from "@/lib/domain/display";
 import { firstProjectFieldError, ProjectFieldError, ProjectFormError } from "./project-form-errors";
+import { useProjectFormReset } from "./use-project-form-reset";
 
 type ProjectMetadataFormProps = {
   project: {
@@ -23,6 +24,8 @@ const initialState: ActionResult<UpdatedProject> = { success: false, error: "" }
 export function ProjectMetadataForm({ project }: ProjectMetadataFormProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [state, formAction, isPending] = useActionState(updateProjectCoreAction, initialState);
+  const finishEditing = useCallback(() => setIsEditing(false), []);
+  const formRef = useProjectFormReset(state.success, finishEditing);
 
   if (!isEditing) {
     return (
@@ -33,7 +36,7 @@ export function ProjectMetadataForm({ project }: ProjectMetadataFormProps) {
   }
 
   return (
-    <form action={formAction} aria-busy={isPending} className="space-y-4" noValidate>
+    <form ref={formRef} action={formAction} aria-busy={isPending} className="space-y-4" noValidate>
       <input type="hidden" name="project_id" value={project.id} />
       <ProjectFormError error={state.success ? undefined : state.error} />
 
