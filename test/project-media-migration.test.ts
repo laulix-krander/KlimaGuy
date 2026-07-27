@@ -7,6 +7,9 @@ const normalized = migration.replace(/\s+/g, " ");
 const accessMigrationPath = "supabase/migrations/202607270002_project_media_rls_and_grants.sql";
 const accessMigration = readFileSync(accessMigrationPath, "utf8");
 const normalizedAccessMigration = accessMigration.replace(/\s+/g, " ");
+const storageMigrationPath = "supabase/migrations/202607270003_project_media_bucket_and_storage_policies.sql";
+const storageMigration = readFileSync(storageMigrationPath, "utf8");
+const normalizedStorageMigration = storageMigration.replace(/\s+/g, " ");
 
 const expectedColumns = [
   "id", "project_id", "storage_bucket", "storage_path", "original_filename",
@@ -166,5 +169,75 @@ describe("AP-12-01-02 project_media RLS and grants migration", () => {
     expect(accessMigration).not.toMatch(/storage\.(objects|buckets)/i);
     expect(accessMigration).not.toMatch(/create\s+(?:or\s+replace\s+)?function/i);
     expect(accessMigration).not.toMatch(/security definer/i);
+  });
+});
+
+describe("AP-12-01-03 private project media Storage migration", () => {
+  const storagePolicy = (name: string) =>
+    normalizedStorageMigration.match(new RegExp(`create policy "${name}"(.*?);`))?.[1] ?? "";
+
+  it("safely configures the exact private bucket, MIME allowlist and byte limit", () => {
+    expect(normalizedStorageMigration).toContain("insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)");
+    expect(normalizedStorageMigration).toContain("values ( 'project-media', 'project-media', false, 25000000, array['image/jpeg', 'image/png', 'image/webp', 'application/pdf']::text[] )");
+    expect(normalizedStorageMigration).toContain("on conflict (id) do update");
+    expect(normalizedStorageMigration).toContain("public = excluded.public");
+    expect(storageMigration).not.toMatch(/\bpublic\s*=\s*true\b/i);
+    for (const forbiddenType of ["heic", "heif", "video/", "application/zip", "officedocument"]) {
+      expect(storageMigration).not.toContain(forbiddenType);
+    }
+  });
+
+  it("grants authenticated only SELECT and INSERT object operations", () => {
+    expect(normalizedStorageMigration).toContain("revoke all privileges on table storage.objects from public, anon, authenticated");
+    expect(normalizedStorageMigration).toContain("grant select, insert on table storage.objects to authenticated");
+    expect(storageMigration).not.toMatch(/grant\s+all|grant[^;]*\b(update|delete)\b/i);
+    expect(storageMigration).not.toMatch(/^grant\b[^;]*\bto\s+(?:anon|public)\s*;/im);
+  });
+
+  it("allows admin INSERT only through an exact active pending reservation", () => {
+    const policy = storagePolicy("project media storage insert active admin");
+    expect(policy).toContain("for insert to authenticated with check");
+    expect(policy).toContain("auth.uid() is not null");
+    expect(policy).toContain("public.current_app_role() = 'admin'");
+    expect(policy).toContain("bucket_id = 'project-media'");
+    expect(policy).toContain("public.can_insert_project_media_storage_object(bucket_id, name)");
+
+    expect(normalizedStorageMigration).toContain("project_media.uploaded_by = auth.uid()");
+    expect(normalizedStorageMigration).toContain("project_media.storage_bucket = requested_bucket");
+    expect(normalizedStorageMigration).toContain("project_media.storage_path = requested_name");
+    expect(normalizedStorageMigration).toContain("project_media.upload_status = 'pending'");
+    expect(normalizedStorageMigration).toContain("project_media.deleted_at is null");
+    expect(normalizedStorageMigration).toContain("projects.id = project_media.project_id");
+    expect(normalizedStorageMigration).toContain("projects.deleted_at is null");
+  });
+
+  it("defines separate ready-only admin and reviewer SELECT policies", () => {
+    for (const [name, role] of [
+      ["project media storage select active admin", "admin"],
+      ["project media storage select active reviewer", "reviewer"],
+    ]) {
+      const policy = storagePolicy(name);
+      expect(policy).toContain("for select to authenticated using");
+      expect(policy).toContain("auth.uid() is not null");
+      expect(policy).toContain(`public.current_app_role() = '${role}'`);
+      expect(policy).toContain("bucket_id = 'project-media'");
+      expect(policy).toContain("project_media.storage_bucket = storage.objects.bucket_id");
+      expect(policy).toContain("project_media.storage_path = storage.objects.name");
+      expect(policy).toContain("project_media.upload_status = 'ready'");
+      expect(policy).toContain("project_media.deleted_at is null");
+      expect(policy).toContain("projects.id = project_media.project_id");
+      expect(policy).toContain("projects.deleted_at is null");
+    }
+  });
+
+  it("has no anonymous, open, mutation, path-only, or out-of-scope access", () => {
+    expect(storageMigration).not.toMatch(/create policy[^;]*\bto\s+(?:anon|public)\b/i);
+    expect(storageMigration).not.toMatch(/create policy[^;]*for (update|delete)/i);
+    expect(storageMigration).not.toMatch(/using\s*\(\s*true\s*\)|with check\s*\(\s*true\s*\)/i);
+    expect(storageMigration).not.toMatch(/create policy[^;]*reviewer[^;]*for insert/i);
+    expect(storageMigration).not.toMatch(/storage\.(?:foldername|filename)\s*\(/i);
+    expect(storageMigration).not.toMatch(/createSignedUrl|signed[ _-]?url|soft_delete|cascade/i);
+    expect(storageMigration).not.toMatch(/\b(drop|truncate|delete from|update storage\.objects)\b/i);
+    expect(storageMigration.match(/create policy/gi)).toHaveLength(3);
   });
 });
