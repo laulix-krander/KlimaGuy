@@ -6,6 +6,7 @@ import { PROJECT_STATUS_LABELS } from "@/lib/domain/mappers";
 import { getAllowedProjectStatusTransitions } from "@/lib/domain/project-status";
 import type { ProjectStatus } from "@/lib/domain/types";
 import { firstProjectFieldError, ProjectFieldError, ProjectFormError } from "./project-form-errors";
+import { useProjectFormReset } from "./use-project-form-reset";
 
 type ProjectStatusFormProps = {
   projectId: string;
@@ -18,9 +19,10 @@ export function ProjectStatusForm({ projectId, status }: ProjectStatusFormProps)
   const [state, formAction, pending] = useActionState(updateProjectStatusAction, initialState);
   const statusOptions = [status, ...getAllowedProjectStatusTransitions(status)];
   const statusError = firstProjectFieldError(state, "status");
+  const formRef = useProjectFormReset(state.success);
 
   return (
-    <form action={formAction} aria-busy={pending} className="mt-2 space-y-3">
+    <form ref={formRef} action={formAction} aria-busy={pending} className="mt-2 space-y-3">
       <input type="hidden" name="project_id" value={projectId} />
       <ProjectFormError error={state.success ? undefined : state.error} />
       <label className="sr-only" htmlFor="status">Projektstatus</label>

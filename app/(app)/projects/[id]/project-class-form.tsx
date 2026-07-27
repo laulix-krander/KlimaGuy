@@ -5,6 +5,7 @@ import { updateProjectClassAction } from "@/lib/actions/projects";
 import { PROJECT_CLASS_DESCRIPTIONS, PROJECT_CLASS_LABELS } from "@/lib/domain/mappers";
 import { PROJECT_CLASSES, type ProjectClass } from "@/lib/domain/types";
 import { firstProjectFieldError, ProjectFieldError, ProjectFormError } from "./project-form-errors";
+import { useProjectFormReset } from "./use-project-form-reset";
 
 type ProjectClassFormProps = {
   projectId: string;
@@ -16,9 +17,10 @@ const initialState = { success: false as const, error: "" };
 export function ProjectClassForm({ projectId, projectClass }: ProjectClassFormProps) {
   const [state, formAction, pending] = useActionState(updateProjectClassAction, initialState);
   const projectClassError = firstProjectFieldError(state, "project_class");
+  const formRef = useProjectFormReset(state.success);
 
   return (
-    <form action={formAction} aria-busy={pending} className="mt-2 space-y-3">
+    <form ref={formRef} action={formAction} aria-busy={pending} className="mt-2 space-y-3">
       <input type="hidden" name="project_id" value={projectId} />
       <ProjectFormError error={state.success ? undefined : state.error} />
       <fieldset className="space-y-2" aria-describedby={projectClassError ? "project-class-error" : undefined} aria-invalid={projectClassError ? true : undefined}>

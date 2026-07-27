@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { updateProjectHumanReviewAction } from "@/lib/actions/projects";
 import { firstProjectFieldError, ProjectFieldError, ProjectFormError } from "./project-form-errors";
+import { useProjectFormReset } from "./use-project-form-reset";
 
 type ProjectHumanReviewFormProps = {
   projectId: string;
@@ -14,9 +15,10 @@ const initialState = { success: false as const, error: "" };
 export function ProjectHumanReviewForm({ projectId, requiresHumanReview }: ProjectHumanReviewFormProps) {
   const [state, formAction, pending] = useActionState(updateProjectHumanReviewAction, initialState);
   const humanReviewError = firstProjectFieldError(state, "requires_human_review");
+  const formRef = useProjectFormReset(state.success);
 
   return (
-    <form action={formAction} aria-busy={pending} className="mt-2 space-y-3">
+    <form ref={formRef} action={formAction} aria-busy={pending} className="mt-2 space-y-3">
       <input type="hidden" name="project_id" value={projectId} />
       <ProjectFormError error={state.success ? undefined : state.error} />
       <fieldset className="space-y-2" aria-describedby={humanReviewError ? "human-review-error" : undefined} aria-invalid={humanReviewError ? true : undefined}>

@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { updateProjectSummaryAction } from "@/lib/actions/projects";
 import { optionalFormValue } from "@/lib/domain/display";
 import { firstProjectFieldError, ProjectFieldError, ProjectFormError } from "./project-form-errors";
+import { useProjectFormReset } from "./use-project-form-reset";
 
 type ProjectSummaryFormProps = {
   projectId: string;
@@ -15,9 +16,10 @@ const initialState = { success: false as const, error: "" };
 export function ProjectSummaryForm({ projectId, summary }: ProjectSummaryFormProps) {
   const [state, formAction, pending] = useActionState(updateProjectSummaryAction, initialState);
   const summaryError = firstProjectFieldError(state, "summary");
+  const formRef = useProjectFormReset(state.success);
 
   return (
-    <form action={formAction} aria-busy={pending} className="mt-2 space-y-3">
+    <form ref={formRef} action={formAction} aria-busy={pending} className="mt-2 space-y-3">
       <input type="hidden" name="project_id" value={projectId} />
       <ProjectFormError error={state.success ? undefined : state.error} />
       <label className="sr-only" htmlFor="summary">Projektzusammenfassung</label>
