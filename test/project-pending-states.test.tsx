@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectClassForm } from "@/app/(app)/projects/[id]/project-class-form";
 import { ProjectHumanReviewForm } from "@/app/(app)/projects/[id]/project-human-review-form";
 import { ProjectMetadataForm } from "@/app/(app)/projects/[id]/project-metadata-form";
-import { ProjectReviewForm } from "@/app/(app)/projects/[id]/project-review-form";
 import { ProjectStatusForm } from "@/app/(app)/projects/[id]/project-status-form";
 import { ProjectSummaryForm } from "@/app/(app)/projects/[id]/project-summary-form";
 import { ProjectEditForm } from "@/app/(app)/projects/[id]/edit/project-edit-form";
@@ -19,7 +18,6 @@ vi.mock("@/lib/actions/projects", () => ({
   updateProjectClassAction: vi.fn(),
   updateProjectCoreAction: vi.fn(),
   updateProjectHumanReviewAction: vi.fn(),
-  updateProjectReviewAction: vi.fn(),
   updateProjectStatusAction: vi.fn(),
   updateProjectSummaryAction: vi.fn(),
 }));
@@ -95,14 +93,4 @@ describe("project form pending states", () => {
     expect(screen.getAllByRole("radio").every((radio) => (radio as HTMLInputElement).disabled)).toBe(true);
   });
 
-  it("disables the select, radio buttons, and checkbox in the combined review form", () => {
-    const { container } = render(
-      <ProjectReviewForm projectId={projectId} projectClass="B" requiresHumanReview status="new" />,
-    );
-
-    expectPendingForm(container);
-    expect((screen.getByRole("combobox", { name: "Projektstatus" }) as HTMLSelectElement).disabled).toBe(true);
-    expect(screen.getAllByRole("radio").every((radio) => (radio as HTMLInputElement).disabled)).toBe(true);
-    expect((screen.getByRole("checkbox", { name: "Menschliche Prüfung erforderlich" }) as HTMLInputElement).disabled).toBe(true);
-  });
 });

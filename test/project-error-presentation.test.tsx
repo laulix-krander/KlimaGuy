@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProjectClassForm } from "@/app/(app)/projects/[id]/project-class-form";
 import { ProjectHumanReviewForm } from "@/app/(app)/projects/[id]/project-human-review-form";
 import { ProjectMetadataForm } from "@/app/(app)/projects/[id]/project-metadata-form";
-import { ProjectReviewForm } from "@/app/(app)/projects/[id]/project-review-form";
 import { ProjectStatusForm } from "@/app/(app)/projects/[id]/project-status-form";
 import { ProjectSummaryForm } from "@/app/(app)/projects/[id]/project-summary-form";
 import { ProjectEditForm } from "@/app/(app)/projects/[id]/edit/project-edit-form";
@@ -19,7 +18,6 @@ vi.mock("@/lib/actions/projects", () => ({
   updateProjectClassAction: vi.fn(),
   updateProjectCoreAction: vi.fn(),
   updateProjectHumanReviewAction: vi.fn(),
-  updateProjectReviewAction: vi.fn(),
   updateProjectStatusAction: vi.fn(),
   updateProjectSummaryAction: vi.fn(),
 }));
@@ -62,7 +60,6 @@ describe("project form error presentation", () => {
       <ProjectClassForm key="class" projectId={projectId} projectClass="B" />,
       <ProjectSummaryForm key="summary" projectId={projectId} summary="Zusammenfassung" />,
       <ProjectHumanReviewForm key="human-review" projectId={projectId} requiresHumanReview={false} />,
-      <ProjectReviewForm key="review" projectId={projectId} projectClass="B" requiresHumanReview status="new" />,
     ];
 
     useErrorState();
@@ -110,18 +107,6 @@ describe("project form error presentation", () => {
     expectErrorRelationship(screen.getByRole("group", { name: "Human Review" }), "human-review-error", "Human Review fehlt.");
   });
 
-  it("links every combined project review field error to the correct control", () => {
-    useErrorState({
-      status: ["Status ist ungültig."],
-      project_class: ["Projektklasse fehlt."],
-      requires_human_review: ["Prüfwert ist ungültig."],
-    });
-    render(<ProjectReviewForm projectId={projectId} projectClass={null} requiresHumanReview={false} status="new" />);
-
-    expectErrorRelationship(screen.getByRole("combobox", { name: "Projektstatus" }), "review-status-error", "Status ist ungültig.");
-    expectErrorRelationship(screen.getByRole("group", { name: "Projektklasse" }), "review-project-class-error", "Projektklasse fehlt.");
-    expectErrorRelationship(screen.getByRole("checkbox", { name: "Menschliche Prüfung erforderlich" }), "review-human-review-error", "Prüfwert ist ungültig.");
-  });
 
   it("does not render empty field error elements or error relationships", () => {
     useErrorState();
