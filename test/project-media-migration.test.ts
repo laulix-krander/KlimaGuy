@@ -10,6 +10,9 @@ const normalizedAccessMigration = accessMigration.replace(/\s+/g, " ");
 const storageMigrationPath = "supabase/migrations/202607270003_project_media_bucket_and_storage_policies.sql";
 const storageMigration = readFileSync(storageMigrationPath, "utf8");
 const normalizedStorageMigration = storageMigration.replace(/\s+/g, " ");
+const softDeleteMigrationPath = "supabase/migrations/202607270004_project_media_soft_delete_rpc.sql";
+const softDeleteMigration = readFileSync(softDeleteMigrationPath, "utf8");
+const normalizedSoftDeleteMigration = softDeleteMigration.replace(/\s+/g, " ");
 
 const expectedColumns = [
   "id", "project_id", "storage_bucket", "storage_path", "original_filename",
@@ -238,6 +241,59 @@ describe("AP-12-01-03 private project media Storage migration", () => {
     expect(storageMigration).not.toMatch(/storage\.(?:foldername|filename)\s*\(/i);
     expect(storageMigration).not.toMatch(/createSignedUrl|signed[ _-]?url|soft_delete|cascade/i);
     expect(storageMigration).not.toMatch(/\b(drop|truncate|delete from|update storage\.objects)\b/i);
+    expect(storageMigration.match(/create policy/gi)).toHaveLength(3);
+  });
+});
+
+describe("AP-12-01-04 project media soft-delete RPC", () => {
+  it("creates the exact boolean SECURITY DEFINER RPC with a fixed search_path", () => {
+    expect(normalizedSoftDeleteMigration).toContain("create function public.soft_delete_project_media( target_media_id uuid, target_project_id uuid ) returns boolean");
+    expect(normalizedSoftDeleteMigration).toContain("language plpgsql security definer set search_path = public, pg_temp");
+    expect(softDeleteMigration).not.toMatch(/\bexecute\s+(?:format|immediate)\b/i);
+  });
+
+  it("requires authentication and the central admin role without reviewer exceptions", () => {
+    expect(softDeleteMigration).toContain("actor_id uuid := auth.uid()");
+    expect(normalizedSoftDeleteMigration).toContain("if actor_id is null or target_media_id is null or target_project_id is null then return false");
+    expect(normalizedSoftDeleteMigration).toContain("public.current_app_role() is distinct from 'admin'");
+    const functionBody = softDeleteMigration.match(/create function public\.soft_delete_project_media[\s\S]*?as \$\$([\s\S]*?)\$\$;/)?.[1] ?? "";
+    expect(functionBody).not.toMatch(/reviewer|uploaded_by|storage_(?:path|bucket)|filename/i);
+  });
+
+  it("atomically checks active ready media, its project association, and the active project", () => {
+    expect(normalizedSoftDeleteMigration).toContain("public.project_media.id = target_media_id");
+    expect(normalizedSoftDeleteMigration).toContain("public.project_media.project_id = target_project_id");
+    expect(normalizedSoftDeleteMigration).toContain("public.project_media.deleted_at is null");
+    expect(normalizedSoftDeleteMigration).toContain("public.project_media.upload_status = 'ready'");
+    expect(normalizedSoftDeleteMigration).toContain("from public.projects where public.projects.id = target_project_id and public.projects.deleted_at is null");
+  });
+
+  it("updates only deleted_at and derives its idempotent result from the affected row count", () => {
+    const setClause = softDeleteMigration.match(/update\s+public\.project_media\s+set\s+([\s\S]*?)\s+where/i)?.[1] ?? "";
+    expect(setClause).toBe("deleted_at = statement_timestamp()");
+    expect(normalizedSoftDeleteMigration).toContain("get diagnostics affected_rows = row_count; return affected_rows = 1");
+    expect(softDeleteMigration).not.toMatch(/deleted_at\s*=\s*null/i);
+  });
+
+  it("keeps direct deleted_at changes unavailable while allowing only terminal soft delete", () => {
+    expect(normalizedAccessMigration).toContain("grant update (category, caption, upload_status) on table public.project_media to authenticated");
+    expect(accessMigration).not.toMatch(/grant\s+update\s*\([^)]*deleted_at/i);
+    expect(normalizedSoftDeleteMigration).toContain("old.deleted_at is not null and new.deleted_at is distinct from old.deleted_at");
+    expect(normalizedSoftDeleteMigration).toContain("project media restore is not allowed");
+  });
+
+  it("revokes default execution and grants only authenticated execution", () => {
+    expect(normalizedSoftDeleteMigration).toContain("revoke execute on function public.soft_delete_project_media(uuid, uuid) from public, anon, authenticated");
+    expect(normalizedSoftDeleteMigration).toContain("grant execute on function public.soft_delete_project_media(uuid, uuid) to authenticated");
+    expect(softDeleteMigration).not.toMatch(/grant\s+execute[^;]*\bto\s+(?:anon|public)\b/i);
+  });
+
+  it("does not add destructive SQL, table grants, policies, or Storage mutations", () => {
+    expect(softDeleteMigration).not.toMatch(/delete\s+from\s+(?:public\.project_media|storage\.objects)/i);
+    expect(softDeleteMigration).not.toMatch(/update\s+storage\.objects/i);
+    expect(softDeleteMigration).not.toMatch(/\b(?:create|alter)\s+policy\b/i);
+    expect(softDeleteMigration).not.toMatch(/\bgrant\s+(?:all|select|insert|update|delete|truncate)\b/i);
+    expect(softDeleteMigration).not.toMatch(/\b(?:alter|create)\s+table\b|\bcascade\b/i);
     expect(storageMigration.match(/create policy/gi)).toHaveLength(3);
   });
 });
