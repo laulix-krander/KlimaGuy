@@ -1,6 +1,8 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { getProjectMediaUploadRevalidationPaths } from "./project-revalidation";
 
 import {
   finalizeProjectMediaUploadWithDataSource,
@@ -10,7 +12,7 @@ import {
 
 export async function finalizeProjectMediaUploadAction(input: unknown): Promise<ProjectMediaUploadFinalizationResult> {
   const supabase = await createClient();
-  return finalizeProjectMediaUploadWithDataSource({
+  const result = await finalizeProjectMediaUploadWithDataSource({
     auth: { getUser: () => supabase.auth.getUser() },
     getProfile: async (userId) => supabase.from("profiles").select("role").eq("id", userId).single(),
     getActiveProject: async (projectId) => supabase.from("projects").select("id").eq("id", projectId).is("deleted_at", null).single(),
@@ -27,4 +29,12 @@ export async function finalizeProjectMediaUploadAction(input: unknown): Promise<
       .eq("upload_status", "pending").is("deleted_at", null)
       .select("id, project_id, upload_status").maybeSingle(),
   }, input);
+
+  if (result.success) {
+    for (const path of getProjectMediaUploadRevalidationPaths(result.data.project_id)) {
+      revalidatePath(path);
+    }
+  }
+
+  return result;
 }

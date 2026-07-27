@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, Badge } from "@/components/ui";
 import { humanReviewDisplay, optionalFieldDisplay, projectClassDisplay, projectSummaryDisplay } from "@/lib/domain/display";
-import { canChangeProjectClass, canChangeProjectStatus, canCreateProjectNote, canEditAnyProjectNote, canEditOwnProjectNote, canEditProjectCoreFields, canEditProjectSummary, canChangeHumanReview, canSoftDeleteAnyProjectNote, canSoftDeleteOwnProjectNote } from "@/lib/domain/permissions";
+import { canChangeProjectClass, canChangeProjectStatus, canCreateProjectNote, canEditAnyProjectNote, canEditOwnProjectNote, canEditProjectCoreFields, canEditProjectSummary, canChangeHumanReview, canReserveProjectMediaUpload, canSoftDeleteAnyProjectNote, canSoftDeleteOwnProjectNote } from "@/lib/domain/permissions";
 import { projectIdSchema, roleSchema } from "@/lib/domain/schemas";
 import { statusToLabel } from "@/lib/domain/mappers";
 import type { ProjectClass, ProjectStatus } from "@/lib/domain/types";
@@ -15,6 +15,7 @@ import { ProjectStatusForm } from "./project-status-form";
 import { ProjectSummaryForm } from "./project-summary-form";
 import { ProjectHumanReviewForm } from "./project-human-review-form";
 import { ProjectSuccessMessage, type ProjectSuccessSearchParams } from "./project-success-message";
+import { ProjectMediaUploadForm } from "./project-media-upload-form";
 
 
 function formatDate(value: string): string {
@@ -67,6 +68,7 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
   const mayEditProjectSummary = parsedRole.success && canEditProjectSummary(parsedRole.data);
   const mayEditHumanReview = parsedRole.success && canChangeHumanReview(parsedRole.data);
   const mayCreateProjectNote = parsedRole.success && canCreateProjectNote(parsedRole.data);
+  const mayUploadProjectMedia = parsedRole.success && canReserveProjectMediaUpload(parsedRole.data);
 
   const { data: notesData } = await supabase
     .from("project_notes")
@@ -117,6 +119,15 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
           </div>
         ) : null}
       </Card>
+      {mayUploadProjectMedia ? (
+        <Card>
+          <div className="mb-4">
+            <h2 className="text-xl font-semibold">Projektmedien</h2>
+            <p className="text-sm text-slate-600">Eine Datei sicher zum Projekt hochladen.</p>
+          </div>
+          <ProjectMediaUploadForm projectId={project.id} />
+        </Card>
+      ) : null}
       <Card>
         <div className="mb-4">
           <h2 className="text-xl font-semibold">Interne Notizen</h2>

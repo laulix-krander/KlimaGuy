@@ -22,3 +22,7 @@ export function getProjectAndCustomerRevalidationPaths(project: ProjectRevalidat
     `/customers/${project.customer_id}`,
   ]);
 }
+
+export function getProjectMediaUploadRevalidationPaths(projectId: string): string[] {
+  return [`/projects/${projectId}`];
+}

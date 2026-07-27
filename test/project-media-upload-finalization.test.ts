@@ -144,13 +144,21 @@ describe("atomare Finalisierung und Idempotenz", () => {
 });
 
 describe("ausgeschlossener Scope", () => {
-  it("enthält keine Signed URL, Revalidation, Migration, Upload, UI oder Redirect", () => {
+  it("enthält keine Signed URL, Migration, Upload, UI oder Redirect", () => {
     const files = [
       "lib/actions/project-media-upload-finalization-service.ts",
       "lib/actions/project-media-upload-finalization.ts",
     ].map((path) => readFileSync(path, "utf8")).join("\n");
-    for (const forbidden of ["createSigned" + "Url", "revalidate" + "Path", "redirect" + "(", ".upload" + "(", "storage.objects"])
+    for (const forbidden of ["createSigned" + "Url", "redirect" + "(", ".upload" + "(", "storage.objects"])
       expect(files).not.toContain(forbidden);
     expect(files).not.toContain("@/components");
+  });
+
+  it("revalidiert nach erfolgreicher Finalisierung ausschließlich das Projektdetail", () => {
+    const action = readFileSync("lib/actions/project-media-upload-finalization.ts", "utf8");
+    expect(action).toContain("if (result.success)");
+    expect(action).toContain("getProjectMediaUploadRevalidationPaths");
+    expect(action).not.toContain("getProjectOverviewRevalidationPaths");
+    expect(action).not.toContain("getProjectAndCustomerRevalidationPaths");
   });
 });
