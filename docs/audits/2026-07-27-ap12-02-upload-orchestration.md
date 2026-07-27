@@ -430,3 +430,13 @@ Der Upload verwendet exakt `reservation.storage_bucket` und `reservation.storage
 Gezielte Vitest-Tests decken Authentifizierung/Rollen, Projekt- und Reservierungszustände, exakte Größengrenzen, MIME-Abweichungen, alle vier Signaturen, reservierten Bucket/Pfad, serverseitigen Dateinamen, `upsert: false`, Konflikt- und Storagefehlermapping sowie ausgeschlossene Seiteneffekte ab. Der vollständige Projektlauf bestand mit 32 neuen und allen bestehenden Tests; Build, Typecheck, Lint und `git diff --check` bestanden ebenfalls.
 
 Finalisierung auf `ready`, Markierung als `failed`, Objektverifikation nach Upload, Revalidation, Cleanup, Retry und Reconciliation bleiben bewusst AP-12-02-03 beziehungsweise späteren Arbeitspaketen vorbehalten. Der Auditstatus bleibt **NICHT Production Ready**.
+
+## AP-12-02-03 Implementation Result
+
+AP-12-02-03 implementiert ausschließlich die Finalisierung eines bereits erfolgreich hochgeladenen, reservierten Projektmediums. Die dedizierte Server Action `finalizeProjectMediaUploadAction` nimmt ausschließlich Medien- und Projekt-ID entgegen und delegiert an den dedizierten Finalisierungsservice. Das strikte `finalizeProjectMediaUploadSchema` verhindert, dass Bucket, Pfad, Actor oder Zielstatus vom Client vorgegeben werden.
+
+Der Service prüft Authentifizierung, valides Profil, Adminrolle, aktives Projekt, exakte Medien-/Projektzuordnung, Eigentümer, aktives Medium und den Zustand `pending`. `ready` und `failed` bleiben terminal und werden nicht erneut verändert. Vor der Mutation wird die Existenz des Objekts am ausschließlich aus der Reservierung geladenen Bucket und Pfad geprüft. Erst danach führt die Action ein enges Compare-and-set-Update mit Medien-ID, Projekt-ID, `uploaded_by`, `upload_status = pending` und `deleted_at IS NULL` aus. Die Update-Payload enthält ausschließlich `upload_status = ready`; die Antwort ausschließlich `media_id`, `project_id`, `upload_status = ready` und `finalized = true`.
+
+Gezielte Vitest-Tests decken Berechtigungen, fehlende und vorhandene Objekte, `pending → ready`, unverändertes `ready`, Ablehnung von `failed`, Soft Delete, falsches Projekt, fremden Benutzer, atomare Update-Bindung und den Ausschluss weiterer Feldänderungen ab. Ebenso wird statisch abgesichert, dass dieser Pfad keine Signed URL, Revalidation, Weiterleitung, UI oder Storage-Upload-Funktion enthält. Es wurden keine Migration, kein SQL, keine RLS- oder Storage-Policy-Änderung und keine `package.json`-Änderung vorgenommen.
+
+Der Auditstatus **NICHT Production Ready** bleibt unverändert. Cleanup, Retry, Reconciliation und alle übrigen Production Gates bleiben ausdrücklich außerhalb dieses Arbeitspakets.

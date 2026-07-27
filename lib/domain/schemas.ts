@@ -58,6 +58,11 @@ export const uploadReservedProjectMediaSchema = z.object({
   file: z.unknown(),
 }).strict();
 
+export const finalizeProjectMediaUploadSchema = z.object({
+  media_id: z.string().uuid("Die Medien-ID ist ungültig."),
+  project_id: projectIdSchema,
+}).strict();
+
 const projectCoreFields = {
   title: z.string().trim().min(1, "Projektbezeichnung ist erforderlich").max(180),
   installation_address: optionalText,
@@ -136,3 +141,4 @@ export type ProjectNoteUpdateInput = z.infer<typeof updateProjectNoteSchema>;
 export type ProjectNoteDeleteInput = z.infer<typeof deleteProjectNoteSchema>;
 export type UploadReservationInput = z.infer<typeof uploadReservationSchema>;
 export type UploadReservedProjectMediaInput = z.infer<typeof uploadReservedProjectMediaSchema>;
+export type FinalizeProjectMediaUploadInput = z.infer<typeof finalizeProjectMediaUploadSchema>;
