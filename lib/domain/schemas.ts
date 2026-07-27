@@ -52,6 +52,12 @@ export const uploadReservationSchema = z.object({
   if (value.file_size_bytes > max) context.addIssue({ code: z.ZodIssueCode.too_big, maximum: max, type: "number", inclusive: true, path: ["file_size_bytes"], message: `Die Datei darf höchstens ${max} Bytes groß sein.` });
 });
 
+export const uploadReservedProjectMediaSchema = z.object({
+  media_id: z.string().uuid("Die Medien-ID ist ungültig."),
+  project_id: projectIdSchema,
+  file: z.unknown(),
+}).strict();
+
 const projectCoreFields = {
   title: z.string().trim().min(1, "Projektbezeichnung ist erforderlich").max(180),
   installation_address: optionalText,
@@ -129,3 +135,4 @@ export type ProjectNoteInput = z.infer<typeof projectNoteSchema>;
 export type ProjectNoteUpdateInput = z.infer<typeof updateProjectNoteSchema>;
 export type ProjectNoteDeleteInput = z.infer<typeof deleteProjectNoteSchema>;
 export type UploadReservationInput = z.infer<typeof uploadReservationSchema>;
+export type UploadReservedProjectMediaInput = z.infer<typeof uploadReservedProjectMediaSchema>;
