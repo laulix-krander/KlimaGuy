@@ -418,3 +418,15 @@ AP-12-02-01 implementiert ausschließlich die serverseitige Upload-Reservierung:
 Gezielte Vitest-Tests decken Schema, Berechtigungen, Allowlists, exakte Bild-/PDF-Grenzen, Dateinamen, Pfad- und UUID-Generierung, Pending-Status und Mass Assignment ab. Der Reservierungspfad verwendet ausschließlich Auth-, Profil-, Projekt- und `project_media`-Datenbankoperationen: kein Storage API Call, kein Upload nach `storage.objects`, kein Bucket Write, keine Signed URL. Migrationen, RLS, Storage-Policies, UI, Download, KI, WhatsApp und `package.json` bleiben unverändert.
 
 Der Auditstatus **NICHT Production Ready** bleibt ausdrücklich unverändert. Insbesondere Magic-Byte-/Inhaltsprüfung, tatsächlicher Storage-Upload, Finalisierung, Cleanup, Reconciliation und die im Audit beschriebenen Production Gates bleiben nachfolgenden Arbeitspaketen vorbehalten.
+
+## AP-12-02-02 Implementation Result
+
+AP-12-02-02 ergänzt ausschließlich den tatsächlichen Storage-Upload für eine bestehende Reservierung. Die dedizierte async Server Action `uploadReservedProjectMediaAction` liest `media_id`, `project_id` und `file` aus `FormData` und delegiert ohne Revalidation oder Redirect an `project-media-storage-upload-service.ts`. Das strikte Schema `uploadReservedProjectMediaSchema` lehnt zusätzliche Clientfelder ab; Bucket, Pfad, gespeicherter Dateiname, erwarteter MIME-Type, Größe, Actor und Status stammen ausschließlich aus der geladenen Reservierung.
+
+Der Service prüft Authentifizierung, valides Profil, Adminrolle, aktives Projekt sowie Medien-/Projektzuordnung, Soft-Delete, Eigentümer, `pending`-Status und den festen Bucket `project-media`. Er erzwingt eine positive, mit der Reservierung exakt identische Dateigröße sowie die Grenzen 15.000.000 Bytes für Bilder und 25.000.000 Bytes für PDF. Browser-MIME und ein auf zwölf Anfangsbytes begrenzter Signaturcheck müssen für JPEG, PNG, WebP oder PDF übereinstimmen.
+
+Der Upload verwendet exakt `reservation.storage_bucket` und `reservation.storage_path`, den validierten Content-Type und `upsert: false`. Der Clientdateiname bestimmt weder Objektname noch Pfad. Konflikte und sonstige Storagefehler werden in neutrale Fehlercodes und Meldungen übersetzt. Die Erfolgsantwort enthält nur `media_id`, `project_id`, `uploaded: true` und `upload_status: pending`; der Datenbanksatz bleibt bewusst unverändert `pending`.
+
+Gezielte Vitest-Tests decken Authentifizierung/Rollen, Projekt- und Reservierungszustände, exakte Größengrenzen, MIME-Abweichungen, alle vier Signaturen, reservierten Bucket/Pfad, serverseitigen Dateinamen, `upsert: false`, Konflikt- und Storagefehlermapping sowie ausgeschlossene Seiteneffekte ab. Der vollständige Projektlauf bestand mit 32 neuen und allen bestehenden Tests; Build, Typecheck, Lint und `git diff --check` bestanden ebenfalls.
+
+Finalisierung auf `ready`, Markierung als `failed`, Objektverifikation nach Upload, Revalidation, Cleanup, Retry und Reconciliation bleiben bewusst AP-12-02-03 beziehungsweise späteren Arbeitspaketen vorbehalten. Der Auditstatus bleibt **NICHT Production Ready**.
