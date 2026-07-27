@@ -11,7 +11,7 @@
 
 Das Repository besitzt drei chronologisch nummerierte Migrationen mit UUID-Primärschlüsseln, `timestamptz`-Zeitstempeln, einem generischen `set_updated_at`-Trigger, Soft Delete für fachliche Hauptdaten, partiellen Aktiv-Indizes, RLS und dem rollenauflösenden `SECURITY DEFINER`-Helper `current_app_role()`. Projektmedien und Storage sind noch nicht vorhanden.
 
-Empfohlen wird eine kleine Tabelle `public.project_media` mit 15 Pflichtspalten und optionaler `caption`; `sort_order` und alle Verarbeitungs-/Extraktionsfelder werden verschoben. `customer_id` wird nicht dupliziert. Kontrollierte Textwerte mit benannten CHECK-Constraints passen für die noch veränderlichen Medienwerte besser als neue PostgreSQL-Enums oder Lookup-Tabellen. Der private Bucket heißt `project-media`; der Originalpfad lautet exakt `projects/{project_id}/originals/{media_id}/{stored_filename}` und enthält ausschließlich kontrollierte UUIDs und einen UUID-basierten Dateinamen.
+Empfohlen wird eine kleine Tabelle `public.project_media` mit 16 Pflichtspalten und optionaler `caption`; `sort_order` und alle Verarbeitungs-/Extraktionsfelder werden verschoben. `customer_id` wird nicht dupliziert. Kontrollierte Textwerte mit benannten CHECK-Constraints passen für die noch veränderlichen Medienwerte besser als neue PostgreSQL-Enums oder Lookup-Tabellen. Der private Bucket heißt `project-media`; der Originalpfad lautet exakt `projects/{project_id}/originals/{media_id}/{stored_filename}` und enthält ausschließlich kontrollierte UUIDs und einen UUID-basierten Dateinamen.
 
 Autorisierung muss stets DB-Zuordnung, aktives Profil, Rolle, aktives Projekt und aktives Medium prüfen; der Pfad allein genügt nie. Admins dürfen reservieren, finalisieren, erlaubte Metadaten ändern und soft-löschen; Reviewer lesen nur. Normale Rollen erhalten weder physischen Tabellen-DELETE noch Storage-UPDATE/-DELETE. Das MVP sollte serverseitig orchestriert **DB zuerst** arbeiten: `pending` reservieren, Objekt ohne Upsert hochladen, verifizieren, zu `ready` finalisieren; Fehler werden `failed`, anschließend kontrolliert bereinigt und reconciled. `uploading` und `deleted` sind keine separaten MVP-Statuswerte.
 
@@ -60,34 +60,34 @@ Schwachstellen älterer Baseline-Policies – etwa breite Projekt-SELECTs – we
 
 ### 4.1 Minimaler MVP-Kern
 
-Pflicht: `id`, `project_id`, `storage_bucket`, `storage_path`, `original_filename`, `stored_filename`, `mime_type`, `file_size_bytes`, `media_type`, `category`, `source`, `upload_status`, `uploaded_by`, `created_at`, `updated_at`, `deleted_at`. `caption` ist optional, aber für das erste Schema empfohlen. `sort_order` wird verschoben.
+Pflicht sind genau 16 Spalten: `id`, `project_id`, `storage_bucket`, `storage_path`, `original_filename`, `stored_filename`, `mime_type`, `file_size_bytes`, `media_type`, `category`, `source`, `upload_status`, `uploaded_by`, `created_at`, `updated_at`, `deleted_at`. `caption` ist die einzige zusätzlich empfohlene nullable MVP-Spalte. `sort_order` wird verschoben.
 
 | Feld | Typ / Null / Default | Constraint und Bedeutung | Phase | Änderbarkeit / Sicherheit |
 |---|---|---|---|---|
 | `id` | `uuid`, NOT NULL, UUID-Default | Primärschlüssel; vor Upload erzeugt | MVP | nie änderbar; Pfadanker |
-| `project_id` | `uuid`, NOT NULL, kein Client-Default | FK auf `projects.id` | MVP | nie änderbar; zentrale Autorisierungsgrenze |
-| `storage_bucket` | `text`, NOT NULL, serverseitig `project-media` | exakt `project-media`, nicht leer | MVP | nie clientseitig änderbar |
-| `storage_path` | `text`, NOT NULL | 1–512 Zeichen, kanonisches Pfadmuster; zusammen mit Bucket unique | MVP | nie änderbar; niemals allein autorisieren |
-| `original_filename` | `text`, NOT NULL | nach Bereinigung 1–255 Zeichen; keine Steuerzeichen/Pfadseparatoren | MVP | optionaler Admin-Anzeigename; kann PII enthalten, nicht loggen |
-| `stored_filename` | `text`, NOT NULL | UUID plus kanonische Endung, höchstens 64 ASCII-Zeichen | MVP | servergeneriert, unveränderlich |
-| `mime_type` | `text`, NOT NULL | erkannter Typ aus exakter Allowlist | MVP | nach Finalisierung unveränderlich; sicherheitskritisch |
-| `file_size_bytes` | `bigint`, NOT NULL | positiv; typabhängige Produktlimits zusätzlich | MVP | verifiziert, nie clientseitig änderbar |
-| `media_type` | `text`, NOT NULL | exakt `image` oder `document`, konsistent zu MIME | MVP | abgeleitet, unveränderlich |
-| `category` | `text`, NOT NULL, Default `other` erwägen | exakte Kategorien-Checkliste | MVP | Admin darf bei aktivem Medium ändern; keine technische Aussage |
-| `source` | `text`, NOT NULL, serverseitig `manual_upload` | im MVP exakt `manual_upload` | MVP | unveränderlich; zukünftige Quellen nicht aktivieren |
+| `project_id` | `uuid`, NOT NULL, kein Default | FK auf `projects.id` | MVP | nie änderbar; zentrale Autorisierungsgrenze |
+| `storage_bucket` | `text`, NOT NULL, Default `project-media` | exakt `project-media`, nicht leer | MVP | Default ist Defense in Depth; nie clientseitig änderbar |
+| `storage_path` | `text`, NOT NULL, kein Default | 1–512 Zeichen, kanonisches Pfadmuster; zusammen mit Bucket unique | MVP | nie änderbar; niemals allein autorisieren |
+| `original_filename` | `text`, NOT NULL, kein Default | nach Bereinigung 1–255 Zeichen; keine Steuerzeichen/Pfadseparatoren | MVP | optionaler Admin-Anzeigename; kann PII enthalten, nicht loggen |
+| `stored_filename` | `text`, NOT NULL, kein Default | UUID plus kanonische Endung, höchstens 64 ASCII-Zeichen | MVP | servergeneriert, unveränderlich |
+| `mime_type` | `text`, NOT NULL, kein Default | erkannter Typ aus exakter Allowlist | MVP | nach Finalisierung unveränderlich; sicherheitskritisch |
+| `file_size_bytes` | `bigint`, NOT NULL, kein Default | positiv; typabhängige Produktlimits zusätzlich | MVP | verifiziert, nie clientseitig änderbar |
+| `media_type` | `text`, NOT NULL, kein Default | exakt `image` oder `document`, konsistent zu MIME | MVP | abgeleitet, unveränderlich |
+| `category` | `text`, NOT NULL, Default `other` | exakte Kategorien-Checkliste | MVP | bewusster Fallback; Admin darf bei aktivem Medium ändern; keine technische Aussage |
+| `source` | `text`, NOT NULL, Default `manual_upload` | im MVP exakt `manual_upload` | MVP | serverseitig gesetzt und unveränderlich; zukünftige Quellen nicht aktivieren |
 | `upload_status` | `text`, NOT NULL, `pending` | exakt `pending`, `ready`, `failed` | MVP | nur Orchestrator; nicht freies Metadatenupdate |
-| `uploaded_by` | `uuid`, NOT NULL | FK `auth.users(id)`; beim Insert `auth.uid()` | MVP | unveränderlich; Auditzuordnung |
+| `uploaded_by` | `uuid`, NOT NULL, kein Default | FK `auth.users(id)`; beim Insert zwingend `auth.uid()` | MVP | unveränderlich; Auditzuordnung |
 | `created_at` | `timestamptz`, NOT NULL, `now()` | Erstellzeit | MVP | unveränderlich |
 | `updated_at` | `timestamptz`, NOT NULL, `now()` | generischer Trigger aktualisiert | MVP | automatisch |
 | `deleted_at` | `timestamptz`, NULL | NULL aktiv, Zeitwert soft-gelöscht | MVP | nur Admin-Soft-Delete-Pfad; kein Restore |
 | `caption` | `text`, NULL, NULL | höchstens 1.000 Zeichen; leer zu NULL | MVP empfohlen | Admin änderbar; nur Text rendern, nie HTML/Autorisierung/KI-Automatik |
-| `sort_order` | `integer`, NULL | falls später: nicht negativ | später | parallele Reorder-Konflikte; kein MVP-Nutzen belegt |
-| `processing_status` | `text`, NULL | erst mit realer Verarbeitung | später | separater Automat, nicht Uploadstatus |
-| `width` | `integer`, NULL | später positiv, nur Bilder | später | nur serverseitig erkannt |
-| `height` | `integer`, NULL | später positiv, nur Bilder | später | nur serverseitig erkannt |
-| `page_count` | `integer`, NULL | später positiv, nur PDF | später | nur sicherer Parser setzt Wert |
-| `checksum` | `text`, NULL | später Algorithmus und Format explizit | später | nur serverseitig berechnen; nicht autorisieren |
-| `metadata` | `jsonb`, NULL | kein allgemeines Feld im MVP | später/konkreter Bedarf | hohes Mass-Assignment-, PII- und Drift-Risiko |
+| `sort_order` | `integer`, NULL, kein Default | falls später: nicht negativ | später | parallele Reorder-Konflikte; kein MVP-Nutzen belegt |
+| `processing_status` | `text`, NULL, kein Default | erst mit realer Verarbeitung | später | separater Automat, nicht Uploadstatus |
+| `width` | `integer`, NULL, kein Default | später positiv, nur Bilder | später | nur serverseitig erkannt |
+| `height` | `integer`, NULL, kein Default | später positiv, nur Bilder | später | nur serverseitig erkannt |
+| `page_count` | `integer`, NULL, kein Default | später positiv, nur PDF | später | nur sicherer Parser setzt Wert |
+| `checksum` | `text`, NULL, kein Default | später Algorithmus und Format explizit | später | nur serverseitig berechnen; nicht autorisieren |
+| `metadata` | `jsonb`, NULL, kein Default | kein allgemeines Feld im MVP | später/konkreter Bedarf | hohes Mass-Assignment-, PII- und Drift-Risiko |
 
 `caption` wird sofort empfohlen, weil AP-12-00 Anzeigename/Caption als Admin-Metadaten vorsieht und die eng begrenzte Spalte keine Sortier- oder Prozessmaschine erfordert. `sort_order` wird mangels UI-/Query-Bedarf verschoben; stabile Anzeige nutzt zunächst `created_at`, dann `id`.
 
@@ -128,6 +128,29 @@ Der DB-CHECK ist Defense in Depth gegen umgangene Services. Seine Änderung ben�
 - `original_filename`: Unicode nach definierter Normalisierung; trimmen; 1–255 Zeichen; NUL, C0/C1-Steuerzeichen, `/`, `\`, `.`/`..` als alleinige Namen und bidi-kritische Steuerzeichen ablehnen. Nur Anzeige-Metadatum, niemals Pfad/Autorisierung. UI und Logs müssen mögliche Kundendaten minimieren.
 - `stored_filename`: serverseitig `{zufällige_uuid}.{jpg|png|webp|pdf}`, lowercase, höchstens 64 Zeichen, keine vom Client übernommenen Bestandteile und kein Upsert.
 - `storage_path`: serverseitig aus bekannten Segmenten, 1–512 Zeichen, keine leeren Segmente, Backslashes, Traversalsegmente, führenden/trailing Slash oder Steuerzeichen. DB validiert die kanonische Grundform; vollständige UUID-/Zuordnungsprüfung erfolgt serverseitig und in Policies.
+
+### 5.6 Benannte Constraint-Matrix für das Folgepaket
+
+Die Namen sind Planungsbestandteil, noch keine SQL-Implementierung. Sie folgen dem vorhandenen lesbaren `snake_case`-Stil und vermeiden anonyme, schwer zu diagnostizierende Regeln.
+
+| Geplanter Name | Betroffene Felder | Exakte fachliche Aussage |
+|---|---|---|
+| `project_media_pkey` | `id` | jede Medien-ID ist global eindeutig und nicht NULL |
+| `project_media_project_id_fkey` | `project_id` | verweist auf ein vorhandenes Projekt; physisches Löschen wird eingeschränkt |
+| `project_media_uploaded_by_fkey` | `uploaded_by` | verweist auf einen vorhandenen Auth-Benutzer; physisches Löschen wird eingeschränkt |
+| `project_media_storage_location_key` | `storage_bucket`, `storage_path` | jede Bucket-/Objektpfadkombination ist eindeutig |
+| `project_media_storage_bucket_check` | `storage_bucket` | ausschließlich `project-media` |
+| `project_media_storage_path_check` | `storage_path` | nicht leer, maximal 512 Zeichen, kanonische segmentierte Grundform ohne Traversal/Steuerzeichen |
+| `project_media_original_filename_check` | `original_filename` | bereinigt, 1–255 Zeichen, keine Pfad- oder Steuerzeichen |
+| `project_media_stored_filename_check` | `stored_filename` | UUID-basierter ASCII-Name mit exakt zur MIME-Allowlist passender kanonischer Endung |
+| `project_media_mime_media_type_check` | `mime_type`, `media_type` | nur die vier MIME-Werte und jeweils konsistente Gruppe `image`/`document` |
+| `project_media_file_size_check` | `file_size_bytes`, `mime_type` | positiv und innerhalb des nach externer Byteklärung festgeschriebenen MIME-Limits |
+| `project_media_category_check` | `category` | exakt die 14 eingefrorenen MVP-Kategorien |
+| `project_media_source_check` | `source` | ausschließlich `manual_upload` |
+| `project_media_upload_status_check` | `upload_status` | ausschließlich `pending`, `ready`, `failed` |
+| `project_media_caption_check` | `caption` | NULL oder maximal 1.000 Zeichen; Leerstring wird bereits im Service zu NULL normalisiert |
+
+Für `deleted_at` ist kein eigener Werte-CHECK erforderlich: NULL beziehungsweise ein realer `timestamptz` bildet den Zustand vollständig ab. Für `uploaded_by = auth.uid()` und aktive Projekte sind Policies/RPCs zuständig, nicht statische CHECK-Constraints. `(project_id, id)` erhält bewusst weder Unique Constraint noch zusätzlichen Index.
 
 ## 6. Foreign Keys und Löschverhalten
 
@@ -210,6 +233,8 @@ RLS ist zwingend aktiviert. Jede Policy prüft `auth.uid()`, ein vorhandenes Pro
 
 Eine breite UPDATE-Policy allein verhindert kein Mass Assignment. Erforderlich sind explizite Servicepatches **und** DB-seitige Schutzlogik beziehungsweise funktionsgebundene Mutationen. `WITH CHECK` muss das aktive Projekt erneut prüfen; nur `USING` genügt nicht. Service Role umgeht RLS und darf nur in einem isolierten, erneut autorisierenden Betriebsprozess eingesetzt werden, nie als bequemer Benutzerpfad.
 
+Geplante sprechende Policy-Namen: `project media read active`, `project media insert active admin` und `project media update active admin`. Es gibt bewusst keine Reviewer-Mutationspolicy und keine physische DELETE-Policy. Die Namen lehnen sich an `project notes read active` beziehungsweise die operationsbezogenen vorhandenen Policy-Namen an.
+
 ## 13. Storage-Policy-Spezifikation
 
 | Operation | Admin | Reviewer | Zusätzliche Bedingungen |
@@ -222,6 +247,8 @@ Eine breite UPDATE-Policy allein verhindert kein Mass Assignment. Erforderlich s
 Bucket-ID und alle Pfadsegmente müssen exakt geprüft werden. Die Projekt-ID im Pfad wird gegen `project_media.project_id` und das aktive Projekt validiert; die Media-ID gegen die reservierte Zeile. Ein Objekt ohne DB-Zeile erhält keinen normalen SELECT. Ein DB-Datensatz ohne Objekt wird nicht `ready`.
 
 Storage-Policies sind **nicht ausreichend**: Sie können Dateisignatur, fachliche Quoten, vollständige Zustandsübergänge, Caption-Allowlist, Cleanup oder Signed-URL-Ausgabe nicht allein sicher orchestrieren. Uploadreservierung, Inhaltsprüfung, Finalisierung und Downloadfreigabe benötigen serverseitige Orchestrierung. Direkter Browserupload kann später über eine eng begrenzte Signed-Upload-Freigabe erfolgen; die Autorisierung bleibt serverseitig.
+
+Geplante Policy-Namen auf `storage.objects`: `project media objects read active` und `project media objects insert reserved admin`. UPDATE und DELETE bleiben ohne normale Policy. Vor der Implementierung ist anhand der dann aktuellen offiziellen Storage-Dokumentation zu verifizieren, welche Tabellen-/Funktionszugriffe Policies benötigen und ob dafür zusätzliche minimale Grants erforderlich sind; pauschale Grants auf fachliche Tabellen werden nicht empfohlen.
 
 ## 14. Transaktions- und Fehlergrenzen
 
