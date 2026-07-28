@@ -581,3 +581,15 @@ Weiterhin fehlen Reconciliation, Cleanup verwaister `pending`/`failed`-Datensät
 3. Erst nach dieser Freigabe **AP-12-03 – Projektmedienliste und autorisierte Signed-URL-Anzeige** beginnen.
 
 AP-12-02-05 implementiert ausdrücklich keine Medienliste und kein neues fachliches Verhalten.
+
+## AP-12-02-06 Automated Validation Toolkit Result
+
+AP-12-02-06 ergänzt ein ausschließlich lesendes SQL-Verifikationsskript mit 36 kompakten PASS-/FAIL-/WARN-Prüfungen für Tabelle, Spalten, Constraints, Trigger, Rechte, RLS- und Storage-Policies, Bucket sowie Soft-Delete-RPC. Die Migrationshistorie wird bewusst als `WARN` mit genauer Dashboard-Restprüfung ausgegeben, weil keine dauerhaft stabile und überall im SQL Editor verfügbare Supabase-Systemrelation vorausgesetzt wird.
+
+Die Repositoryprüfung ist mit `bash scripts/validate-project-media-repository.sh` auf einen Befehl reduziert und führt Build, Tests, Typecheck, Lint sowie `git diff --check` mit Abbruch beim ersten Fehler aus. Ein zusätzliches, standardmäßig gesperrtes Werkzeug darf nur mit `PROJECT_MEDIA_VALIDATION_ENABLED=true` und der Zielumgebung `local` oder `preview` die vollständige Upload-Orchestrierung über In-Memory-Adapter testen. Es prüft Reservierung (`pending`), Upload ohne Statuswechsel, Finalisierung (`ready`), genau ein nicht nach Originaldateiname benanntes Objekt sowie das Zugriffsverhalten nach modelliertem Soft Delete. Es führt weder Netzwerk- noch echte Storagezugriffe aus und meldet im Test den erwarteten physischen Orphan. Auf eine Live-Preview-Integration wurde sicherheitshalber verzichtet: Ohne privilegierten Cleanup könnte sie Objekte nicht vollständig entfernen; dafür werden weder ein neuer Service-Role-Pfad noch ein DELETE-Bypass eingeführt.
+
+Der verbleibende manuelle Aufwand besteht genau aus zwei kurzen Browser-Smoke-Tests: einem erfolgreichen kleinen PNG-Upload als Admin und der Prüfung als Reviewer, dass kein Uploadformular sichtbar ist. Production-Gates bleiben die tatsächliche Ausführung und Dokumentation des SQL-Skripts, der Repositoryprüfung und dieser beiden Browserprüfungen sowie die Bearbeitung aller ausgegebenen WARNs. Rechtliche/Datenschutz-, Retention/Purge-, Reconciliation-, Plattformlimit- und Multi-Tenant-Gates bleiben ebenfalls offen.
+
+Lokale Toolkit-Tests decken Read-only-SQL und Prüfgruppen, Skriptreihenfolge/Fehlerabbruch, Default-/Umgebungs-Gates, Secret-/URL-/Privilegienverbote, den Adapter-Lebenszyklus und die Beschränkung des Runbooks auf zwei Browserprüfungen ab. Die finalen Ergebnisse von Build, Vitest, Typecheck, Lint und Diff-Prüfung sind im zugehörigen AP-12-02-06-Abschlussbericht festzuhalten.
+
+**Auditstatus: NICHT Production Ready.** Der Status bleibt bestehen, bis die verkürzte Validierung in der Zielumgebung tatsächlich ausgeführt, dokumentiert und reviewed wurde.
