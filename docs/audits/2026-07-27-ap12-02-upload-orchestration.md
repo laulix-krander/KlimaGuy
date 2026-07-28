@@ -450,3 +450,134 @@ Die Komponente führt `reserveProjectMediaUploadAction`, `uploadReservedProjectM
 Erst nach erfolgreicher Finalisierung bestätigt die UI „Die Datei wurde erfolgreich hochgeladen.“, entfernt alte Fehler und setzt Formular, Dateiauswahl und Kategorie auf den Default `other` zurück. Die Finalisierungsaction revalidiert ausschließlich `/projects/{project_id}` und weder Projektübersicht noch Kundenpfad. Der native Formularreset leert im Browser den Dateiinput; der Komponententest sichert zusätzlich ab, dass der lokale Dateizustand danach keine erneute Reservierung auslöst. Galerie, Medienliste, Vorschau, Signed URLs, Download, Mehrfachupload, Retry, Cleanup und Reconciliation wurden bewusst nicht implementiert.
 
 Gezielte Vitest-Komponenten- und Orchestrierungstests decken Admin-/Reviewer-Anzeigeentscheidung, Formularumfang, zentrale Kategorien, Dateigrenzen, sequenzielle Action-Eingaben, Teilfehler, Storagekonflikt, gemeinsamen Pending-Zustand, Doppelsubmit-Schutz, Erfolg, Reset, eingeschränkte Revalidation und ausgeschlossenen Scope ab. Build, gesamter Testlauf, Typecheck, Lint und Diff-Prüfungen wurden vor dem Commit vollständig ausgeführt. Der Auditstatus bleibt **NICHT Production Ready**.
+
+## AP-12-02-05 Regression and Production Validation Plan
+
+### Baseline, Scope und analysierte Testabdeckung
+
+AP-12-02-05 wurde vom sauberen lokalen Commit `fb8623c9d490136e176ab9c842833c2ea9ca5f8c` auf dem dafür angelegten Branch `codex/ap12-02-05-upload-regression-validation` begonnen. Im Checkout ist kein Git-Remote konfiguriert; ein Fetch sowie der Vergleich mit `origin/main` waren deshalb nicht möglich. Der lokale HEAD ist die ausdrücklich verwendete Baseline und muss im Review gegen den tatsächlichen Remote-`main` verifiziert werden.
+
+Vollständig geprüft wurden die bestehenden Vitest-Suiten für die vier `project_media`-Migrationen, Reservierung, Storage-Upload, Finalisierung und Uploadformular sowie die übergreifenden Berechtigungs-, Revalidation-, Fehlerdarstellungs- und Pending-State-Tests. Bereits eng abgedeckt waren insbesondere die einzelnen Servicegrenzen, Migrationen und Policies, Signatur-/MIME-/Größenprüfung, Statusübergänge und die grundlegende UI-Orchestrierung. Die wesentlichen Lücken lagen in einer gemeinsamen Architekturprüfung über den gesamten Uploadpfad, expliziten Höchstens-einmal-Zusicherungen über Teilfehler hinweg, dem Nachweis „Erfolg und Reset erst nach Abschluss“ sowie einer ausführbaren Production-Validierungscheckliste. Es wurden keine Snapshots, Browsertests, echten Storage-Aufrufe oder Production-Verbindungen ergänzt.
+
+### Ergänzte Regressionstests und Architekturgrenzen
+
+Der neue Architekturtest prüft die Clientkomponente und alle drei Action-/Servicegrenzen als zusammenhängenden Pfad:
+
+- Die UI importiert genau `reserveProjectMediaUploadAction`, `uploadReservedProjectMediaAction` und `finalizeProjectMediaUploadAction`; deren Await-Aufrufe bleiben in der Reihenfolge Reservierung → Upload → Finalisierung, und die Erfolgsmeldung folgt erst danach.
+- Die Clientkomponente enthält keinen Supabase-Client, keine direkte Storage-Nutzung, keine UUID-/Pfadgenerierung, keine technischen Bucket-, Pfad-, Projekt-ID- oder Statusfelder und keinen frei wählbaren Uploadstatus.
+- Der gesamte Uploadpfad enthält weder `service_role`/Service-Role-Umgebungsvariablen noch `createSignedUrl`, `getPublicUrl`, Storage-Delete oder Upsert. Reservierung und Upload revalidieren nicht; der Upload setzt keinen Datenbankstatus auf `ready`.
+- Revalidation bleibt an den erfolgreichen Finalisierungszweig gebunden. Soft Delete bleibt über seine eigene RPC getrennt und wird von keinem Reservierungs-, Upload- oder Finalisierungspfad aufgerufen.
+- Der bestehende Migrationstest bleibt die statische Regression für exakt vier unveränderte AP-12-01-Migrationen: privater Bucket, MIME-Allowlist und Bucketlimit; keine anon-/Public-Rechte; INSERT nur für aktive eigene `pending`-Reservierungen; SELECT nur für aktive `ready`-Medien; keine Storage-UPDATE-/DELETE-Policy; keine physische `project_media`-DELETE-Policy; Soft Delete ausschließlich über RPC. AP-12-02 fügt keine Migration und keine Tabellenstrukturänderung hinzu.
+
+### Orchestrierung und Teilfehlermatrix
+
+Die vollständig gemockte Komponentenorchestrierung bindet `project_id` durch alle Schritte, übernimmt `media_id` ausschließlich aus der Reservierung und übergibt die Datei ausschließlich als eines von genau drei Upload-FormData-Feldern. Bucket und Storagepfad kommen nicht aus Clientdaten. Reservierung, Upload und Finalisierung werden im Erfolgsfall jeweils genau einmal aufgerufen; vor dem bestätigten Finalisierungsergebnis gibt es weder Erfolg noch Reset, danach genau eine Erfolgsmeldung und den Formularreset.
+
+Die Teilfehlermatrix ist ohne Retry, Cleanup oder echte Infrastruktur abgesichert:
+
+| Fehlergrenze | Abgesicherte Folge |
+|---|---|
+| Reservierung | kein Upload, keine Finalisierung, kein Erfolg, kein Reset; Eingaben bleiben erhalten |
+| Storage-Upload | genau ein Uploadversuch, keine Finalisierung, kein Erfolg, kein Reset oder automatischer Retry/Cleanup |
+| Storage-Konflikt | neutrale vorhandene Fehlermeldung; keine Finalisierung, kein Erfolg und keine Revalidation |
+| Finalisierung | Upload zuvor genau einmal, Finalisierung genau einmal, kein Erfolg, kein Reset und kein zweiter Versuch |
+| Doppelsubmit während Pending | ein gemeinsamer Pending-Lock; kein zweiter Ablauf, alle Actions höchstens einmal |
+
+Bei jeder Service-/UI-Fehlerantwort bleibt die Finalisierungsaction erfolglos und damit ihr Revalidation-Zweig unerreichbar. Fehler werden mit `role="alert"` dargestellt; eine erfolgreiche neue Orchestrierung ersetzt den Fehler durch genau einen `role="status"`-Erfolg. Eingaben werden nach einem fehlgeschlagenen Ablauf nicht zurückgesetzt.
+
+### Berechtigungs-, Datei- und Statusregressionen
+
+Die bestehenden Service-Suiten bilden gemeinsam die unveränderte Rollenmatrix ab: Admins sehen das Formular und dürfen alle drei Schritte ausführen. Reviewer sehen wegen der zentralen `canReserveProjectMediaUpload`-Entscheidung kein Formular; Reservierungs-, Upload- und Finalisierungsservice lehnen Reviewer ab. Nicht authentifizierte Actors sowie fehlende, ungültige oder inaktive Profile werden an allen drei Servicegrenzen abgewiesen. Es wurde keine neue Rollenlogik eingeführt.
+
+Die Dateisicherheitstests prüfen vollständige PNG- sowie RIFF/WEBP-Signaturen und die vorhandenen JPEG-/PDF-Signaturen. Dateiendung und `file.name` sind nicht vertrauenswürdig und beeinflussen den reservierten Storagepfad nicht; Browser-MIME allein reicht nicht. Erkanntes MIME, Browser-MIME, reserviertes MIME und tatsächliche Größe müssen zusammenpassen. Leere Dateien sowie Bilder über 15.000.000 Bytes und PDFs über 25.000.000 Bytes werden abgewiesen; die exakten Grenzen bleiben erlaubt. Strikte Uploadschemas verwerfen zusätzliche Clientfelder, und die Reservierung mappt ausschließlich die explizite Insert-Allowlist.
+
+Die Statusregression bleibt dreigeteilt: Reservierungen werden ausschließlich als `pending` angelegt; der Storage-Upload mutiert keine Datenbankzeile und liefert weiterhin `pending`; nur die Finalisierung führt das eng gebundene Compare-and-set `pending → ready` aus. `ready`, `failed`, soft-gelöschte Medien, fehlende Objekte und verlorene Compare-and-set-Läufe erzeugen keinen Erfolg. Upload und Finalisierung rufen die Soft-Delete-RPC nicht auf; eine `failed`-Orchestrierung wurde nicht ergänzt.
+
+### UI- und Revalidation-Regressionen
+
+Das Formular besitzt genau ein Fileinput ohne `multiple`, mit dem zentral erzeugten `accept`-Attribut, und genau eine Kategorieauswahl mit ausschließlich den zentralen Kategorien und Labels. Es besitzt keine technischen Inputs, Vorschau, Galerie oder Downloadfunktion. Ein gemeinsamer Pending-Zustand setzt `aria-busy`, sperrt Datei, Kategorie und Submit, setzt `aria-disabled` und zeigt „Wird hochgeladen …“. Fehler verwenden `role="alert"`, Erfolg `role="status"`; Reset und Erfolg erfolgen ausschließlich nach bestätigter Finalisierung.
+
+Reservierung und Storage-Upload enthalten keine Revalidation. Die Finalisierungsaction revalidiert nur bei `result.success`, genau über den zentralen Medienupload-Helfer, der ausschließlich `/projects/{project_id}` zurückgibt. Projektübersicht und Kundenpfad werden nicht verwendet; der Helfer liefert genau einen Pfad, daher gibt es keine doppelte Revalidation. Kein Teilfehler erreicht den erfolgreichen Finalisierungszweig.
+
+### Manuelle Production-Validierungscheckliste
+
+Die folgenden Punkte sind in der tatsächlichen Zielumgebung einzeln mit Datum, Umgebung, ausführender Person und datensparsamen Ergebnisbelegen zu dokumentieren. Diese Liste ist ein Plan und kein Nachweis ihrer Durchführung.
+
+#### Umgebung / Supabase
+
+- [ ] Alle vier AP-12-01-Migrationen `202607270001` bis `202607270004` sind angewendet.
+- [ ] Die Migrationen wurden exakt in numerischer Reihenfolge angewendet; keine Drift oder nachträgliche Tabellenänderung liegt vor.
+- [ ] `public.project_media` ist vorhanden und RLS ist aktiviert.
+- [ ] Bucket `project-media` ist vorhanden und `public = false`.
+- [ ] MIME-Allowlist ist exakt JPEG, PNG, WebP und PDF; keine zusätzlichen Typen sind erlaubt.
+- [ ] Bucketlimit ist exakt 25.000.000 Bytes; die engeren 15.000.000-Byte-Bildlimits werden durch Anwendung/DB erzwungen.
+- [ ] Die erwarteten Storage-INSERT- und beiden ready-only SELECT-Policies sind vorhanden; keine UPDATE-/DELETE-Policy existiert.
+- [ ] `soft_delete_project_media` ist vorhanden; EXECUTE ist nur wie migriert vergeben.
+- [ ] `anon` besitzt weder Tabellen-, Objekt- noch RPC-Rechte.
+
+#### Admin-Smoke-Test
+
+- [ ] Je ein gültiges JPEG, PNG, WebP und PDF hochladen.
+- [ ] Soweit praktikabel eine exakte 15.000.000-Byte-Bildgrenze und 25.000.000-Byte-PDF-Grenze prüfen.
+- [ ] Jedes erfolgreiche Medium endet in `ready`.
+- [ ] Das Objekt liegt exakt am reservierten Pfad `projects/{project_id}/originals/{media_id}/{uuid}.{ext}`.
+- [ ] Weder Originaldateiname noch Kunden-/Adressdaten erscheinen im Objektpfad.
+- [ ] Genau eine Erfolgsmeldung erscheint und das Formular wird zurückgesetzt.
+
+#### Reviewer-Smoke-Test
+
+- [ ] Das Uploadformular ist nicht sichtbar.
+- [ ] Ein direkter Reservierungsversuch scheitert neutral.
+- [ ] Ein direkter Versuch, eine reservierte Datei hochzuladen, scheitert neutral.
+- [ ] Ein direkter Finalisierungsversuch scheitert neutral.
+
+#### Negative Uploadtests
+
+- [ ] Falschen Browser-MIME-Type und MIME abweichend von der Reservierung ablehnen.
+- [ ] Falsche oder abgeschnittene Magic Bytes für alle vier Formate ablehnen.
+- [ ] Leere und je eine Byte zu große Datei ablehnen.
+- [ ] Falsche `project_id` und fremde Reservierung ablehnen.
+- [ ] Reservierung zu einem soft-gelöschten Projekt ablehnen.
+- [ ] Soft-gelöschtes Medium, `ready`- oder `failed`-Reservierung ablehnen.
+- [ ] Upload auf ein bereits bestehendes Storageobjekt neutral als Konflikt ablehnen und nicht überschreiben.
+- [ ] Finalisierung bei fehlendem Storageobjekt ablehnen.
+
+#### Teilfehlerszenarien
+
+- [ ] Reservierung erzeugen, Storage-Upload gezielt scheitern lassen und `pending` ohne automatischen Retry/Erfolg nachweisen.
+- [ ] Upload erfolgreich ausführen, Finalisierung gezielt scheitern lassen und fehlenden Erfolg/Revalidation nachweisen.
+- [ ] Entstandene `pending`-/Objekt-Orphans erfassen; ausdrücklich dokumentieren, dass automatisches Cleanup und Reconciliation noch fehlen und manuell kontrolliert behandelt werden müssen.
+
+#### Storage-Sicherheit
+
+- [ ] Es wird keine Public URL erzeugt oder ausgegeben.
+- [ ] `anon` kann kein Objekt lesen.
+- [ ] Reviewer können `pending`/`failed` nicht lesen.
+- [ ] Admins können `pending`/`failed` nicht über den normalen SELECT-Pfad lesen.
+- [ ] Ein aktives `ready`-Medium ist für Admin und Reviewer nach ihrer Projektberechtigung lesbar.
+- [ ] Ein soft-gelöschtes Medium ist nicht mehr lesbar.
+- [ ] Das physische Objekt bleibt nach Soft Delete bewusst bestehen; kein implizites Storage-Delete findet statt.
+
+#### Vercel
+
+- [ ] Production-Build in der Zielkonfiguration ist erfolgreich.
+- [ ] Alle drei Server Actions laufen ohne Serialisierungs-, Body- oder Runtimefehler.
+- [ ] Uploads bis zu beiden Produktlimits praktisch prüfen.
+- [ ] Aktuelle Request-, Body-, Function-, Memory- und Laufzeitlimits praktisch und anhand der zum Validierungszeitpunkt gültigen Anbieterunterlagen verifizieren.
+- [ ] Große Dateien, langsame Verbindungen und Timeouts beobachten; keine personenbezogenen Daten, Originalnamen oder Storagepfade loggen.
+
+### Production-Readiness-Bewertung und verbleibende Gates
+
+Technisch implementiert und durch lokale, gemockte Regressionen abgesichert sind Reservierung, Inhaltsvalidierung, privater Storage-Upload ohne Upsert, enge Finalisierung, Single-File-UI und grundlegende Admin-/Reviewer-/Auth-Berechtigungen.
+
+Weiterhin fehlen Reconciliation, Cleanup verwaister `pending`/`failed`-Datensätze und Objekte, automatischer Retry, Mehrfachupload, Galerie, Signed URLs, Download, Soft-Delete-UI und echte Production-Smoke-Tests. Außerdem offen bleiben rechtliche und datenschutzrechtliche Gates, die EXIF-Entscheidung, Retention/Purge und Multi-Tenant-Isolation. Plattformlimits und Teilfehlerverhalten müssen in einer production-nahen Umgebung praktisch validiert werden.
+
+**Auditstatus: NICHT Production Ready.** Dieser Status bleibt bestehen, bis die manuelle Production-Validierung vollständig durchgeführt, mit Ergebnissen dokumentiert und reviewed wurde. Lokale Mock- und Architekturtests ersetzen diesen Nachweis nicht.
+
+### Empfehlung für den nächsten Schritt
+
+1. AP-12-01-Migrationen und den vollständigen Uploadfluss manuell in der vorgesehenen Production-/production-nahen Umgebung anwenden und validieren.
+2. Danach einen kleinen reinen Dokumentations-PR **AP-12-02-06 – Production Validation Result** erstellen, der jeden Check mit Ergebnis und verbleibenden Abweichungen festhält.
+3. Erst nach dieser Freigabe **AP-12-03 – Projektmedienliste und autorisierte Signed-URL-Anzeige** beginnen.
+
+AP-12-02-05 implementiert ausdrücklich keine Medienliste und kein neues fachliches Verhalten.

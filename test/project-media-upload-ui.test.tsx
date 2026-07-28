@@ -104,6 +104,9 @@ describe("Orchestrierung, Pending und Erfolg", () => {
     expect(uploadData.get("project_id")).toBe(projectId);
     expect(uploadData.get("file")).toBe(selected);
     expect(finalize).toHaveBeenCalledWith({ media_id: mediaId, project_id: projectId });
+    expect(reserve).toHaveBeenCalledTimes(1);
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(finalize).toHaveBeenCalledTimes(1);
     expect((screen.getByLabelText("Primärkategorie") as HTMLSelectElement).value).toBe(PROJECT_MEDIA_DEFAULT_CATEGORY);
     fireEvent.click(screen.getByRole("button", { name: "Datei hochladen" }));
     expect(await screen.findByText("Bitte wählen Sie eine Datei aus.")).not.toBeNull();
@@ -140,6 +143,27 @@ describe("Orchestrierung, Pending und Erfolg", () => {
     expect((screen.getByLabelText("Datei") as HTMLInputElement).files).toHaveLength(1);
     if (step === "reserve") expect(upload).not.toHaveBeenCalled();
     if (step !== "finalize") expect(finalize).not.toHaveBeenCalled();
+    if (step === "upload") expect(upload).toHaveBeenCalledTimes(1);
+    if (step === "finalize") {
+      expect(upload).toHaveBeenCalledTimes(1);
+      expect(finalize).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("meldet erst nach einem bestätigten ready-Abschluss Erfolg und setzt erst dann zurück", async () => {
+    let finish: ((value: unknown) => void) | undefined;
+    finalize.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    render(<ProjectMediaUploadForm projectId={projectId} />);
+    chooseFile();
+    fireEvent.click(screen.getByRole("button", { name: "Datei hochladen" }));
+    await waitFor(() => expect(finalize).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("status")).toBeNull();
+    expect((screen.getByLabelText("Datei") as HTMLInputElement).files).toHaveLength(1);
+    finish?.({ success: true, data: { media_id: mediaId, project_id: projectId, upload_status: "ready" } });
+    expect((await screen.findByRole("status")).textContent).toBe("Die Datei wurde erfolgreich hochgeladen.");
+    fireEvent.click(screen.getByRole("button", { name: "Datei hochladen" }));
+    expect(await screen.findByText("Bitte wählen Sie eine Datei aus.")).not.toBeNull();
+    expect(reserve).toHaveBeenCalledTimes(1);
   });
 
   it("validiert vor der Reservierung und bewahrt Eingaben nach Fehlern", async () => {
@@ -156,5 +180,13 @@ describe("Scope", () => {
     for (const forbidden of ["supabase.storage", "createSigned" + "Url", "getPublic" + "Url", "storage_bucket", "storage_path", "multiple=", "dropzone", "download="]) {
       expect(source).not.toContain(forbidden);
     }
+  });
+
+  it("enthält nur ein fachliches Auswahlfeld und keine technischen oder darstellenden Medienfunktionen", () => {
+    const { container } = render(<ProjectMediaUploadForm projectId={projectId} />);
+    expect(container.querySelectorAll("select")).toHaveLength(1);
+    expect(container.querySelectorAll('input:not([type="file"])')).toHaveLength(0);
+    expect(container.querySelector("img, video, audio, a[download]")).toBeNull();
+    expect(container.textContent?.toLowerCase()).not.toMatch(/galerie|vorschau|download/);
   });
 });
