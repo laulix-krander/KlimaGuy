@@ -593,3 +593,15 @@ Der verbleibende manuelle Aufwand besteht genau aus zwei kurzen Browser-Smoke-Te
 Lokale Toolkit-Tests decken Read-only-SQL und Prüfgruppen, Skriptreihenfolge/Fehlerabbruch, Default-/Umgebungs-Gates, Secret-/URL-/Privilegienverbote, den Adapter-Lebenszyklus und die Beschränkung des Runbooks auf zwei Browserprüfungen ab. Die finalen Ergebnisse von Build, Vitest, Typecheck, Lint und Diff-Prüfung sind im zugehörigen AP-12-02-06-Abschlussbericht festzuhalten.
 
 **Auditstatus: NICHT Production Ready.** Der Status bleibt bestehen, bis die verkürzte Validierung in der Zielumgebung tatsächlich ausgeführt, dokumentiert und reviewed wurde.
+
+## AP-12-02-HF-01 Reservation Insert Result Fix
+
+In Production scheiterte der Browser-Upload bereits bei der Reservierung mit „Der Upload konnte nicht reserviert werden. Bitte versuchen Sie es erneut.“, obwohl der INSERT der Reservierung erfolgreich gewesen sein konnte. Ursache war die Verkettung von `insert(payload).select("id").single()`: Der INSERT erzeugte eine Zeile mit `upload_status = 'pending'`, das unmittelbar anschließende SELECT war jedoch von den normalen `project_media`-SELECT-Policies abhängig. Diese Policies blenden `pending` bewusst aus und geben ausschließlich `ready` frei. Damit konnte ein erfolgreicher INSERT wegen des abweichenden RLS-Ergebnisses des anschließenden SELECT fälschlich als fehlgeschlagene Reservierung erscheinen.
+
+Der Reservierungsadapter liest die eingefügte Zeile nun nicht mehr zurück. Er wertet ausschließlich den Supabase-INSERT-Fehler aus und verwendet bei einem fehlerfreien INSERT die bereits vor dem INSERT serverseitig erzeugte und in der exakt allowlisteten Payload enthaltene `mediaId` als Quelle des Erfolgsresultats. Ein echter INSERT-Fehler bleibt ein Reservierungsfehler. Es wurden weder SELECT-Policies oder sonstige RLS-Regeln aufgeweicht noch Grants, Storage, SQL oder Migrationen verändert.
+
+Vor diesem Hotfix fehlgeschlagene UI-Versuche können bereits erfolgreiche `pending`-Zeilen hinterlassen haben, weil INSERT und anschließendes SELECT unterschiedliche RLS-Ergebnisse besaßen. Diese möglichen Orphans werden nicht automatisch bereinigt und es werden keine bestehenden Datensätze gelöscht; sie bleiben Gegenstand einer kontrollierten Production-Nachprüfung.
+
+Gezielte Regressionstests sichern das fehlende Rücklesen (`select`, `single`, `maybeSingle`), Erfolg ohne zurückgegebene PostgREST-Zeile mit der serverseitigen `mediaId`, echte INSERT-Fehler, die exakte Payload und den Status `pending` sowie das Fehlen von Storage-, Signed-URL- und Service-Role-Zugriffen ab. Build, vollständiger Testlauf, Typecheck, Lint und Diff-Prüfung werden für den Hotfix vollständig ausgeführt; der erneute Browser-Smoke-Test in Production bleibt das Freigabe-Gate.
+
+**Auditstatus: NICHT Production Ready.** Der Status bleibt bis zum erneuten erfolgreichen Browser-Smoke-Test bestehen.

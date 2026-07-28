@@ -9,6 +9,9 @@ export async function reserveProjectMediaUploadAction(input: unknown): Promise<U
     auth: { getUser: () => supabase.auth.getUser() },
     getProfile: async (userId) => supabase.from("profiles").select("role").eq("id", userId).single(),
     getActiveProject: async (projectId) => supabase.from("projects").select("id").eq("id", projectId).is("deleted_at", null).single(),
-    insertProjectMedia: async (payload: ProjectMediaInsert) => supabase.from("project_media").insert(payload).select("id").single(),
+    insertProjectMedia: async (payload: ProjectMediaInsert) => {
+      const { error } = await supabase.from("project_media").insert(payload);
+      return { data: error ? null : { id: payload.id }, error };
+    },
   }, input);
 }
