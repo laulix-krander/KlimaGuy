@@ -16,6 +16,8 @@ const media: ProjectMediaForFinalization = {
   project_id: projectId,
   storage_bucket: "project-media",
   storage_path: `projects/${projectId}/originals/${mediaId}/server.jpg`,
+  mime_type: "image/jpeg",
+  file_size_bytes: 100,
   uploaded_by: userId,
   upload_status: "pending",
   deleted_at: null,
@@ -27,6 +29,8 @@ function setup(options: {
   project?: { id: string } | null;
   media?: ProjectMediaForFinalization | null;
   objectExists?: boolean;
+  objectSize?: number;
+  objectMime?: string;
   storageError?: unknown;
   updateData?: { id: string; project_id: string; upload_status: string } | null;
   updateError?: unknown;
@@ -37,9 +41,9 @@ function setup(options: {
     getProfile: async () => ({ data: options.role === null ? null : { role: options.role ?? "admin" }, error: null }),
     getActiveProject: async () => ({ data: options.project === undefined ? { id: projectId } : options.project, error: null }),
     getMedia: async () => ({ data: options.media === undefined ? media : options.media, error: null }),
-    storageObjectExists: async (...args) => {
+    getStorageObjectMetadata: async (...args) => {
       calls.exists.push(args);
-      return { exists: options.objectExists ?? true, error: options.storageError ?? null };
+      return { data: options.objectExists === false ? null : { bucket_id: media.storage_bucket, name: media.storage_path, size: options.objectSize ?? media.file_size_bytes, mime_type: options.objectMime ?? media.mime_type }, error: options.storageError ?? null };
     },
     markReadyIfPending: async (...args) => {
       calls.updates.push(args);
@@ -94,7 +98,7 @@ describe("Projekt, Medium und Objekt", () => {
   it("prüft das Objekt am reservierten Bucket und Pfad vor dem Update", async () => {
     const { source, calls } = setup();
     expect(await errorCode(source)).toBe("success");
-    expect(calls.exists).toEqual([[media.storage_bucket, media.storage_path]]);
+    expect(calls.exists).toEqual([[mediaId, projectId]]);
     expect(calls.updates).toEqual([[mediaId, projectId, userId]]);
   });
 
@@ -102,6 +106,11 @@ describe("Projekt, Medium und Objekt", () => {
     const { source, calls } = setup({ objectExists: false });
     expect(await errorCode(source)).toBe("storage_object_missing");
     expect(calls.updates).toHaveLength(0);
+  });
+
+  it("weist abweichende Objektmetadaten ab", async () => {
+    expect(await errorCode(setup({ objectSize: 101 }).source)).toBe("storage_metadata_mismatch");
+    expect(await errorCode(setup({ objectMime: "image/png" }).source)).toBe("storage_metadata_mismatch");
   });
 
   it("unterscheidet eine fehlgeschlagene Objektprüfung", async () => {

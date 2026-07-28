@@ -108,3 +108,15 @@ Der Uploadpfad ist für die eingefrorenen Produktgrößen nicht mit den aktuelle
 ## Ausdrückliche Scope-Bestätigung
 
 Dieses Arbeitspaket enthält ausschließlich diese neue Auditdatei. Es implementiert nichts und ändert weder `next.config.ts`, UI, Server Actions, Services, Schemas, Produktlimits, Migrationen, SQL, RLS, Storage-Policies, Bucket, `package.json` noch Tests. Es erhöht kein `bodySizeLimit`, führt keinen direkten Clientupload und keine Signed Upload URL ein, verwendet kein `service_role` und ergänzt keine Logs mit Dateinamen, Storagepfaden oder Secrets. Es wurden keine Tests ausgeführt.
+
+## AP-12-02-HF-02 Direct Upload Transport Result
+
+HF-02 entfernt den Binärtransport durch die Next.js Server Action und damit durch die Vercel Function. Nach der serverseitigen DB-first-Reservierung prüft eine enge Ticket-Action Authentifizierung, aktives Adminprofil, aktives Projekt sowie die eigene, aktive `pending`-Reservierung. Bucket und kanonischer Pfad stammen ausschließlich aus dieser Reservierung. Das kurzlebige Signed-Upload-Ticket wird weder persistiert noch geloggt; der Browser verwendet es mit `uploadToSignedUrl` für den direkten Upload in den privaten Bucket und ohne Upsert.
+
+Vor `pending → ready` liest ein enges, authentifiziertes SQL-Helper-RPC ausschließlich Metadaten des exakt reservierten Storage-Objekts. Finalisiert wird nur bei identischem Bucket, Pfad, Byteumfang und Content-Type sowie weiterhin aktivem Projekt, eigener aktiver Reservierung und `pending`; das Statusupdate bleibt Compare-and-set. Die additive Migration `202607280001_project_media_direct_upload_helpers.sql` ist erforderlich, weil normale Tabellen- und Storage-SELECT-Policies `pending` absichtlich verbergen. Sie öffnet keine SELECT-, INSERT-, UPDATE- oder DELETE-Policy und gewährt weder `anon` noch `PUBLIC` Zugriff.
+
+Der tote `uploadReservedProjectMediaAction`, sein Binär-Uploadservice und die ausschließlich darauf bezogenen Tests wurden entfernt. Frühere fehlgeschlagene Versuche können weiterhin `pending`-Orphans hinterlassen; das Runbook enthält nur eine read-only Diagnose. Es gibt keine automatische Bereinigung.
+
+Verbleibende Security Gates sind eine Prüfung der tatsächlich gespeicherten Magic Bytes ohne vollständigen Download durch Vercel, Quarantäne-/Malwareprüfung, kontrollierte Reconciliation und Cleanup/Purge. Die frühere Vor-Speicher-Magic-Byte-Prüfung ist nach Entfernung des Vercel-Binärpfads ausdrücklich nicht mehr aktiv. Build, vollständige Vitest-Suite, Typecheck, Lint und Diff-Prüfung wurden lokal ausgeführt; ein erneuter Production-Smoke-Test bleibt erforderlich.
+
+**Auditstatus: NICHT Production Ready.**
