@@ -10,6 +10,8 @@ export type ProjectMediaForFinalization = {
   project_id: string;
   storage_bucket: string;
   storage_path: string;
+  mime_type: string;
+  file_size_bytes: number;
   uploaded_by: string;
   upload_status: UploadStatus;
   deleted_at: string | null;
@@ -22,7 +24,7 @@ export type ProjectMediaUploadFinalizationDataSource = {
   getProfile(userId: string): QueryResult<{ role: string | null }>;
   getActiveProject(projectId: string): QueryResult<{ id: string }>;
   getMedia(mediaId: string, projectId: string): QueryResult<ProjectMediaForFinalization>;
-  storageObjectExists(bucket: string, path: string): Promise<{ exists: boolean; error: unknown }>;
+  getStorageObjectMetadata(mediaId: string, projectId: string): QueryResult<{ bucket_id: string; name: string; size: number; mime_type: string }>;
   markReadyIfPending(mediaId: string, projectId: string, userId: string): QueryResult<{
     id: string;
     project_id: string;
@@ -34,7 +36,7 @@ export type ProjectMediaUploadFinalizationErrorCode =
   | "not_authenticated" | "profile_unavailable" | "not_authorized" | "invalid_input"
   | "project_unavailable" | "media_missing" | "media_deleted" | "media_owner_mismatch"
   | "media_already_ready" | "media_failed" | "media_invalid" | "storage_object_missing"
-  | "storage_check_failed" | "finalization_conflict";
+  | "storage_check_failed" | "storage_metadata_mismatch" | "finalization_conflict";
 
 export type ProjectMediaUploadFinalizationResult =
   | { success: true; data: { media_id: string; project_id: string; upload_status: "ready"; finalized: true } }
@@ -54,6 +56,7 @@ const errorMessages: Record<ProjectMediaUploadFinalizationErrorCode, string> = {
   media_invalid: "Die Upload-Reservierung ist ungültig.",
   storage_object_missing: "Das hochgeladene Objekt wurde nicht gefunden.",
   storage_check_failed: "Das hochgeladene Objekt konnte nicht überprüft werden.",
+  storage_metadata_mismatch: "Das hochgeladene Objekt entspricht nicht der Reservierung.",
   finalization_conflict: "Der Upload konnte nicht finalisiert werden.",
 };
 
@@ -88,9 +91,11 @@ export async function finalizeProjectMediaUploadWithDataSource(
   if (media.upload_status === "failed") return failure("media_failed");
   if (media.upload_status !== "pending" || media.storage_bucket !== PROJECT_MEDIA_STORAGE_BUCKET) return failure("media_invalid");
 
-  const object = await dataSource.storageObjectExists(media.storage_bucket, media.storage_path);
+  const object = await dataSource.getStorageObjectMetadata(mediaId, projectId);
   if (object.error) return failure("storage_check_failed");
-  if (!object.exists) return failure("storage_object_missing");
+  if (!object.data) return failure("storage_object_missing");
+  if (object.data.bucket_id !== media.storage_bucket || object.data.name !== media.storage_path
+    || object.data.size !== media.file_size_bytes || object.data.mime_type !== media.mime_type) return failure("storage_metadata_mismatch");
 
   const { data: finalized, error } = await dataSource.markReadyIfPending(mediaId, projectId, authData.user.id);
   if (error || finalized?.id !== mediaId || finalized.project_id !== projectId || finalized.upload_status !== "ready") {

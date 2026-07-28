@@ -16,13 +16,8 @@ export async function finalizeProjectMediaUploadAction(input: unknown): Promise<
     auth: { getUser: () => supabase.auth.getUser() },
     getProfile: async (userId) => supabase.from("profiles").select("role").eq("id", userId).single(),
     getActiveProject: async (projectId) => supabase.from("projects").select("id").eq("id", projectId).is("deleted_at", null).single(),
-    getMedia: async (mediaId, projectId) => supabase.from("project_media")
-      .select("id, project_id, storage_bucket, storage_path, uploaded_by, upload_status, deleted_at")
-      .eq("id", mediaId).eq("project_id", projectId).single() as unknown as Promise<{ data: ProjectMediaForFinalization | null; error: unknown }>,
-    storageObjectExists: async (bucket, path) => {
-      const result = await supabase.storage.from(bucket).exists(path);
-      return { exists: result.data, error: result.error };
-    },
+    getMedia: async (mediaId, projectId) => supabase.rpc("get_pending_project_media_upload", { target_media_id: mediaId, target_project_id: projectId }).maybeSingle() as unknown as Promise<{ data: ProjectMediaForFinalization | null; error: unknown }>,
+    getStorageObjectMetadata: async (mediaId, projectId) => supabase.rpc("get_project_media_storage_object_metadata", { target_media_id: mediaId, target_project_id: projectId }).maybeSingle() as unknown as Promise<{ data: { bucket_id: string; name: string; size: number; mime_type: string } | null; error: unknown }>,
     markReadyIfPending: async (mediaId, projectId, userId) => supabase.from("project_media")
       .update({ upload_status: "ready" })
       .eq("id", mediaId).eq("project_id", projectId).eq("uploaded_by", userId)

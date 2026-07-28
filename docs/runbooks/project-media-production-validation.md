@@ -32,3 +32,20 @@ Die vorhandenen automatisierten Tests decken die Negativfälle ab.
 | Admin-Upload PASS/FAIL | |
 | Reviewer-Sichtbarkeit PASS/FAIL | |
 | offene WARNs | |
+
+## Read-only Diagnose möglicher pending-Orphans
+
+Frühere fehlgeschlagene Uploadversuche können `pending`-Reservierungen hinterlassen haben. Die folgende Diagnose verändert keine Daten und gibt bewusst keine Originaldateinamen oder Storagepfade aus:
+
+```sql
+select count(*) over () as pending_count,
+       project_id,
+       created_at,
+       now() - created_at as age
+from public.project_media
+where upload_status = 'pending'
+  and deleted_at is null
+order by created_at asc;
+```
+
+Keine Zeile aus dieser Diagnose darf automatisiert gelöscht oder in personenbezogene Logs übernommen werden.

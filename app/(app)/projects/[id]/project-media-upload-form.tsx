@@ -3,7 +3,9 @@
 import React, { FormEvent, useRef, useState } from "react";
 import { finalizeProjectMediaUploadAction } from "@/lib/actions/project-media-upload-finalization";
 import { reserveProjectMediaUploadAction } from "@/lib/actions/project-media-upload-reservation";
-import { uploadReservedProjectMediaAction } from "@/lib/actions/project-media-storage-upload";
+import { createProjectMediaUploadTicketAction } from "@/lib/actions/project-media-upload-ticket";
+import { PROJECT_MEDIA_STORAGE_BUCKET } from "@/lib/actions/project-media-upload-reservation-service";
+import { createClient } from "@/lib/supabase/browser";
 import { PROJECT_MEDIA_CATEGORY_LABELS, type ProjectMediaCategory } from "@/lib/domain/mappers";
 import { PROJECT_MEDIA_CATEGORIES, PROJECT_MEDIA_MIME_TYPES } from "@/lib/domain/schemas";
 import { ProjectFieldError, ProjectFormError } from "./project-form-errors";
@@ -69,13 +71,21 @@ export function ProjectMediaUploadForm({ projectId }: { projectId: string }) {
         return;
       }
 
-      const uploadData = new FormData();
-      uploadData.set("media_id", reservation.data.media_id);
-      uploadData.set("project_id", projectId);
-      uploadData.set("file", file);
-      const upload = await uploadReservedProjectMediaAction(uploadData);
-      if (!upload.success) {
-        setError(upload.error || "Die Datei konnte nicht hochgeladen werden.");
+      const ticket = await createProjectMediaUploadTicketAction({ media_id: reservation.data.media_id, project_id: projectId });
+      if (!ticket.success) {
+        setError(ticket.error || "Das Uploadticket konnte nicht erstellt werden.");
+        return;
+      }
+      if (file.size !== ticket.data.expected_size || file.type !== ticket.data.expected_mime) {
+        setError("Die Upload-Reservierung ist ungültig.");
+        return;
+      }
+      const upload = await createClient().storage.from(PROJECT_MEDIA_STORAGE_BUCKET).uploadToSignedUrl(ticket.data.path, ticket.data.token, file, {
+        contentType: ticket.data.expected_mime,
+        upsert: false,
+      });
+      if (upload.error) {
+        setError(upload.error.statusCode === "409" ? "Für diese Reservierung wurde bereits eine Datei hochgeladen." : "Der direkte Storage-Upload ist fehlgeschlagen.");
         return;
       }
 

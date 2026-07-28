@@ -605,3 +605,7 @@ Vor diesem Hotfix fehlgeschlagene UI-Versuche können bereits erfolgreiche `pend
 Gezielte Regressionstests sichern das fehlende Rücklesen (`select`, `single`, `maybeSingle`), Erfolg ohne zurückgegebene PostgREST-Zeile mit der serverseitigen `mediaId`, echte INSERT-Fehler, die exakte Payload und den Status `pending` sowie das Fehlen von Storage-, Signed-URL- und Service-Role-Zugriffen ab. Build, vollständiger Testlauf, Typecheck, Lint und Diff-Prüfung werden für den Hotfix vollständig ausgeführt; der erneute Browser-Smoke-Test in Production bleibt das Freigabe-Gate.
 
 **Auditstatus: NICHT Production Ready.** Der Status bleibt bis zum erneuten erfolgreichen Browser-Smoke-Test bestehen.
+
+## HF-02 Transporthinweis
+
+Der direkte, reservierungsgebundene Browser-zu-Supabase-Transport und die nachgelagerte Objektmetadatenprüfung werden in `2026-07-28-ap12-02-upload-http-500-audit.md` unter **AP-12-02-HF-02 Direct Upload Transport Result** dokumentiert. Bis zum erneuten Production-Smoke-Test bleibt der Auditstatus **NICHT Production Ready**.
