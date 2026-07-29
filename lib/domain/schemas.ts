@@ -68,6 +68,11 @@ export const projectMediaOrphanInventoryQuerySchema = z.object({
   page: z.coerce.number().int().min(1).max(10_000).default(1),
 }).strict();
 
+export const projectMediaOrphanClaimSchema = z.object({
+  media_id: z.string().uuid("Die Medien-ID ist ungültig."),
+  project_id: projectIdSchema,
+}).strict();
+
 const projectCoreFields = {
   title: z.string().trim().min(1, "Projektbezeichnung ist erforderlich").max(180),
   installation_address: optionalText,

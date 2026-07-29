@@ -1,6 +1,7 @@
 import Link from "next/link";
 import React from "react";
 import type { ProjectMediaOrphanInventoryResult } from "@/lib/actions/project-media-orphan-inventory-service";
+import { OrphanClaimControl } from "./orphan-claim-control";
 
 type SuccessData = Extract<ProjectMediaOrphanInventoryResult, { success: true }>['data'];
 
@@ -21,13 +22,13 @@ function pageHref(page: number, filter: SuccessData['filter']): string {
   return `/admin/project-media/orphans?page=${page}&status=${filter}`;
 }
 
-export function OrphanInventoryView({ data }: { data: SuccessData }) {
+export function OrphanInventoryView({ data, canClaim = false }: { data: SuccessData; canClaim?: boolean }) {
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Medien-Inventur</h1>
         <p className="mt-2 rounded border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-950" role="status">
-          Nur Diagnose. Diese Ansicht verändert oder löscht keine Daten.
+          Die Inventur zeigt ausschließlich mindestens 24 Stunden alte Pending- und Failed-Kandidaten. Eine fachliche Bereinigung erfordert eine ausdrückliche Bestätigung.
         </p>
       </div>
 
@@ -55,7 +56,7 @@ export function OrphanInventoryView({ data }: { data: SuccessData }) {
             <table className="w-full border-collapse text-left text-sm">
               <thead><tr className="border-b">
                 <th className="p-2">Klassifikation</th><th className="p-2">Projekt</th><th className="p-2">Status</th>
-                <th className="p-2">Alter</th><th className="p-2">MIME-Type</th><th className="p-2">Dateigröße</th><th className="p-2">Erstellt am</th>
+                <th className="p-2">Alter</th><th className="p-2">MIME-Type</th><th className="p-2">Dateigröße</th><th className="p-2">Erstellt am</th>{canClaim ? <th className="p-2">Aktion</th> : null}
               </tr></thead>
               <tbody>{data.items.map((item) => (
                 <tr className="border-b last:border-0" key={item.media_id}>
@@ -63,6 +64,7 @@ export function OrphanInventoryView({ data }: { data: SuccessData }) {
                   <td className="p-2"><span className="font-medium">{item.project_title}</span><br /><span className="font-mono text-xs text-slate-500">{item.project_id}</span></td>
                   <td className="p-2">{item.upload_status}</td><td className="p-2">{item.age_hours} Std.</td>
                   <td className="p-2">{item.mime_type}</td><td className="p-2">{formatBytes(item.file_size_bytes)}</td><td className="p-2">{formatDate(item.created_at)}</td>
+                  {canClaim ? <td className="p-2"><OrphanClaimControl mediaId={item.media_id} projectId={item.project_id} /></td> : null}
                 </tr>
               ))}</tbody>
             </table>
