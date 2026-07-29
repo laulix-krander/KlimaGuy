@@ -120,3 +120,17 @@ Der tote `uploadReservedProjectMediaAction`, sein Binär-Uploadservice und die a
 Verbleibende Security Gates sind eine Prüfung der tatsächlich gespeicherten Magic Bytes ohne vollständigen Download durch Vercel, Quarantäne-/Malwareprüfung, kontrollierte Reconciliation und Cleanup/Purge. Die frühere Vor-Speicher-Magic-Byte-Prüfung ist nach Entfernung des Vercel-Binärpfads ausdrücklich nicht mehr aktiv. Build, vollständige Vitest-Suite, Typecheck, Lint und Diff-Prüfung wurden lokal ausgeführt; ein erneuter Production-Smoke-Test bleibt erforderlich.
 
 **Auditstatus: NICHT Production Ready.**
+
+## AP-12-02-HF-03 Atomic Finalization RPC Result
+
+Der Production-Smoke-Test belegt, dass der direkte Signed Upload bereits vollständig erfolgreich war: Der Browser-PUT an Supabase Storage endete mit **HTTP 200**, lieferte den an die Reservierung gebundenen Pfad `projects/{project_id}/originals/{media_id}/{uuid}.png` zurück und verwendete `X-Upsert: false`. Erst der anschließende Statuswechsel endete weiterhin als `finalization_conflict`. Ursache war der direkte PostgREST-Update-/Return-Pfad des Adapters, der nach dem Update eine sichtbare `ready`-Zeile erwartete.
+
+HF-03 ersetzt ausschließlich diesen Pfad durch `public.finalize_project_media_upload(uuid, uuid) returns boolean`. Die `SECURITY DEFINER`-Funktion verwendet den festen `search_path` `public, storage, pg_temp`, verlangt `auth.uid()` und die zentrale Adminrolle und ermittelt sämtliche übrigen Werte serverseitig. In derselben atomaren Compare-and-set-Anweisung bindet sie Medien- und Projekt-ID, `uploaded_by`, aktive Projekt- und Medienzeilen, Status `pending`, Bucket `project-media`, exakten Objektpfad sowie die in `storage.objects.metadata` gespeicherten Werte `size` und `mimetype`. Sie setzt ausschließlich `upload_status = 'ready'`; ihr Boolean wird aus der tatsächlich aktualisierten Zeilenzahl abgeleitet.
+
+Die Ausführung wird zunächst für `PUBLIC`, `anon` und `authenticated` entzogen und danach ausschließlich `authenticated` gewährt; die Funktion selbst weist Nicht-Admins ab. Es wurden weder Tabellen-Grants noch RLS- oder Storage-Policies erweitert. Der Adapter übergibt nur Medien- und Projekt-ID an die RPC, mappt ausschließlich `data === true` ohne RPC-Fehler auf das bestehende schmale Erfolgsresultat und behandelt `false` oder einen RPC-Fehler weiterhin als `finalization_conflict`. Revalidierung erfolgt nur nach diesem Erfolg.
+
+Das physische Objekt des fehlgeschlagenen Production-Versuchs existiert bereits; der zugehörige `project_media`-Datensatz bleibt wahrscheinlich `pending`. HF-03 implementiert bewusst weder automatische Bereinigung noch Wiederverwendung dieses alten Versuchs. Der erneute Browser-Smoke-Test muss eine neue Reservierung verwenden.
+
+Die neue Migration und der Adapter sind durch statische Migrations- und Service-/Adaptertests für Signatur, Rückgabe, Autorisierung, Objektbindung, Metadatenvergleich, Compare-and-set, Grants, ausgeschlossenen destruktiven beziehungsweise offenen SQL-Scope, RPC-Ergebnismapping und erfolgsgebundene Revalidierung abgesichert. Build, vollständige Testsuite, Typecheck, Lint und Diff-Prüfung wurden lokal erfolgreich ausgeführt. Bis der erneute Browser-Smoke-Test erfolgreich ist, bleibt der Status:
+
+**Auditstatus: NICHT Production Ready.**
