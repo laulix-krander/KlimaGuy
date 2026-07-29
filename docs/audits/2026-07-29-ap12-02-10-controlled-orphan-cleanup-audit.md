@@ -273,3 +273,23 @@ Dieses Paket enthält **ausschließlich Analyse und Dokumentation**. Es enthält
 - keine `package.json`-Änderung.
 
 Damit bestätigt das Audit ausdrücklich: **nur Audit; keine Implementierung; keine Löschung; keine Migration; kein SQL; keine RPC; keine RLS; keine Storage-Policy; keine Service Role; kein Cleanup; kein Storage-Delete; kein Scheduler.**
+
+## AP-12-02-11-01 Claim and Soft-Delete Implementation Result
+
+**CLAIM AND SOFT DELETE IMPLEMENTED**
+**PHYSICAL STORAGE PURGE NOT IMPLEMENTED**
+**OVERALL AP-12 NOT PRODUCTION READY**
+
+AP-12-02-11-01 ergänzt das operative Zustandsmodell `public.project_media_cleanup_items`. Es enthält ausschließlich technische IDs, den serverseitig übernommenen Ausgangsstatus, Claim-/Abschlusszeitpunkte und den engen Statusautomaten `claimed`, `soft_deleted`, `claim_failed`. Ein eindeutiger Medienbezug verhindert parallele oder wiederholte Claims. RLS ist aktiv; Browserrollen besitzen keine direkten Tabellenrechte.
+
+Die dedizierte `SECURITY DEFINER`-RPC `public.claim_and_soft_delete_project_media_orphan(uuid, uuid)` ist ausschließlich für `authenticated` ausführbar und autorisiert intern nochmals `auth.uid()` sowie die aktive Adminrolle. Sie sperrt genau die gebundene Medienzeile, akzeptiert ausschließlich ein Medium-/Projekt-ID-Paar und prüft in derselben Transaktion: `deleted_at IS NULL`, Status `pending` oder `failed`, `created_at` mindestens 24 Stunden vor dem vertrauenswürdigen DB-Zeitpunkt, bestehende Projektzuordnung und noch kein Cleanup-Item. `ready` ist dadurch vollständig ausgeschlossen.
+
+Nach erfolgreichem Claim setzt die RPC am Medium ausschließlich `deleted_at`, schließt das Cleanup-Item als `soft_deleted` mit `completed_at` ab und schreibt das hochrangige Audit-Ereignis `orphan_soft_delete` in `public.audit_log`. Das Ereignis enthält Actor, Zeitpunkt, Medium-/Projekt-ID, Ausgangsstatus, Ergebnis und Cleanup-Item-ID, aber keine Pfade, Dateinamen, URLs, Tokens, Inhalte oder Kundendaten. Jeder Fehler rollt den gesamten Ablauf einschließlich Claim zurück; ein erfolgreicher Teilzustand kann nicht separat committen.
+
+Die zentrale Permission `canClaimProjectMediaOrphan` erlaubt ausschließlich Admins. Das strikte Eingabeschema akzeptiert nur `media_id` und `project_id`. Der dedizierte Service authentifiziert, validiert das aktive Rollenprofil, autorisiert und ruft danach ausschließlich die atomare RPC auf. Die Server Action revalidiert nur bei bestätigtem Erfolg `/admin/project-media/orphans`.
+
+Die bestehende Admin-Inventur bietet pro Kandidat eine einzelne Aktion „Fachlich bereinigen“. Ein zugängliches Inline-Bestätigungsmuster erläutert ausdrücklich, dass die physische Datei im privaten Speicher verbleibt. Während der Ausführung sind beide Bedienelemente deaktiviert und der Status ist als beschäftigt markiert. Erfolg, Konflikt und allgemeiner Fehler werden ohne technische Details angezeigt; vor dem bestätigten RPC-Erfolg wird kein Kandidat optimistisch entfernt.
+
+Gezielte Vitest-Prüfungen decken Tabelle, Constraints, Foreign Keys, RLS/Grants, atomare RPC-Gates, Service-Mapping, striktes Schema, UI-Bestätigung und Architekturverbote ab. Build, vollständige Testsuite, Typecheck, Lint und Diff-Prüfung gehören zur Abschlussvalidierung.
+
+Dieses Paket löscht kein Storageobjekt, führt keine Storage-DELETE-Policy, keine Service Role, keinen Scheduler, keinen Cron und keine Batchverarbeitung ein. Der physische, separat zu auditierende Purge bleibt ausdrücklich offen. Die normale `ready`-Soft-Delete-RPC bleibt unverändert und getrennt.

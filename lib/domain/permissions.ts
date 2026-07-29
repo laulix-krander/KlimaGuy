@@ -52,6 +52,10 @@ export function canViewProjectMediaOrphanInventory(role: Role): boolean {
   return role === "admin";
 }
 
+export function canClaimProjectMediaOrphan(role: Role): boolean {
+  return role === "admin";
+}
+
 export function canEditAnyProjectNote(role: Role): boolean {
   return role === "admin";
 }
