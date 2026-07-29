@@ -99,7 +99,7 @@ describe("Projekt, Medium und Objekt", () => {
     const { source, calls } = setup();
     expect(await errorCode(source)).toBe("success");
     expect(calls.exists).toEqual([[mediaId, projectId]]);
-    expect(calls.updates).toEqual([[mediaId, projectId, userId]]);
+    expect(calls.updates).toEqual([[mediaId, projectId]]);
   });
 
   it("finalisiert ohne Objekt nicht", async () => {
@@ -143,12 +143,24 @@ describe("atomare Finalisierung und Idempotenz", () => {
     expect(await errorCode(setup({ updateData: null }).source)).toBe("finalization_conflict");
   });
 
-  it("ändert ausschließlich upload_status und bindet das Update an Actor, Projekt, pending und Soft Delete", () => {
+  it("meldet einen RPC-Fehler als Konflikt", async () => {
+    expect(await errorCode(setup({ updateError: new Error("rpc") }).source)).toBe("finalization_conflict");
+  });
+
+  it("ruft ausschließlich die Finalisierungs-RPC mit Medien- und Projekt-ID auf", () => {
     const action = readFileSync("lib/actions/project-media-upload-finalization.ts", "utf8");
-    expect(action).toContain('.update({ upload_status: "ready" })');
-    expect(action).toContain('.eq("id", mediaId).eq("project_id", projectId).eq("uploaded_by", userId)');
-    expect(action).toContain('.eq("upload_status", "pending").is("deleted_at", null)');
-    expect(action.match(/\.update\(/g)).toHaveLength(1);
+    expect(action).toContain('supabase.rpc("finalize_project_media_upload", {');
+    expect(action).toContain("target_media_id: mediaId");
+    expect(action).toContain("target_project_id: projectId");
+    expect(action).not.toMatch(/\.from\("project_media"\)[\s\S]*?\.update\(/);
+    expect(action).not.toMatch(/finalize_project_media_upload[\s\S]*?\.(?:select|single|maybeSingle)\(/);
+  });
+
+  it("mappt ausschließlich RPC true auf das unveränderte schmale Erfolgsresultat", () => {
+    const action = readFileSync("lib/actions/project-media-upload-finalization.ts", "utf8");
+    expect(action).toContain("data === true && error === null");
+    expect(action).toContain('{ id: mediaId, project_id: projectId, upload_status: "ready" }');
+    expect(action).toMatch(/:\s*null,\s*error,/);
   });
 });
 
@@ -169,5 +181,6 @@ describe("ausgeschlossener Scope", () => {
     expect(action).toContain("getProjectMediaUploadRevalidationPaths");
     expect(action).not.toContain("getProjectOverviewRevalidationPaths");
     expect(action).not.toContain("getProjectAndCustomerRevalidationPaths");
+    expect(action.indexOf("if (result.success)")).toBeGreaterThan(action.indexOf('supabase.rpc("finalize_project_media_upload"'));
   });
 });

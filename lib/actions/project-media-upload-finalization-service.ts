@@ -25,7 +25,7 @@ export type ProjectMediaUploadFinalizationDataSource = {
   getActiveProject(projectId: string): QueryResult<{ id: string }>;
   getMedia(mediaId: string, projectId: string): QueryResult<ProjectMediaForFinalization>;
   getStorageObjectMetadata(mediaId: string, projectId: string): QueryResult<{ bucket_id: string; name: string; size: number; mime_type: string }>;
-  markReadyIfPending(mediaId: string, projectId: string, userId: string): QueryResult<{
+  markReadyIfPending(mediaId: string, projectId: string): QueryResult<{
     id: string;
     project_id: string;
     upload_status: string;
@@ -97,7 +97,7 @@ export async function finalizeProjectMediaUploadWithDataSource(
   if (object.data.bucket_id !== media.storage_bucket || object.data.name !== media.storage_path
     || object.data.size !== media.file_size_bytes || object.data.mime_type !== media.mime_type) return failure("storage_metadata_mismatch");
 
-  const { data: finalized, error } = await dataSource.markReadyIfPending(mediaId, projectId, authData.user.id);
+  const { data: finalized, error } = await dataSource.markReadyIfPending(mediaId, projectId);
   if (error || finalized?.id !== mediaId || finalized.project_id !== projectId || finalized.upload_status !== "ready") {
     return failure("finalization_conflict");
   }
