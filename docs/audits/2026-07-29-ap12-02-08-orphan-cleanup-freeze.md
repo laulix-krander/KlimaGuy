@@ -193,3 +193,16 @@ Dieses Arbeitspaket ist ausschließlich ein Decision-, Architektur- und Security
 - keine `package.json`-Änderung.
 
 Die Entscheidung ist **APPROVED FOR AP-12-02-09 PLANNING**, ausdrücklich nicht „Production Ready“. Der Uploadablauf bleibt **UPLOAD FLOW PRODUCTION VALIDATED**; AP-12 insgesamt bleibt **OVERALL AP-12 NOT PRODUCTION READY**.
+
+## AP-12-02-09 Read-only Inventory Implementation Result
+
+- **Route:** `/admin/project-media/orphans` als Server Component mit kleiner interner Admin-Tabelle. Mangels eines bestehenden rollenabhängigen Admin-Navigationsbereichs wurde die globale Navigation nicht erweitert.
+- **Berechtigung:** Die zentrale Funktion `canViewProjectMediaOrphanInventory` erlaubt ausschließlich `admin`. Der Service prüft Authentifizierung, vorhandenes valides Profil und Rolle vor jedem Inventurzugriff; Reviewer, Anonyme und nicht authentifizierte Aufrufe erhalten keine Daten.
+- **Datenquelle:** Eine additive, eng begrenzte, read-only `SECURITY DEFINER`-RPC liest DB-getrieben ausschließlich `pending` und `failed`. Sie prüft intern erneut Authentifizierung und Adminrolle. Normale `ready`-only-SELECT-Policies wurden nicht geöffnet; eine Service Role wird nicht verwendet.
+- **Altersgrenze und Kandidatenstatus:** Fest `created_at <= statement_timestamp() - interval '24 hours'`, `deleted_at IS NULL` und ausschließlich `upload_status IN ('pending', 'failed')`. Ausgegeben werden nur `pending_orphan_candidate` und `failed_orphan_candidate` mit festen gleichnamigen Diagnosecodes.
+- **Pagination:** Älteste zuerst mit stabiler ID-Tie-Break-Sortierung, feste Seitengröße 50, serverseitiges Offset-Paging und validierte Seiten 1 bis 10.000. Der Statusfilter ist ausschließlich `all`, `pending` oder `failed`; das Mindestalter ist nicht konfigurierbar.
+- **DTO-Grenzen:** Medium-ID, Projekt-ID, Projektlabel, Uploadstatus, Erstellzeit, Alter in Stunden, MIME-Type, Dateigröße, Klassifikation und Diagnosecode. Keine Kundenangaben, Originaldateinamen, Storagepfade, URLs, Tokens, Secrets oder Dateiinhalte.
+- **UI-Grenzen:** Diagnosehinweis, Statusfilter, Tabelle, neutraler Fehlerzustand, Empty State und klassische Seitennavigation. Keine Lösch-, Cleanup-, Retry-, Purge-, Restore- oder Downloadaktion.
+- **Storagezustand:** Bewusst verschoben. Der bestehende Metadatenhelper ist auf die konkrete, caller-eigene `pending`-Reservierung zugeschnitten, deckt `failed` nicht ab und würde für 50 Kandidaten eine N+1-Prüfung verursachen. Es gibt weder Bucket-Scan noch vorgetäuschte Vollständigkeit. `ready_missing_object`, `deleted_with_object` und reine Storage-Orphans bleiben AP-12-02-10 beziehungsweise einem späteren Betriebsprozess vorbehalten.
+- **Mutationsfreiheit:** Keine DB- oder Storage-Mutation, kein Soft Delete, kein Purge, keine Reconciliation-Ausführung, kein Scheduler und keine Signed URL.
+- **Tests:** Ergänzt wurden gezielte Service-/Permission-/DTO-/Architekturtests, statische Migrationstests und UI-Tests für Hinweis, Tabelle, Empty State, verbotene Aktionen, Filter und Pagination. Die vollständigen Qualitätschecks werden im AP-12-02-09-Abschlussbericht festgehalten; der Decision-Status dieses Dokuments bleibt unverändert.

@@ -48,6 +48,10 @@ export function canReserveProjectMediaUpload(role: Role): boolean {
   return role === "admin";
 }
 
+export function canViewProjectMediaOrphanInventory(role: Role): boolean {
+  return role === "admin";
+}
+
 export function canEditAnyProjectNote(role: Role): boolean {
   return role === "admin";
 }

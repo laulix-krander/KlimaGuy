@@ -63,6 +63,11 @@ export const finalizeProjectMediaUploadSchema = z.object({
   project_id: projectIdSchema,
 }).strict();
 
+export const projectMediaOrphanInventoryQuerySchema = z.object({
+  status: z.enum(["all", "pending", "failed"]).default("all"),
+  page: z.coerce.number().int().min(1).max(10_000).default(1),
+}).strict();
+
 const projectCoreFields = {
   title: z.string().trim().min(1, "Projektbezeichnung ist erforderlich").max(180),
   installation_address: optionalText,
