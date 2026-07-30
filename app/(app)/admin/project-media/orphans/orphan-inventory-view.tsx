@@ -2,6 +2,9 @@ import Link from "next/link";
 import React from "react";
 import type { ProjectMediaOrphanInventoryResult } from "@/lib/actions/project-media-orphan-inventory-service";
 import { OrphanClaimControl } from "./orphan-claim-control";
+import { OrphanPurgeControl } from "./orphan-purge-control";
+
+export type PurgeCandidate = { cleanup_item_id: string; media_id: string; project_id: string; project_title: string; source_upload_status: string; cleanup_status: string; purge_status: string; completed_at: string; purge_attempt_count: number; last_purge_error_code: string | null; created_at: string };
 
 type SuccessData = Extract<ProjectMediaOrphanInventoryResult, { success: true }>['data'];
 
@@ -22,7 +25,7 @@ function pageHref(page: number, filter: SuccessData['filter']): string {
   return `/admin/project-media/orphans?page=${page}&status=${filter}`;
 }
 
-export function OrphanInventoryView({ data, canClaim = false }: { data: SuccessData; canClaim?: boolean }) {
+export function OrphanInventoryView({ data, canClaim = false, purgeCandidates = [] }: { data: SuccessData; canClaim?: boolean; purgeCandidates?: PurgeCandidate[] }) {
   return (
     <div className="space-y-6">
       <div>
@@ -47,6 +50,10 @@ export function OrphanInventoryView({ data, canClaim = false }: { data: SuccessD
           <p className="text-sm text-slate-600">Mindestalter: fest 24 Stunden · maximal 50 Einträge pro Seite</p>
         </form>
       </section>
+
+      {canClaim ? <section className="rounded-xl border bg-white p-6 shadow-sm"><h2 className="text-xl font-bold">Fachlich bereinigt – physische Datei ausstehend</h2><p className="mt-2 text-sm text-slate-600">Nur einzeln bestätigte, bereits fachlich bereinigte Medien können endgültig entfernt werden.</p>
+        {purgeCandidates.length === 0 ? <p className="mt-4 text-slate-600">Keine Purgekandidaten vorhanden.</p> : <div className="mt-4 overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b"><th className="p-2">Projekt</th><th className="p-2">Quellstatus</th><th className="p-2">Bereinigt am</th><th className="p-2">Versuche</th><th className="p-2">Aktion</th></tr></thead><tbody>{purgeCandidates.map(item => <tr className="border-b" key={item.cleanup_item_id}><td className="p-2">{item.project_title}</td><td className="p-2">{item.source_upload_status}</td><td className="p-2">{formatDate(item.completed_at)}</td><td className="p-2">{item.purge_attempt_count}</td><td className="p-2"><OrphanPurgeControl mediaId={item.media_id} projectId={item.project_id}/></td></tr>)}</tbody></table></div>}
+      </section> : null}
 
       <section className="rounded-xl border bg-white p-6 shadow-sm">
         {data.items.length === 0 ? (

@@ -1,8 +1,10 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import React from "react";
 import { readFileSync } from "node:fs";
 import { OrphanInventoryView } from "@/app/(app)/admin/project-media/orphans/orphan-inventory-view";
+
+vi.mock("@/lib/actions/project-media-storage-purge", () => ({ purgeProjectMediaOrphanAction: vi.fn() }));
 
 const base = { page: 1, page_size: 50 as const, total_count: 0, total_pages: 0, filter: "all" as const };
 const item = {
