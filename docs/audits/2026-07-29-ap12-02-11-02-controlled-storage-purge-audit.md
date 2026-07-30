@@ -302,3 +302,27 @@ Dieses Paket enthält **ausschließlich Analyse und Dokumentation**. Es enthält
 
 Damit wird ausdrücklich bestätigt: **nur Audit; keine Implementierung; keine Service Role; keine Secrets; keine Migration; kein SQL; keine RPC; keine Storage-Policy; keine Storage-Löschung; kein Purge; kein Scheduler.**
 
+
+## AP-12-02-11-02-01 Single Controlled Storage Purge Implementation Result
+
+Das additive Purgedatenmodell trennt `purge_status`, Claimzeit, Abschlusszeit, Versuchszähler, sanitisierten Fehlercode, opaque Claimtoken und eigenen Purge-Actor vom fachlichen Cleanupstatus. Benannte Constraints schließen Zustände, koppeln Zeit-, Token-, Actor- und Fehlerfelder und lassen keine Bucket-, Pfad-, URL- oder Dateinamenduplikate in der Cleanup-Tabelle zu.
+
+`claim_project_media_storage_purge` bindet atomar genau eine Medium-/Projektkombination, sperrt Medium und Cleanup-Item, prüft Soft Delete, `pending|failed`, kanonischen DB-Pfad, festen Bucket, abgeschlossenes Cleanup und CAS-fähigen Purgestatus. `complete_project_media_storage_purge` bindet Abschluss und sanitisiertes Ergebnis an IDs, Actor/Admin, aktiven Claimtoken und `in_progress`; nur erfolgreicher Delete oder sicher bestätigte Abwesenheit wird `purged`. Retry- und permanente Teilfehler werden ohne Providertext gespeichert. Auditereignisse enthalten ausschließlich Actor, IDs, Attempt, Zustandsübergang und erlaubten Fehlercode.
+
+Die Service-Role-Grenze liegt in einem `server-only`-Modul, liest ausschließlich `SUPABASE_SERVICE_ROLE_KEY` sowie die bestehende Supabase-URL-Konvention und exportiert keine allgemeine Datenbankadministration. Der enge Adapter akzeptiert genau einen DB-Claim-Pfad, erzwingt `project-media` und verwendet die installierte offizielle Methode `storage.from('project-media').remove([path])`. Die installierte Storage-JS-API meldet einen erfolgreichen Remove als `{ data, error: null }`; sie unterscheidet ein bereits fehlendes Objekt dabei nicht belastbar. Deshalb wird kein Missing-Ergebnis geraten und keine Bucketliste ausgeführt: ein fehlerfreier idempotenter Remove wird als `deleted` abgeschlossen, `already_missing` bleibt für ein künftig offiziell eindeutig bestätigtes Ergebnis der Abschluss-RPC vorbehalten.
+
+Fehlende Production-Konfiguration führt nach Claim ohne Storageaufruf kontrolliert zu `retry_required`/`storage_configuration_missing`; kein Claim bleibt dadurch dauerhaft `in_progress`. Die Admin-Inventur enthält eine getrennte, schmale Read-RPC-Liste mit höchstens 50 fachlich bereinigten Kandidaten, ohne technische Storagewerte, und einen expliziten irreversiblen Inline-Bestätigungsschritt. UI-Erfolg folgt ausschließlich auf terminal bestätigten DB-Abschluss; nur dann wird die Inventurroute revalidiert.
+
+Die Migration, Domainpermission, strikte Eingabe, Service-/Adaptergrenzen und UI-Zustände werden durch gezielte statische und Vitest-Prüfungen sowie Build, Typecheck, Lint und Repository-Sicherheitsprüfung abgesichert. Vor Production verbleiben: echte Remote-Main-Verifikation, getrennte und rotierbare Production-/Preview-Secrets, ein freigegebener Storage-Integrationstest einschließlich Missing-Object-Verhalten, Monitoring/Runbook und die übergeordneten Datenschutz-, Retention- und Production-Validation-Gates.
+
+**SINGLE CONTROLLED STORAGE PURGE IMPLEMENTED**
+
+**PRODUCTION SECRET NOT AUTOMATICALLY CONFIGURED**
+
+**BATCH PURGE NOT IMPLEMENTED**
+
+**SCHEDULER NOT IMPLEMENTED**
+
+**PURE STORAGE ORPHAN PURGE NOT IMPLEMENTED**
+
+**OVERALL AP-12 NOT PRODUCTION READY UNTIL PRODUCTION VALIDATION**
