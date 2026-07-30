@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import React from "react";
 
 export function ProjectMediaImage({ alt, src }: { alt: string; src: string }) {
   const [failed, setFailed] = useState(false);
