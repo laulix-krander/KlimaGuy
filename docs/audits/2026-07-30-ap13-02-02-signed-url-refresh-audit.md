@@ -378,3 +378,24 @@ Dieses Paket enthält **ausschließlich Analyse und Dokumentation**. Es enthält
 - keine KI und keine WhatsApp-Integration.
 
 Die einzige in diesem Arbeitspaket erstellte Datei ist `docs/audits/2026-07-30-ap13-02-02-signed-url-refresh-audit.md`.
+
+## AP-13-02-02-01 Single Media Signed URL Action Implementation Result
+
+AP-13-02-02-01 setzt ausschließlich die serverseitige, read-only Neuerzeugung einer Signed View URL für genau ein Projektmedium um:
+
+- Das dedizierte strikte Zod-Eingabeschema akzeptiert ausschließlich `project_id` und `media_id` als UUIDs und weist unbekannte Schlüssel zurück.
+- Die Serverkette authentifiziert erneut, validiert ein vorhandenes Profil und die Rolle zentral und verwendet ausschließlich `canViewProjectMedia`; damit sind Admin und Reviewer erlaubt und alle anderen Fälle fail-closed.
+- Ein Projekt wird nur als aktiv akzeptiert, wenn die gebundene ID übereinstimmt und `deleted_at IS NULL` gilt.
+- Die enge, RLS-geschützte Einzelabfrage selektiert nur `id`, `project_id`, `storage_bucket`, `storage_path`, `mime_type`, `media_type`, `upload_status` und `deleted_at`; sie filtert bereits auf beide IDs, `ready` und `deleted_at IS NULL`.
+- Bucket und Pfad stammen ausschließlich aus dieser DB-Zeile. Der Service validiert den festen privaten Bucket, erlaubte MIME-/Medientyp-Kombinationen und das kanonische Schema `projects/{project_id}/originals/{media_id}/{stored_uuid}.{extension}` einschließlich der MIME-abhängigen Endung, bevor Storage aufgerufen wird.
+- Der authentifizierte Supabase-Serverclient verwendet danach ausschließlich die Einzelmethode `createSignedUrl` mit dem validierten DB-Pfad und exakt 120 Sekunden. Es gibt keine Public URL, Service Role, Download-Disposition, Persistierung oder Protokollierung der URL.
+- Die Erfolgsantwort ist auf `success`, `media_id`, `signed_view_url` und `expires_in_seconds: 120` begrenzt. Eine geschlossene Menge neutraler deutscher Fehler (`signed_url_forbidden`, `signed_url_not_found`, `signed_url_not_available`, `signed_url_invalid_input`, `signed_url_failed`) gibt weder Providerdetails noch Pfade oder URLs preis.
+- Die dedizierte async Server Action erstellt nur den vorhandenen authentifizierten Client und delegiert über die schmale, in Tests ersetzbare Grenze `getUser`, `getProfile`, `getActiveProject`, `getReadyProjectMedia` und `createSignedUrl` an den Service.
+- Es gibt ausdrücklich keine UI-, Lightbox-, Galerie- oder PDF-Integration und keine Revalidation oder Weiterleitung. Die Integration bleibt AP-13-02-02-02 vorbehalten.
+- Gezielte Vitest-Tests decken striktes Input, zentrale Admin-/Reviewer-Berechtigung, Auth-/Profilfehler, aktive Projekte, sämtliche Mediengrenzen, kanonische DB-Pfadbindung, Einzel-Signierung mit TTL 120, schmale Antworten, neutrale Providerfehler und statische Action-/Architekturgrenzen ab.
+
+**SINGLE MEDIA SIGNED URL ACTION IMPLEMENTED**
+
+**LIGHTBOX AND PDF REFRESH INTEGRATION NOT IMPLEMENTED**
+
+**OVERALL PRODUCT NOT PRODUCTION READY**

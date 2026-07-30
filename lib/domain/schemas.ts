@@ -63,6 +63,11 @@ export const finalizeProjectMediaUploadSchema = z.object({
   project_id: projectIdSchema,
 }).strict();
 
+export const createProjectMediaSignedViewUrlSchema = z.object({
+  project_id: projectIdSchema,
+  media_id: z.string().uuid("Die Medien-ID ist ungültig."),
+}).strict();
+
 export const projectMediaOrphanInventoryQuerySchema = z.object({
   status: z.enum(["all", "pending", "failed"]).default("all"),
   page: z.coerce.number().int().min(1).max(10_000).default(1),
