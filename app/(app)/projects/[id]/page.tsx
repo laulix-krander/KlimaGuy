@@ -16,6 +16,8 @@ import { ProjectSummaryForm } from "./project-summary-form";
 import { ProjectHumanReviewForm } from "./project-human-review-form";
 import { ProjectSuccessMessage, type ProjectSuccessSearchParams } from "./project-success-message";
 import { ProjectMediaUploadForm } from "./project-media-upload-form";
+import { getProjectMediaGallery } from "@/lib/actions/project-media-gallery";
+import { ProjectMediaGallery } from "./project-media-gallery";
 
 
 function formatDate(value: string): string {
@@ -69,6 +71,7 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
   const mayEditHumanReview = parsedRole.success && canChangeHumanReview(parsedRole.data);
   const mayCreateProjectNote = parsedRole.success && canCreateProjectNote(parsedRole.data);
   const mayUploadProjectMedia = parsedRole.success && canReserveProjectMediaUpload(parsedRole.data);
+  const mediaGallery = parsedRole.success ? await getProjectMediaGallery(project.id) : null;
 
   const { data: notesData } = await supabase
     .from("project_notes")
@@ -128,6 +131,7 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
           <ProjectMediaUploadForm projectId={project.id} />
         </Card>
       ) : null}
+      {mediaGallery ? <ProjectMediaGallery isAdmin={parsedRole.success && parsedRole.data === "admin"} result={mediaGallery} /> : null}
       <Card>
         <div className="mb-4">
           <h2 className="text-xl font-semibold">Interne Notizen</h2>

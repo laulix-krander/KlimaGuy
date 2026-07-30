@@ -78,6 +78,24 @@ export const projectMediaStoragePurgeSchema = z.object({
   project_id: projectIdSchema,
 }).strict();
 
+export const projectMediaGalleryRowSchema = z.object({
+  id: z.string().uuid(),
+  project_id: projectIdSchema,
+  category: z.enum(PROJECT_MEDIA_CATEGORIES),
+  media_type: z.enum(["image", "document"]),
+  mime_type: z.enum(PROJECT_MEDIA_MIME_TYPES),
+  file_size_bytes: z.number().int().positive(),
+  caption: z.string().max(1000).nullable(),
+  created_at: z.string().datetime({ offset: true }),
+  storage_bucket: z.literal("project-media"),
+  storage_path: z.string().min(1),
+}).strict().superRefine((value, context) => {
+  const expectedType = value.mime_type === "application/pdf" ? "document" : "image";
+  if (value.media_type !== expectedType) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["media_type"], message: "Medientyp und MIME-Typ stimmen nicht überein." });
+  }
+});
+
 const projectCoreFields = {
   title: z.string().trim().min(1, "Projektbezeichnung ist erforderlich").max(180),
   installation_address: optionalText,
