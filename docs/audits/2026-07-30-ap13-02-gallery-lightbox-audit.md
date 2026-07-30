@@ -531,6 +531,27 @@ Empfohlene Reihenfolge:
 **OVERALL PRODUCT NOT PRODUCTION READY**  
 **AUDITSTATUS: READY FOR OWNER DECISION**
 
+## AP-13-02-01 Image Lightbox Implementation Result
+
+AP-13-02-01 ergänzt die bestehende serverseitig autorisierte Read-only-Galerie ausschließlich um eine lokale Client-Insel für JPEG-, PNG- und WebP-Bilder. Die Insel erhält nur `media_id`, `category_label`, `caption`, `signed_view_url` und einen kontrollierten `alt_text`; sie führt keine Datenbank-, Storage- oder sonstige Clientquery aus. Projektdetailseite, Gallery-Service, Berechtigungsprüfung und sortiertes Galerie-DTO bleiben serverseitig und unverändert.
+
+- Bildkarten verwenden semantische Buttons mit sichtbarem Fokuszustand und öffnen nativ per Maus, Enter oder Leertaste. PDF-Karten bleiben außerhalb der Client-Insel unverändert als klar bezeichnete Dokumentkarten mit `target="_blank"` und `rel="noopener noreferrer"`; PDFs werden weder eingebettet noch in Bildindex oder Navigation aufgenommen.
+- Das portalisierte Overlay besitzt `role="dialog"`, `aria-modal="true"`, einen zugänglichen Titel und sichtbare Schließen-, Vorheriges-Bild- und Nächstes-Bild-Buttons. Escape und ein direkter Klick auf den abgedunkelten Hintergrund schließen; Klicks innerhalb des Dialogs schließen nicht.
+- Beim Öffnen wird der auslösende Bildbutton gespeichert und der Schließen-Button fokussiert. Eine lokale Tab-/Shift-Tab-Fokusfalle hält den Fokus im Dialog. Der Hintergrund wird mit `inert` deaktiviert, der Body-Scroll unter Bewahrung des vorherigen Werts gesperrt und beim Schließen wiederhergestellt; anschließend kehrt der Fokus zum Auslöser zurück.
+- Pfeil links/rechts und die sichtbaren Buttons navigieren ausschließlich in der bereits übergebenen Bildreihenfolge. Die Navigation ist nicht zyklisch; die jeweilige Randaktion ist korrekt deaktiviert. Der Text `Bild X von Y` zählt ausschließlich Bilder.
+- Das große Bild verwendet einen viewportbegrenzten `object-contain`-Bereich. Mobile Safe-Area-Abstände, ausreichend große Bedienelemente und ein begrenzt scrollbarerer Captionbereich erhalten Schließen, Navigation und Metadaten auf kleinen wie großen Viewports erreichbar. Kategorie und vorhandene Caption werden angezeigt; fehlende Captions erzeugen keinen Platzhalter und ein Datum wird nicht wiederholt.
+- Während eines Bildabrufs erscheint ein neutraler lokaler Ladezustand. Ein Ladefehler ersetzt den Bildbereich durch `Das Bild konnte nicht geladen werden.`; Dialog, Navigation und Schließen bleiben bedienbar und es werden weder URL noch Providerdetails ausgegeben.
+- Verwendet wird ausschließlich die bereits im Galerie-DTO vorhandene `signed_view_url`. Es gibt keinen Signed-URL-Refresh, keine Server Action, keinen neuen Service, keine Persistierung und keine neue externe Abhängigkeit.
+- Gezielte Vitest-/Testing-Library-Tests decken Dialogsemantik, Bildbutton-Tastaturzugang, Öffnen/Schließen, Fokus und Fokusfalle, Scrollsperre, Hintergrundklick, nicht zyklische Button-/Pfeilnavigation, Bildindex und Reihenfolge, Caption vorhanden/fehlend, Alt-Text, Lade-/Fehlerzustand sowie die fortbestehende PDF-Abgrenzung ab.
+
+**IMAGE LIGHTBOX IMPLEMENTED**
+
+**SIGNED URL REFRESH ON OPEN NOT IMPLEMENTED**
+
+**PDF LIGHTBOX NOT IMPLEMENTED**
+
+**OVERALL PRODUCT NOT PRODUCTION READY**
+
 ## 27. Scope-Bestätigung
 
 Dieses Paket ist **ausschließlich Analyse und Dokumentation**. Es enthält ausdrücklich:
