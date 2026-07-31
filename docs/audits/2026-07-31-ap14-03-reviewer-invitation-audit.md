@@ -287,3 +287,35 @@ Die feste Redirect-URL kann erst auf einen vollständigen Invite-Annahme-/Passwo
 **USER DEACTIVATION NOT IMPLEMENTED**
 
 **OVERALL PRODUCT NOT PRODUCTION READY**
+
+## AP-14-03-02 Reviewer Invitation UI Result
+
+AP-14-03-02 integriert auf der weiterhin serverseitig geladenen und autorisierten Adminseite `/admin/users` direkt nach dem Einführungshinweis und vor der unveränderten Benutzerliste eine getrennte responsive Karte „Reviewer einladen“. Nur der erfolgreiche serverseitige Admin-Datenpfad rendert diese Karte; Reviewer, fehlende Profile, ungültige Rollen und nicht authentifizierte Aufrufer scheitern weiterhin vor der Ansicht. Die bestehende Permission `canInviteReviewer` bleibt zusätzlich in der Action-/Servicegrenze autoritativ. Es wurde keine Client-Rollenprüfung als Sicherheitsgrenze ergänzt.
+
+Die lokale Client-Komponente verwaltet ausschließlich E-Mail-Eingabe, Inline-Bestätigung, Pending, Rückmeldung und Fokus. Das kontrollierte Pflichtfeld verwendet sichtbares Label, `type="email"`, `inputMode="email"`, `autoComplete="email"` und `maxLength={254}`. Native Browservalidierung öffnet bei leerer oder ungültiger Eingabe keine Bestätigung und ruft keine Action auf; die serverseitige Zod-Validierung bleibt autoritativ. Es erfolgt keine Speicherung in URL, Router-State, Cookies oder Browserstorage.
+
+Der erste Submit öffnet nur die eindeutig beschriftete Inline-Bestätigung, zeigt die eingegebene Adresse umbrechbar an und erklärt, dass keine Administratorrechte vergeben werden. Erst „Einladung senden“ ruft die unveränderte `inviteReviewerAction` exakt mit `{ email }` auf. Rolle, Actor, Redirect, Passwort, Metadaten und sonstige Felder fehlen. „Abbrechen“ sendet nicht, behält die Eingabe bei, schließt nur die Bestätigung und führt den Fokus zum ursprünglichen Button zurück.
+
+Während des einzigen Actionaufrufs verhindert eine synchrone Ref-Sperre Doppelsubmits einschließlich schneller Klicks beziehungsweise Enter-Folgen. Karte und Bestätigung zeigen `aria-busy`, der Text „Einladung wird gesendet …“ verwendet `role="status"`, und Eingabe, Abbrechen sowie Bestätigen sind mit `disabled` und `aria-disabled` gesperrt. Es gibt keinen automatischen Retry.
+
+Nur `success = true` mit `code = reviewer_invited` zeigt „Die Reviewer-Einladung wurde versendet.“ mit `role="status"`, schließt die Bestätigung, leert die E-Mail, entfernt alte Fehler und fokussiert das leere Feld. Fehler schließen die Bestätigung, behalten die E-Mail und fokussieren die neutrale Meldung mit `role="alert"`. Alle vorhandenen Codes sind exakt gemappt: bestehendes Konto, offene Einladung, verboten, ungültige E-Mail, Konflikt, Konfigurationsfehler, Profilinkonsistenz und allgemeiner Fehler. Exceptions werden wie der allgemeine Fehler behandelt. `reviewer_profile_inconsistent` erklärt ausdrücklich, dass die Einladung erstellt wurde, aber das Reviewer-Profil nicht bestätigt werden konnte; es wird keine zweite Einladung ausgelöst.
+
+Semantisches Formular, sichtbare Focus-Styles, explizite Fokusführung, Mindesthöhe der Bedienelemente, untereinander angeordnete Mobile-Buttons, umbrechbare lange E-Mail-Adressen und begrenzte Kartenbreite unterstützen Tastatur, Touch und schmale Ansichten. Die Inline-Gruppe besitzt einen zugänglich zugeordneten Titel; eine neue Dialogbibliothek oder globale Dialogarchitektur ist nicht erforderlich.
+
+Die Komponente führt weder `router.refresh` noch Revalidation aus und fügt keinen Benutzer optimistisch hinzu. Ausschließlich die bereits bestehende Action revalidiert nach bestätigtem Erfolg `/admin/users`. Benutzerliste und Rollensteuerungen behalten getrennte lokale Zustände. Es entstanden keine neue Action, kein Service, kein Auth-Adapter, keine Datenbankquery, Storagequery, Auth-Admin-Nutzung, Service Role, Redirect-URL, Migration, SQL-/RPC-/RLS-/Grant-Änderung oder `package.json`-Änderung.
+
+Gezielte Vitest-UI- und Architekturtests mocken die Action vollständig und prüfen Feldvertrag, Hinweise, bewusste Bestätigung, Abbruch und Fokus, ausschließlich `{ email }`, Pending/ARIA/Disabled, synchrone Einmal-Ausführung, Erfolg/Reset, sämtliche Fehlermappings, Exception, Zustandserhalt, neuen Versuch und verbotene Clientgrenzen. Bestehende Service-/Permissiontests belegen weiterhin, dass Reviewer weder die Admin-Datenansicht laden noch die Action erfolgreich aufrufen können. Es werden ausschließlich künstliche Adressen verwendet und keine E-Mails versendet.
+
+Laut Nutzerangabe ist die Migration `202607310002_reviewer_invitation_profile_trigger.sql` bereits in Production ausgeführt; Trigger und Funktionen sind vorhanden. `REVIEWER_INVITE_REDIRECT_URL` ist in Vercel Production gesetzt, Production wurde neu deployed und die feste Login-URL ist in der Supabase Redirect-Allowlist enthalten. Dieses UI-Paket ändert, dupliziert, übernimmt oder zeigt diese Konfiguration nicht an. Die reale Annahme-, Passwort-, Login- und Berechtigungskette bleibt AP-14-03-03 vorbehalten.
+
+**REVIEWER INVITATION UI IMPLEMENTED**
+
+**REVIEWER INVITATION END-TO-END TECHNICAL FLOW IMPLEMENTED**
+
+**REVIEWER INVITE ACCEPTANCE AND PASSWORD FLOW NOT PRODUCTION VALIDATED**
+
+**REVIEWER LOGIN AND PERMISSIONS NOT PRODUCTION VALIDATED**
+
+**USER DEACTIVATION NOT IMPLEMENTED**
+
+**OVERALL PRODUCT NOT PRODUCTION READY**
