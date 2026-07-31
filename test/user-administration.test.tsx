@@ -76,14 +76,15 @@ describe("Read-only Benutzerverwaltung", () => {
     expect((await readUserAdministration({}, profileFailure)).success).toBe(false);
   });
 
-  it("zeigt Liste, deutsche Labels, Datum, Du, Hinweise und Pagination ohne Aktionen", () => {
+  it("zeigt Liste, deutsche Labels, Datum, Du, Hinweise und Pagination ohne eigene Rollenaktion", () => {
     render(<UserAdministrationView result={{ success: true, data: { users: [{ user_id: adminId, email: "admin@example.invalid", role: "admin", profile_status: "active", auth_status: "unknown", created_at: "2026-07-31T10:00:00.000Z", is_current_user: true }], page: 2, per_page: 25, has_next_page: true } }} />);
     expect(screen.getByRole("heading", { name: "Benutzer & Rollen" })).toBeTruthy();
-    for (const text of ["admin@example.invalid", "Administrator", "Aktiv", "Nicht eindeutig bestimmbar", "Hier siehst du die vorhandenen Benutzer und ihre aktuellen Anwendungsrollen.", "Rollenänderungen und Einladungen werden in einem späteren Schritt ergänzt.", "Seite 2"]) expect(screen.getByText(text, { exact: false })).toBeTruthy();
+    for (const text of ["admin@example.invalid", "Administrator", "Aktiv", "Nicht eindeutig bestimmbar", "Hier siehst du die vorhandenen Benutzer und ihre aktuellen Anwendungsrollen.", "Rollenänderungen sind für gültige Profile anderer Benutzer kontrolliert möglich.", "Seite 2"]) expect(screen.getByText(text, { exact: false })).toBeTruthy();
     expect(screen.getByText("Du", { exact: true })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Zurück" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Weiter" })).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByText("Die eigene Rolle kann nicht geändert werden.")).toBeTruthy();
     expect(screen.queryByRole("form")).toBeNull();
   });
 
