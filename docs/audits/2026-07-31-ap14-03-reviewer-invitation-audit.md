@@ -255,3 +255,35 @@ Dieses Paket enthält **ausschließlich dieses Auditdokument**. Es enthält kein
 **Auditstatus: READY FOR OWNER DECISION.**
 **Ausdrücklich nicht: APPROVED FOR IMPLEMENTATION.**
 **Nicht Production Ready.**
+
+## AP-14-03-01 Reviewer Invitation Database and Auth Baseline Result
+
+AP-14-03-01 implementiert ausschließlich die Datenbank-, Auth-, Adapter-, Service- und Action-Baseline. Die additive Migration `202607310002_reviewer_invitation_profile_trigger.sql` installiert einen `AFTER INSERT`-Trigger auf `auth.users`. Seine `SECURITY DEFINER`-Funktion hat den festen `search_path = public, pg_temp` und fügt nur `NEW.id` sowie das SQL-Literal `'reviewer'::public.app_role` in `public.profiles` ein. Sie liest weder E-Mail noch User-/App-Metadaten, führt kein Update, Upsert oder Backfill aus und scheitert bei einem unerwarteten Primärschlüsselkonflikt zusammen mit dem Auth-Insert. `EXECUTE` ist `PUBLIC`, `anon` und `authenticated` entzogen; PostgreSQL führt die Funktion als Trigger dennoch aus, weil ein Triggeraufruf keine direkte Funktions-EXECUTE-Berechtigung des aufrufenden Browserroles voraussetzt. Es wurden keine Policy und keine Tabellenrechte ergänzt.
+
+Der Trigger gilt bewusst für jeden künftig eingefügten Auth-Benutzer: neue Auth-Anlagen erhalten standardmäßig ein Reviewerprofil. Anwendungscode enthält weiterhin weder Self-Signup noch Admin-Einladung oder freie `createUser`-Anlage. Eine spätere Admin-Ernennung bleibt ausschließlich dem kontrollierten AP-14-02-Rollenwechsel vorbehalten. Der initiale Admin und alle bestehenden Auth-Benutzer/Profile bleiben unverändert; es gibt keinen Backfill und keine Rollenreparatur.
+
+`canInviteReviewer` erlaubt nur `admin` und lehnt `reviewer`, `null` sowie ungültige Werte fail closed ab. `inviteReviewerSchema` akzeptiert strikt ausschließlich eine getrimmte, nicht leere, syntaktisch gültige E-Mail mit höchstens 254 Zeichen. Rolle, Actor, Redirect, Passwort und Metadaten sind keine Eingabefelder.
+
+Der neue server-only Auth-Invite-Adapter besitzt genau eine Invite-Capability. Er verlangt `NEXT_PUBLIC_SUPABASE_URL`, den ausschließlich serverseitigen `SUPABASE_SERVICE_ROLE_KEY` und `REVIEWER_INVITE_REDIRECT_URL`; es gibt keinen Anon-Fallback und keinen exportierten Adminclient. Production akzeptiert ausschließlich HTTPS. Außerhalb Production ist HTTP nur für Loopback erlaubt. Die URL wird weder aus Browserdaten abgeleitet noch zurückgegeben oder geloggt. Der Adapter verwendet die installierte Signatur `inviteUserByEmail(email, { redirectTo })` von `@supabase/auth-js 2.111.0`, sendet keine Metadaten und reduziert Erfolg unmittelbar auf eine validierte Auth-UUID beziehungsweise Fehler auf `configuration` oder `provider`.
+
+Die Bestandsprüfung erweitert ausschließlich den bestehenden server-only Read-Adapter um eine exakte E-Mail-Prüfung, die niemals Authobjekte oder E-Mail-Daten zurückgibt. Mangels installierter `getUserByEmail`-Methode verwendet sie `listUsers` seitenweise mit 50 Einträgen und einem statischen Maximum von 10.000 Benutzern; die Provider-Eindeutigkeit bleibt danach die autoritative Race-Grenze. Es wurde keine Mutation zum Read-Adapter ergänzt. Bereits gefundene Benutzer ergeben `reviewer_already_exists`. Ein nicht zuverlässig klassifizierbarer Providerfehler — einschließlich eines parallelen Duplicate-Races — wird neutral auf `reviewer_invitation_conflict` abgebildet; `reviewer_invitation_pending` wird mangels beweisbarer Providersemantik nicht erfunden. Es gibt keinen Retry und keine automatische Rollenänderung.
+
+Der testbare Service validiert Eingabe, Session, Actorprofil und Rolle, prüft die dedizierte Permission, führt Bestandsprüfung und genau einen Adapteraufruf aus und bestätigt danach für die zurückgegebene UUID ein Profil mit Rolle `reviewer`. Fehlendes oder abweichendes Profil ergibt `reviewer_profile_inconsistent`; es gibt keinen Profilinsert, keine Reparatur und keine Rollenmutation im Service. Die Action akzeptiert typisiert nur `{ email }`, verwendet den authentifizierten Cookie-Serverclient und injiziert die engen Datenquellen. Sie enthält keine eigene Rollenentscheidung, Auth-Admin-Methode, Clientrolle, Clientredirect-URL oder Weiterleitung. Nur `reviewer_invited` revalidiert `/admin/users`; alle anderen Codes revalidieren nicht. Es wurde keine UI-Datei geändert.
+
+Nach bestätigtem Reviewerprofil schreibt die Action über die eng signierte RPC `record_reviewer_invitation_audit(uuid)` das Ereignis `reviewer_invited`. Die RPC bezieht den Actor aus `auth.uid()`, prüft erneut Adminrolle und Reviewerziel und schreibt nur Actor-ID, Ziel-ID, Action, `result_code` und Zeitpunkt. E-Mail, Link, Token, Providerdaten, Auth-Metadaten, Session, Passwort und Redirect fehlen. Auth-HTTP-Aufruf, Profiltrigger und Audit-RPC bilden keine gemeinsame Anwendungstransaktion. Ein Auditfehler versendet nicht erneut und wird kontrolliert neutral behandelt; Recovery bleibt ein manueller separater Betriebsfall.
+
+Die Servicegrenze verwendet die geschlossenen Codes `reviewer_invited`, `reviewer_already_exists`, `reviewer_invitation_forbidden`, `reviewer_invitation_invalid_email`, `reviewer_invitation_conflict`, `reviewer_invitation_configuration_error`, `reviewer_invitation_failed` und `reviewer_profile_inconsistent` mit stabilen deutschen Meldungen. `reviewer_invitation_pending` ist als Meldungsvertrag vorhanden, wird aber ohne verlässliche Erkennung nicht erzeugt. Antworten enthalten keine E-Mail, URL, Links, Tokens, Session- oder Providerdetails.
+
+Gezielte Vitest-Tests decken Schema-Allowlist und Trimming, Länge/Fehlerfälle, Permission, Admin-Erfolg, Auth-/Profil-/Rollenverbote, Bestandsfund, Duplicate-Konflikt, Konfiguration, Profilkonsistenz, fehlenden Retry sowie statische Trigger-, Adapter- und Action-Sicherheitsmerkmale ab. `package.json`, Rollenwechsel-RPC, UI und Storage-Purge-Client bleiben unverändert.
+
+Die feste Redirect-URL kann erst auf einen vollständigen Invite-Annahme-/Passwort-setzen-Flow zeigen, wenn AP-14-03-02 beziehungsweise ein freigegebenes Folgegate diese UX und die reale Supabase-Redirect-/SMTP-Konfiguration implementiert und validiert. AP-14-03-01 baut keine halbfertige Route oder Passwort-UI. Laut aktualisierter Nutzerangabe wurde `202607310001_user_role_change_rpc.sql` inzwischen manuell im Production-Supabase-Projekt ausgeführt; dieses Paket installiert, verändert oder dupliziert sie nicht.
+
+**REVIEWER INVITATION DATABASE AND AUTH BASELINE IMPLEMENTED**
+
+**REVIEWER INVITATION UI NOT IMPLEMENTED**
+
+**REVIEWER INVITE ACCEPTANCE AND PASSWORD FLOW NOT PRODUCTION VALIDATED**
+
+**USER DEACTIVATION NOT IMPLEMENTED**
+
+**OVERALL PRODUCT NOT PRODUCTION READY**

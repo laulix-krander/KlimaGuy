@@ -105,6 +105,7 @@ describe("Auth-Read-Adapter-Architektur", () => {
     expect(adapter).toContain("supabase.auth.admin.listUsers({ page: params.page, perPage: params.perPage })");
     expect(adapter).not.toContain("NEXT_PUBLIC_SUPABASE_ANON_KEY");
     for (const forbidden of ["inviteUserByEmail", "createUser", "updateUserById", "deleteUser", "last_sign_in_at", "raw_app_meta_data", "raw_user_meta_data", "identities", "access_token", "refresh_token"]) expect(adapter).not.toContain(forbidden);
-    expect(adapter.match(/^export (async function|type)/gm)?.length).toBe(3);
+    expect(adapter.match(/^export (async function|type)/gm)?.length).toBe(4);
+    expect(adapter).toContain("findAuthUserIdByExactEmail");
   });
 });

@@ -56,3 +56,28 @@ export async function listAuthUsersForAdministration(
     throw new Error("user_administration_failed");
   }
 }
+
+/** Exact, bounded server-only lookup; never exposes an Auth user or an email. */
+export async function findAuthUserIdByExactEmail(email: string): Promise<string | null> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceRoleKey) throw new Error("user_administration_failed");
+  try {
+    const supabase = createClient(url, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+    });
+    const perPage = 50;
+    // A hard bound avoids an uncontrolled traversal. Provider uniqueness remains
+    // authoritative when an installation ever exceeds this administrative MVP cap.
+    for (let page = 1; page <= 200; page += 1) {
+      const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+      if (error) throw error;
+      const match = data.users.find((user) => user.email === email);
+      if (match) return z.string().uuid().parse(match.id);
+      if (data.users.length < perPage || (Number.isInteger(data.total) && page * perPage >= data.total)) return null;
+    }
+    return null;
+  } catch {
+    throw new Error("user_administration_failed");
+  }
+}
