@@ -354,3 +354,27 @@ Dieses Paket ist **ausschließlich Entscheidung und Dokumentation**. Es enthält
 - keine `package.json`-Änderung.
 
 Geändert wird ausschließlich `docs/audits/2026-07-31-ap14-00-01-user-admin-data-source-freeze.md`.
+
+## AP-14-01 Read-only User Administration Implementation Result
+
+AP-14-01 implementiert die Server-Component-Route `/admin/users` und ergänzt im vorhandenen Administrationsbereich den ausschließlich über `canViewUserAdministration` sichtbaren Link „Benutzer & Rollen“. Dieselbe zentrale Permission wird im Read-Service serverseitig nach Session-, Profil- und `roleSchema`-Prüfung verwendet; nur `admin` ist zulässig.
+
+Der neue `server-only` Auth-Read-Adapter ist eine enge Capability: Er liest `NEXT_PUBLIC_SUPABASE_URL` und ausschließlich den serverseitigen `SUPABASE_SERVICE_ROLE_KEY`, besitzt keinen Anon-Fallback und exportiert keinen generischen Client. Er ruft nur `supabase.auth.admin.listUsers({ page, perPage })` auf, validiert Seite und Seitengröße (Standard 25, Maximum 50), übernimmt unmittelbar nur `id`, `email` und `created_at` und mappt Provider- oder Konfigurationsfehler neutral. Die Service Role wird weder für Profile noch im Client verwendet.
+
+Der Read-Service lädt das eigene Profil und anschließend ausschließlich die Profile der IDs der aktuellen Auth-Seite mit dem authentifizierten Supabase-Serverclient und der bestehenden Admin-SELECT-RLS (`id, role`). Der Join erfolgt serverseitig über die UUID. Das DTO enthält exakt `user_id`, `email`, `role`, `profile_status`, `auth_status`, `created_at` und `is_current_user`. Auth ohne Profil wird als `missing`, eine ungültige Rolle fail closed als `invalid_role`, ein gültiges Profil als `active` dargestellt; in beiden Inkonsistenzfällen ist `role` null. `auth_status` bleibt ausschließlich `unknown`.
+
+Die einzelne Auth-Seite wird deterministisch nach `created_at DESC`, danach `user_id DESC` sortiert. Die Auth-Admin-API bietet keinen serverseitigen Sortierparameter; daher wird bei parallelen Benutzeranlagen keine global snapshotstabile Pagination behauptet. Die UI zeigt deutsche Rollen-/Statuslabels, deutsches Datum, „Du“, Empty- und neutralen Fehlerzustand sowie serverseitige Zurück-/Weiter-Navigation. Sie enthält keine Aktionen, Formulare oder Mutationen.
+
+Gezielte Vitest-Abdeckung wurde für Permission, striktes Queryschema, Autorisierungsfehler, Provider-/Profilfehler, Join und Inkonsistenzen, schmales DTO, Sortierung, Current-User-Markierung, UI-/Empty-/Fehler-/Paginationzustände, Navigation und die statischen Security-Eigenschaften des Adapters ergänzt. Es wurden keine Migration, SQL, RPC, RLS-/Grant-Änderung, E-Mail-Spiegelung, Auth-/Profilmutation oder Änderung am Storage-Purge-Client vorgenommen.
+
+Verbleibende Folgepakete sind AP-14-02 für kontrollierte Rollenverwaltung, AP-14-03 für Reviewer-Einladungen und AP-14-04 für das Deaktivierungs-Audit. Diese Implementierung nimmt keine ihrer Owner- oder Security-Entscheidungen vorweg.
+
+**READ-ONLY USER ADMINISTRATION IMPLEMENTED**
+
+**ROLE MANAGEMENT NOT IMPLEMENTED**
+
+**REVIEWER INVITATION NOT IMPLEMENTED**
+
+**USER DEACTIVATION NOT IMPLEMENTED**
+
+**OVERALL PRODUCT NOT PRODUCTION READY**

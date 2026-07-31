@@ -73,6 +73,11 @@ export const projectMediaOrphanInventoryQuerySchema = z.object({
   page: z.coerce.number().int().min(1).max(10_000).default(1),
 }).strict();
 
+export const userAdministrationQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).max(10_000).default(1),
+  per_page: z.coerce.number().int().min(1).max(50).default(25),
+}).strict();
+
 export const projectMediaOrphanClaimSchema = z.object({
   media_id: z.string().uuid("Die Medien-ID ist ungültig."),
   project_id: projectIdSchema,

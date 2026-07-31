@@ -16,6 +16,15 @@ describe("Admin-Navigation", () => {
     expect(screen.getByRole("link", { name: "Medien-Inventur" })).toBeTruthy();
   });
 
+  it("zeigt ausschließlich Admins die Benutzerverwaltung", () => {
+    const { rerender } = render(<Nav role="admin" />);
+    expect(screen.getByRole("link", { name: "Benutzer & Rollen" }).getAttribute("href")).toBe("/admin/users");
+    rerender(<Nav role="reviewer" />);
+    expect(screen.queryByRole("link", { name: "Benutzer & Rollen" })).toBeNull();
+    rerender(<Nav role={null} />);
+    expect(screen.queryByRole("link", { name: "Benutzer & Rollen" })).toBeNull();
+  });
+
   it("verlinkt die Medien-Inventur mit der vorhandenen Adminroute", () => {
     render(<Nav role="admin" />);
 
