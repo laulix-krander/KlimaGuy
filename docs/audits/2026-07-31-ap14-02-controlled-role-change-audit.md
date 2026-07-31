@@ -333,3 +333,31 @@ Gezielte Vitest-Regressionstests decken Schema-Allowlist und Mass-Assignment-Gre
 **USER DEACTIVATION NOT IMPLEMENTED**
 
 **OVERALL PRODUCT NOT PRODUCTION READY**
+
+## AP-14-02-02 Controlled Role Change UI Implementation Result
+
+AP-14-02-02 integriert in die weiterhin serverseitig geladene Benutzerverwaltung eine kleine, zeilenlokale Client-Komponente für den kontrollierten Rollenwechsel. Das vorhandene Admin-User-DTO wird unverändert wiederverwendet. Die Rollenaktion erscheint ausschließlich bei einem fremden Benutzer mit `profile_status = active` und einer validierten Rolle `admin` oder `reviewer`. Der aktuelle Benutzer sowie fehlende und ungültige Profile erhalten statt einer Fake-Aktion einen neutralen, konkreten Hinweis. Der erfolgreiche Read-Service-Zugriff bleibt an `canViewUserAdministration` und damit an einen gültigen Admin gebunden.
+
+Nach „Rolle ändern“ zeigt eine semantisch klare Inline-Bestätigung die aktuelle Rolle und die automatisch bestimmte Gegenrolle über die zentralen deutschen Rollenlabels. Reviewer → Administrator fragt „Benutzer zum Administrator machen?“ und weist auf den anschließenden administrativen Zugriff hin. Administrator → Reviewer fragt „Administrator zum Reviewer herabstufen?“ und enthält die nicht nur farblich vermittelte Warnung zum Verlust administrativer Funktionen sowie zum Schutz des letzten Administrators.
+
+Die UI ruft ausschließlich die vorhandene `changeUserRoleAction` mit `target_user_id`, `target_role` und `expected_current_role` auf. E-Mail, Actor-ID und freie Patchdaten werden nicht übermittelt. Die bestehende Action bleibt allein für die Revalidation von `/admin/users` nach einer tatsächlichen Änderung verantwortlich; die Client-Komponente verwendet weder zusätzliche Revalidation noch `router.refresh`, Redirect oder optimistische Rollenänderung.
+
+Während des Aufrufs ist nur die betroffene Rollensteuerung mit `aria-busy` markiert. Abbrechen und Bestätigen sind gleichzeitig über `disabled` und `aria-disabled` gesperrt, „Wird aktualisiert …“ wird angezeigt und eine synchrone Submit-Sperre verhindert Doppelsubmits. Die zuvor angezeigte Rolle bleibt bis zur Server-Revalidation unverändert. Bei einem geänderten Erfolg wird die Bestätigung geschlossen und „Die Benutzerrolle wurde aktualisiert.“ mit `role="status"` ausgegeben. `no_change` schließt ebenfalls neutral und zeigt stattdessen „Die Benutzerrolle ist bereits aktuell.“
+
+Alle vorhandenen Fehlercodes werden in der lokalen Präsentationsgrenze exakt auf die freigegebenen deutschen Texte gemappt und mit `role="alert"` ausgegeben. Provider-, SQL- und Rohdetails werden nicht dargestellt. Konflikt und letzter-Admin-Schutz schließen die Bestätigung, verändern die sichtbare Rolle nicht, laden nicht automatisch neu und führen keinen automatischen Retry aus. Es findet keine Adminzählung im Client statt; die RPC bleibt die einzige Grenze für die letzte-Admin-Invariante. Self-Change wird in der UI ausgeschlossen, während Service und RPC unverändert die serverseitige Sicherheitsgrenze bilden.
+
+Jede Rollensteuerung besitzt isolierten lokalen Bestätigungs-, Pending- und Meldungszustand. Öffnen fokussiert „Abbrechen“, Abbruch gibt den Fokus an „Rolle ändern“ zurück und Fehler erhalten einen sinnvollen programmatischen Fokus innerhalb derselben Steuerung. Alle Buttons haben sichtbare Fokuszustände und ausreichende Mindesthöhe; Texte und Buttons umbrechen, lange E-Mail-Adressen werden gebrochen und die bestehende Tabelle behält ihren horizontal kontrollierten mobilen Überlauf.
+
+Gezielte Vitest-Tests decken Sichtbarkeit und Hinweise, beide Rollenrichtungen, den exakt dreifeldrigen Actionpayload, Pending und Doppelsubmit, Erfolg, `no_change`, alle Fehlercodes, Konflikt-/letzten-Admin-Präsentation, Fokus, Abbruch und State-Isolation ab. Architekturtests bestätigen die Wiederverwendung der bestehenden Action, das Fehlen zusätzlicher Client-Revalidation, direkter Profilmutation, Auth-Admin-/Service-Role-Nutzung und die unveränderte server- und datenbankseitige Self-Change-Sperre. Es wurden keine Migration, RPC, RLS, Action, kein Service, keine Einladung, Benutzeranlage, Deaktivierung oder Auth-Mutation ergänzt.
+
+**ROLE CHANGE UI IMPLEMENTED**
+
+**CONTROLLED ROLE CHANGE END-TO-END IMPLEMENTED**
+
+**REVIEWER INVITATION NOT IMPLEMENTED**
+
+**USER DEACTIVATION NOT IMPLEMENTED**
+
+**ROLE CHANGE PRODUCTION VALIDATION NOT COMPLETED**
+
+**OVERALL PRODUCT NOT PRODUCTION READY**
