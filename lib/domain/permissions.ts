@@ -60,6 +60,10 @@ export function canViewUserAdministration(role: Role | null): boolean {
   return role === "admin";
 }
 
+export function canChangeUserRole(role: Role | null): boolean {
+  return role === "admin";
+}
+
 export function canClaimProjectMediaOrphan(role: Role): boolean {
   return role === "admin";
 }

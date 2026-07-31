@@ -78,6 +78,12 @@ export const userAdministrationQuerySchema = z.object({
   per_page: z.coerce.number().int().min(1).max(50).default(25),
 }).strict();
 
+export const changeUserRoleSchema = z.object({
+  target_user_id: z.string().uuid("Die Benutzer-ID ist ungültig."),
+  target_role: roleSchema,
+  expected_current_role: roleSchema,
+}).strict();
+
 export const projectMediaOrphanClaimSchema = z.object({
   media_id: z.string().uuid("Die Medien-ID ist ungültig."),
   project_id: projectIdSchema,
