@@ -306,3 +306,30 @@ Nächster Schritt erst nach Owner-Freigabe:
 
 Dieses Paket enthält ausschließlich Analyse und Dokumentation. Es enthält **keine Implementierung, keine UI-Änderung, keine Rollenänderung, keine Server Action, keinen Service, keine Migration, keine SQL-Änderung, keine RPC, keine RLS-Änderung, keine Grants, keine Auth-Mutation, keine Profilmutation, keine Tests oder Teständerungen, keine Service-Role-Änderung/-Nutzung, keine Environment-Variable, keine `package.json`-Änderung, keine Einladung und keine Deaktivierung**.
 
+## AP-14-02-01 Role Change Database and Service Baseline Implementation Result
+
+AP-14-02-01 ergänzt genau eine additive Migration (`202607310001_user_role_change_rpc.sql`). Da `profiles` derzeit keinen unterstützten direkten Updatepfad besitzt, entzieht sie `anon` und `authenticated` das Tabellenprivileg `UPDATE` vollständig. Die bestehende legitime Profillesefunktion bleibt unverändert; eine direkte Browsermutation von `role` ist damit trotz der historisch breiten `FOR ALL`-Policy nicht möglich.
+
+Die eng signierte `SECURITY DEFINER`-RPC `public.change_user_profile_role(target_user_id uuid, target_role public.app_role, expected_current_role public.app_role)` verwendet den festen `search_path = public, pg_temp`. Ihre Tabellenrückgabe heißt das Ziel-ID-Feld technisch `result_target_user_id`, weil PostgreSQL einen IN-Parameter und OUT-Parameter nicht beide `target_user_id` nennen kann; der Service mappt es auf das freigegebene Feld `target_user_id`. Die übrige Rückgabe besteht aus `old_role`, `new_role`, `changed` und dem geschlossenen `result_code`.
+
+Die RPC bezieht den Actor ausschließlich aus `auth.uid()`, nimmt den konstanten transaktionsgebundenen Advisory Lock `14020120260731`, liest und sperrt das Actorprofil erneut und erlaubt ausschließlich `admin`. Self-Change ist unabhängig vom Adminbestand gesperrt. Danach wird das Zielprofil `FOR UPDATE` geladen. `expected_current_role` bildet die Compare-and-set-Grenze; eine abweichende Rolle ergibt `role_conflict`. Gleiche Ziel- und Istrolle ergibt idempotent `no_change` ohne Update, Audit oder spätere Revalidation.
+
+Bei `admin` nach `reviewer` zählt die RPC unter demselben globalen Lock ausschließlich andere vorhandene Adminprofile. Dadurch werden auch Herabstufungen verschiedener Zielzeilen serialisiert und der letzte Admin atomar geschützt. Eine echte Änderung setzt ausschließlich `public.profiles.role`; der bestehende `updated_at`-Trigger arbeitet unverändert. Unmittelbar danach schreibt dieselbe Funktion in derselben Transaktion das sanitisierten Audit-Ereignis `user_role_changed` mit Actor-ID, Ziel-ID, alter/neuer Rolle und `role_changed`. Andere Ergebnisse erzeugen kein Erfolgsereignis. Default-EXECUTE wird für `PUBLIC`, `anon` und `authenticated` widerrufen und anschließend ausschließlich `authenticated` gewährt; die interne Adminprüfung bleibt zwingend.
+
+Die zentrale Permission `canChangeUserRole` erlaubt ausschließlich die gültige Rolle `admin`. `changeUserRoleSchema` akzeptiert strikt nur UUID-Ziel-ID, Zielrolle und erwartete aktuelle Rolle aus `admin | reviewer`; Zusatzfelder werden abgelehnt. Der dedizierte Service besitzt ausschließlich `getUser`, `getProfile` und `changeRoleAtomically`, validiert Session, Profil und Rolle, prüft Permission und Self-Change vor und mutiert ausschließlich über die RPC. Alle erwartbaren RPC-Zustände werden auf schmale Resultate und neutrale deutsche Meldungen gemappt; Provider- und SQL-Details werden nicht ausgegeben.
+
+Die dedizierte Server Action erstellt den vorhandenen authentifizierten Serverclient, delegiert die Rollenentscheidung an den Service und ruft ausschließlich bei `success = true` und `changed = true` `revalidatePath("/admin/users")` auf. Es gibt keinen Redirect, keine Auth-Admin-API, keine Service Role und keine Adminzählung außerhalb der RPC.
+
+Gezielte Vitest-Regressionstests decken Schema-Allowlist und Mass-Assignment-Grenze, Permission, Servicezustände und schmale RPC-Argumente, neutrale Fehler, Action-/Revalidation-Architektur sowie die statischen Security-, Lock-, Audit-, CAS-, Grant- und Mutationsmerkmale der Migration ab. Es wurden keine Rollenwechsel-UI, Benutzerlisten- oder Navigationsänderungen vorgenommen. AP-14-02-02 bleibt das UI-Folgepaket.
+
+**ROLE CHANGE DATABASE BASELINE IMPLEMENTED**
+
+**ROLE CHANGE SERVICE IMPLEMENTED**
+
+**ROLE CHANGE UI NOT IMPLEMENTED**
+
+**REVIEWER INVITATION NOT IMPLEMENTED**
+
+**USER DEACTIVATION NOT IMPLEMENTED**
+
+**OVERALL PRODUCT NOT PRODUCTION READY**
