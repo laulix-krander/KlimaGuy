@@ -83,9 +83,10 @@ describe("Read-only Benutzerverwaltung", () => {
     expect(screen.getByText("Du", { exact: true })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Zurück" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Weiter" })).toBeTruthy();
-    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByRole("button", { name: "Reviewer einladen" })).toBeTruthy();
+    expect(screen.getByLabelText("E-Mail-Adresse")).toBeTruthy();
     expect(screen.getByText("Die eigene Rolle kann nicht geändert werden.")).toBeTruthy();
-    expect(screen.queryByRole("form")).toBeNull();
+    expect(screen.getByLabelText("E-Mail-Adresse").closest("form")).toBeTruthy();
   });
 
   it("zeigt Empty State und neutralen Fehlerzustand", () => {
