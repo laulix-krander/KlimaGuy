@@ -399,3 +399,23 @@ AP-13-02-02-01 setzt ausschließlich die serverseitige, read-only Neuerzeugung e
 **LIGHTBOX AND PDF REFRESH INTEGRATION NOT IMPLEMENTED**
 
 **OVERALL PRODUCT NOT PRODUCTION READY**
+
+## AP-13-02-02-02 Lightbox and PDF Refresh Integration Result
+
+Die bestehende Single-Media-Action `createProjectMediaSignedViewUrlAction` ist in die Bild-Lightbox und das sichere Öffnen von PDF-Dokumenten integriert. Die Client-Controls übermitteln ausschließlich `project_id` und `media_id`; eine neue Action, ein neuer Service oder neue URL-Erzeugungslogik wurden nicht ergänzt.
+
+Die Lightbox fordert bei jedem bewussten Öffnen und bei jedem tatsächlichen Bildwechsel eine neue Signed View URL an. Die initiale Galerie-URL bleibt ausschließlich Preview-Quelle der kleinen Bildkarte. Während der Actionphase wird „Vorschau wird vorbereitet …“ getrennt vom anschließenden Bildladezustand angezeigt. Kontrollierte Actionfehler werden neutral gemappt und können für das aktuell ausgewählte Bild mit „Erneut versuchen“ erneut angefordert werden; ein reiner Bildladefehler bleibt davon getrennt.
+
+Ein lokaler monotoner Request-Sequenzzähler stellt sicher, dass nur die jüngste Öffnungs-, Navigations- oder Retryantwort State aktualisiert. Navigation bleibt während des Ladens möglich. Bildwechsel und Schließen entfernen die vorherige URL und setzen lokale Lade- und Fehlerzustände zurück; Schließen invalidiert außerdem laufende Requests. Signed URLs leben ausschließlich im lokalen Component-State der aktuellen Anzeige und werden weder persistiert noch global gecacht.
+
+PDF-Aktivierungen reservieren synchron ein leeres neues Fenster mit `noopener,noreferrer`, trennen den Opener zusätzlich, verhindern parallele Aktivierungen derselben Karte und rufen erst danach die vorhandene Single-Media-Action auf. Erfolg navigiert ausschließlich das reservierte Fenster zur frisch erzeugten URL. Actionfehler schließen das Fenster; Popupblocker und Actionfehler werden lokal und neutral gemeldet. Es gibt keine PDF-Einbettung und keinen Downloadworkflow.
+
+Gezielte Vitest-Komponententests decken Öffnung, ausschließliches Zwei-ID-Input, getrennte Loading-/Fehlerzustände, Retry, Wiederöffnung, Navigation, nicht zyklische Bildreihenfolge, Race-Condition-Schutz, Schließen und Fokus-Rückgabe sowie PDF-Fensterreservierung, Opener-Trennung, Erfolg, Fehler, Popupblocker, Pendingzustand und Doppelsubmit-Schutz ab. Die Integration ist read-only und verwendet weder Revalidation noch Redirect.
+
+**LIGHTBOX SIGNED URL REFRESH IMPLEMENTED**
+
+**PDF SIGNED URL REFRESH IMPLEMENTED**
+
+**SIGNED URLS REMAIN EPHEMERAL**
+
+**OVERALL PRODUCT NOT PRODUCTION READY**
