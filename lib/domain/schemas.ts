@@ -84,6 +84,10 @@ export const changeUserRoleSchema = z.object({
   expected_current_role: roleSchema,
 }).strict();
 
+export const inviteReviewerSchema = z.object({
+  email: z.string().trim().min(1).max(254).email(),
+}).strict();
+
 export const projectMediaOrphanClaimSchema = z.object({
   media_id: z.string().uuid("Die Medien-ID ist ungültig."),
   project_id: projectIdSchema,
