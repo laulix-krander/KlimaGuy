@@ -21,7 +21,7 @@ describe("sicheres Öffnen von Projektmedien-PDFs", () => {
     render(<ProjectMediaPdfOpenControl mediaId={MEDIA_ID} projectId={PROJECT_ID} />);
     const button = screen.getByRole("button", { name: "PDF sicher ansehen (öffnet neuen Tab)" });
     fireEvent.click(button);
-    expect(open).toHaveBeenCalledWith("", "_blank", "noopener,noreferrer");
+    expect(open).toHaveBeenCalledWith("", "_blank");
     expect(reserved.opener).toBeNull();
     expect(screen.getByRole("button", { name: "Dokument wird geöffnet …" }).getAttribute("aria-disabled")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Dokument wird geöffnet …" }));

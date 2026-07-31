@@ -10,7 +10,7 @@ export function ProjectMediaPdfOpenControl({ projectId, mediaId }: { projectId: 
 
   const open = async () => {
     if (pendingRef.current) return;
-    const reservedWindow = window.open("", "_blank", "noopener,noreferrer");
+    const reservedWindow = window.open("", "_blank");
     if (!reservedWindow) {
       setError("Das Dokument konnte nicht geöffnet werden. Bitte erlaube Pop-ups für diese Seite.");
       return;
