@@ -88,6 +88,22 @@ export const inviteReviewerSchema = z.object({
   email: z.string().trim().min(1).max(254).email(),
 }).strict();
 
+export const INVITE_PASSWORD_MIN_LENGTH = 8;
+export const INVITE_PASSWORD_MAX_LENGTH = 128;
+
+export const acceptReviewerInviteSchema = z.object({
+  password: z.string().min(INVITE_PASSWORD_MIN_LENGTH).max(INVITE_PASSWORD_MAX_LENGTH),
+  password_confirmation: z.string().min(1).max(INVITE_PASSWORD_MAX_LENGTH),
+}).strict().superRefine((value, context) => {
+  if (value.password !== value.password_confirmation) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Die Passwörter stimmen nicht überein.",
+      path: ["password_confirmation"],
+    });
+  }
+});
+
 export const projectMediaOrphanClaimSchema = z.object({
   media_id: z.string().uuid("Die Medien-ID ist ungültig."),
   project_id: projectIdSchema,

@@ -84,6 +84,7 @@ describe("Reviewer invitation architecture", () => {
     expect(adapter).toContain('import "server-only"');
     expect(adapter).toContain("inviteUserByEmail(email, { redirectTo })");
     expect(adapter).toContain("REVIEWER_INVITE_REDIRECT_URL");
+    expect(adapter).toContain('url.pathname !== "/auth/confirm"');
     expect(adapter).not.toMatch(/createUser\(|updateUserById\(|deleteUser\(|listUsers\(|\.storage/);
     const action = await readFile("lib/actions/reviewer-invitation.ts", "utf8");
     expect(action).toContain('revalidatePath("/admin/users")');
