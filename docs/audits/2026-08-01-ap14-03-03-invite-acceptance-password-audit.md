@@ -271,3 +271,39 @@ Die fachlich und technisch bevorzugte Richtung ist ein Supabase-SSR-konformer In
 **Auditstatus: READY FOR OWNER DECISION**  
 **Nicht: APPROVED FOR IMPLEMENTATION**  
 **NOT PRODUCTION READY.**
+
+## AP-14-03-04 Invite Acceptance and Initial Password Setup Result
+
+AP-14-03-04 implementiert den freigegebenen, dedizierten SSR-Token-Hash-Ablauf. `GET /auth/confirm` akzeptiert ausschließlich `token_hash`, den geschlossenen Auth-Typ `invite` und optional exakt `next=/auth/invite`. Unbekannte Parameter, andere Typen und jedes andere interne oder externe Ziel werden abgelehnt. Der cookiegebundene Supabase-Serverclient ruft genau einmal die in `@supabase/auth-js 2.111.0` bestätigte API `verifyOtp({ token_hash, type: "invite" })` auf. `exchangeCodeForSession`, `setSession`, Sessiontoken-Import und eigene Tokenlogik werden nicht verwendet. Erfolg und Fehler enden per tokenfreiem Redirect ausschließlich auf `/auth/invite` beziehungsweise `/auth/invite?error=invalid_or_expired`; Providerdetails werden nicht gespiegelt. `no-store` und `Referrer-Policy: no-referrer` begrenzen Cache- und Referrer-Risiken.
+
+Als Fremdsessionschutz liest die Bestätigungsgrenze die vorhandene Identität, verifiziert den Invite und verlangt danach, dass `getUser()` exakt die von `verifyOtp` gelieferte Identität bestätigt. Erst dann setzt sie einen kurzen, `HttpOnly`, `SameSite=Strict` und in Production `Secure` geschützten Invite-Kontext für diese serverseitig bestimmte Benutzer-ID. Die ID stammt nie vom Formular oder aus freien Querydaten. Damit kann weder eine zuvor angemeldete fremde Session noch ein normaler Direktaufruf der Passwortseite unbemerkt das eigene Passwort verändern.
+
+`/auth/invite` ist dynamisch und nicht indexierbar. Die Server Component verlangt bei jedem Aufruf gleichzeitig den gebundenen Invite-Kontext, einen durch `getUser()` validierten Benutzer, dieselbe Benutzer-ID, ein vorhandenes `public.profiles`-Profil und eine Rolle aus der bestehenden geschlossenen Menge `admin | reviewer`. Sie mutiert weder Profil noch Rolle. Fehlende oder fremde Session, fehlendes Profil, ungültige Rolle und der geschlossene Queryfehler `invalid_or_expired` rendern ohne Passwortformular einen neutralen deutschen Fehler und einen Login-Link. Ein unbekannter Fehlerparameter wird nicht dargestellt. Auch ein regulär angemeldeter Bestandsbenutzer erhält ohne den zuvor serverseitig erzeugten Kontext kein Formular.
+
+Das strikte Zod-Schema akzeptiert ausschließlich `password` und `password_confirmation`, verlangt identische Werte und begrenzt sie auf 8 bis 128 Zeichen. Die Mindestlänge folgt der im Audit freigegebenen Supabase-Empfehlung; vor Production bleibt der Abgleich mit den tatsächlichen Projekteinstellungen erforderlich. Zusatzfelder einschließlich User-ID, E-Mail, Rolle, Token und Redirect werden abgelehnt. Die Server Action prüft Kontext, aktuelle Session, aktuelle Benutzer-ID, Profil und bestehende Rolle erneut. Danach ruft sie auf demselben authentifizierten SSR-Client ausschließlich `auth.updateUser({ password })` auf. Es gibt keine Service Role, keine Auth-Admin-API, Profil-/Rollenmutation, E-Mail-Spiegelung oder Wiederholung. Nach Erfolg wird der Invite-Kontext gelöscht; die von Supabase beibehaltene Session wird weiterverwendet.
+
+Die geschlossene Ergebnismenge umfasst `invite_password_updated`, `invite_session_missing`, `invite_session_invalid`, `invite_profile_missing`, `invite_profile_invalid`, `invite_password_invalid`, `invite_password_mismatch`, `invite_link_invalid_or_expired`, `invite_password_update_failed` und `invite_already_completed`. Nur technisch belegbare Zustände werden aktuell erzeugt; nicht sicher unterscheidbare Providerzustände werden als `invite_password_update_failed` normalisiert. Rohfehler, Tokens, Passwörter, E-Mail und Auth-IDs erscheinen nicht in Actionresultaten oder Logs.
+
+Das mobile, einspaltige Formular entspricht der bestehenden Login-Karte. Es enthält nur „Neues Passwort“ und „Passwort wiederholen“, sichtbare Labels und Regeln, `type=password`, `autocomplete=new-password`, Längengrenzen, sichtbare Fokuszustände und mindestens 44 px hohe Bedienelemente. Fehler verwenden `role=alert`, Pending und Erfolg `role=status`; `aria-busy`, `disabled` und `aria-disabled` sind gesetzt. Eine synchrone Ref-Sperre verhindert Doppelsubmit per Klick oder Enter. Bei Erfolg werden beide Passwortwerte sofort aus dem State entfernt, der Fokus erreicht die Erfolgsmeldung, und nach einer kurzen wahrnehmbaren Bestätigung folgt ausschließlich `router.replace("/projects")`; ein fester manueller Link dient als Fallback.
+
+Replay, Doppelklick und zwei Tabs erzeugen keine Benutzer-, Profil- oder Rollenmutation. Supabase entscheidet den einmaligen Tokenverbrauch; ein zweiter Confirm-Aufruf endet neutral. Reload auf der tokenfreien Passwortseite rekonstruiert den Zustand aus Session und Invite-Kontext. Nach einem abgeschlossenen Request verhindert das gelöschte Kontextcookie einen späteren erneuten Abschluss. Die synchrone UI-Sperre verhindert parallele Requests aus derselben Komponenteninstanz. Wie bereits im Audit festgehalten, bietet Supabase für zwei exakt gleichzeitig aus unterschiedlichen Tabs gestartete `updateUser`-Requests keine anwendungsseitige atomare Einmaligkeitsprimitive; ohne die ausdrücklich ausgeschlossene neue Persistenz wird kein unzutreffender Lock behauptet. Dieses Providerverhalten bleibt Bestandteil der Production Validation und es gibt keinen automatischen Retry.
+
+Gezielte Vitest-Tests decken Confirm-Parameter, Typ-Allowlist, Open-Redirect-Schutz, neutrale Verifikationsfehler, Fremdsession, Session-/Profil-/Rollenprüfung, striktes Passwortschema, exakten `updateUser`-Payload, neutrale Actionresultate, UI-Felder, Regeln, Mismatch, Pending, Doppelsubmit, Fokus, Erfolg, Leeren, kontrollierte Weiterleitung und Architekturverbote ab. Es wurde keine Migration, SQL-, RPC-, RLS-, Grant-, Trigger-, Rollenmodell-, Profil-, Registrierungs-, Deaktivierungs-, Dependency- oder `package.json`-Änderung vorgenommen.
+
+Vor Production müssen zwei Konfigurationsschritte atomar erfolgen: `REVIEWER_INVITE_REDIRECT_URL=https://klima-guy.vercel.app/auth/confirm` setzen und dieselbe URL in die Supabase Redirect-Allowlist aufnehmen. Das aktive Invite-E-Mail-Template muss den freigegebenen SSR-Link mit `token_hash={{ .TokenHash }}`, `type=invite` und `/auth/confirm` verwenden; eine bloße Variablenänderung bei weiter verwendetem `{{ .ConfirmationURL }}` reicht nicht. Die bestehende `/login`-Allowlist darf vorerst erhalten bleiben.
+
+Ein abgelaufener oder bereits verbrauchter Invite wird neutral abgelehnt. Ein bereits vorhandener Benutzer wird weiterhin durch `reviewer_already_exists` an der erneuten Einladung gehindert. Dieses Paket versendet weder einen neuen Invite noch eine Recovery-E-Mail. Ein späterer kontrollierter Recovery-Flow benötigt ein eigenes Audit und eine Ownerfreigabe. Für die verbleibende Production Validation ist entweder eine neue, kontrollierte eigene Testadresse oder ein später offiziell freigegebener Recovery-Link zu verwenden; bestehende Testbenutzer werden nicht verändert.
+
+**INVITE ACCEPTANCE IMPLEMENTED**
+
+**INITIAL PASSWORD SETUP IMPLEMENTED**
+
+**REVIEWER INVITATION AND PROFILE CREATION PREVIOUSLY VALIDATED**
+
+**REVIEWER LOGIN NOT YET PRODUCTION VALIDATED**
+
+**REVIEWER PERMISSIONS NOT YET PRODUCTION VALIDATED**
+
+**USER DEACTIVATION NOT IMPLEMENTED**
+
+**OVERALL PRODUCT NOT PRODUCTION READY**
