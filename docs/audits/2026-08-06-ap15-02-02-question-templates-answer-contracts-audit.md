@@ -539,3 +539,50 @@ Dieses Paket enthält ausschließlich dieses Auditdokument und damit ausschließ
 - keine echten Kunden- oder personenbezogenen Daten.
 
 Alle Contracts, Signaturen, Tabellen und Texte sind ausschließlich nicht ausführbare Auditvorschläge. Der nächste Schritt ist eine dokumentierte Ownerentscheidung, nicht Implementierungs- oder Produktionsfreigabe.
+
+## AP-15-02-02-01 Question Template Registry and Rendering Result
+
+### Umsetzung und Ownerentscheidungen
+
+AP-15-02-02-01 setzt ausschließlich die statische Registry und das deterministische Rendering um. Die deutsche Ansprache verwendet durchgehend „du“ und bleibt freundlich, direkt, ruhig, verständlich sowie frei von Werbung, Belehrung und Emojis. Fragen verfolgen je ein fachliches Ziel; Annahmen verlangen eine ausdrückliche Bestätigung. Site-Check-Texte sind neutral kundensichtbar. Human Review ist durch getrennte interne und kundensichtbare Templates ausdrücklich unterschieden.
+
+### Domainstruktur, Locale, Arten, Keys und Versionierung
+
+Die Domain wurde modular um `question-template-types.ts`, `question-template-schemas.ts`, `question-template-registry.ts`, `question-template-renderer.ts` und synthetische Fixtures ergänzt. `de` ist der einzige geschlossene Locale-Wert. Die Message Kinds sind `question`, `confirmation`, `notice`, `internal_notice`, `intermediate_result` und `collection_end`. Die Registry enthält die acht bestehenden Planner-Keys, eine Raumgrößen-Retryvariante sowie kontrollierte Keys für Annahmebestätigung, vier Site Checks, internes und sichtbares Human Review, Zwischenstand, Pause und Vor-Ort-Prüfung. Alle MVP-Templates besitzen die unveränderliche Version 1; Auflösung erfolgt nur explizit über Key, Locale und Version.
+
+### Verträge und Registry
+
+Das strikte Template-Schema bindet Key, positive Version, Locale, Message Kind, Action, optionalen Answer Type und Information Key, kontrollierte Texte und Parameter, Answer Contract, Retrybezug, Sichtbarkeit und Status. Zusatzfelder, leere oder unsichere Texte, unbekannte Werte und inkonsistente interne Sichtbarkeit werden abgelehnt. Die tief eingefrorene TypeScript-Registry wird auf Schemafehler und doppelte Identitäten geprüft und bietet ausschließlich pure Lookup- und Listingfunktionen.
+
+Die kontrollierte Parametergrenze allowlistet `room_label`, `information_label`, `unit_label`, `approximate_example`, `assumption_label`, `site_check_label`, `assessment_level_label`, `known_items`, `assumption_items`, `open_items` und `next_step_label`. Werte werden getrimmt, längenbegrenzt und als Strings oder kontrollierte Stringlisten angenommen; HTML-artige Inhalte, URLs, Tokenhinweise und unbekannte Felder werden abgelehnt. Fehlende Pflichtparameter schließen das Rendering kontrolliert.
+
+Deklarative Answer Contracts verwenden nur `text`, `boolean` und `approximate_number` als Hauptvertrag; `unknown` und `skip` bleiben ausschließlich Outcomes. Optionen und deutsche Labels sind geschlossen. Textfragen für Raum- und Gebäudeart, Booleanfragen für Innen-/Außenposition, Leitungsweg, Elektro und Zugänglichkeit sowie die Raumgröße in Quadratmetern sind enthalten. „Weiß ich nicht“ wird angeboten; „Möchte ich überspringen“ erscheint nur bei erlaubtem Skip. Der zweite Raumgrößenversuch bleibt `approximate_number`, zielt auf dieselbe Information und bietet vereinfachte Größenbeispiele. Es gibt keinen dritten Retry.
+
+Die Raumgrößenannahme bietet `confirm_assumption`, `reject_assumption`, `unknown` und `defer`, bleibt sichtbar als vorläufige Annahme gekennzeichnet und bewirkt keine automatische Zustimmung. Site-Check-Hinweise für Leitungsweg, Elektro, Außenposition und Zugänglichkeit enthalten weder Schuldzuweisung noch technische Freigabe oder Terminversprechen. Human Review hat ein nicht kundenfähiges internes Template und einen neutralen sichtbaren Hinweis ohne interne Details.
+
+Der Zwischenstand rendert ausschließlich kontrollierte Werte in den Abschnitten Einordnung, bereits bekannt, vorläufige Annahmen, noch offen und nächster Schritt. Er übernimmt keine Rohdatenzusammenfassung. Die Collection-End-Templates pausieren kontrolliert oder empfehlen eine Vor-Ort-Prüfung, ohne Abschluss, Statusmutation oder Terminbuchung zu behaupten.
+
+### Renderer, Fehler und Accessibility
+
+`renderQuestionTemplate` ist pure, kanalunabhängig und deterministisch. Es validiert Registry, Locale, explizite Version, SelectedNextAction-Bindung, Action Type, Information Key, Answer Type, Answer Contract und sämtliche Parameter. Es wählt keine Aktion, berechnet keinen Score neu und mutiert weder Input noch Registry. Das Ergebnis ist eine strikte discriminated union aus gerenderter Interaction oder einem geschlossenen Fehlercode. Unterstützt werden `template_not_found`, `template_version_not_found`, `unsupported_action_type`, `unsupported_answer_type`, `information_key_mismatch`, `missing_render_parameter`, `invalid_render_parameter`, `locale_not_supported`, `answer_contract_mismatch`, `template_registry_invalid`, `render_failed` und `stale_template_binding`. Es gibt keine Fallbackfrage und keine rohe Zod-Ausgabe. Optionaler Accessibility-Text gibt Frage, ausgeschriebene Einheit und Optionen ohne zusätzliche Fachbedeutung wieder.
+
+### Fixtures, Tests und Grenzen
+
+Synthetische Fixtures decken Standard- und Retry-Raumgröße, Raumtyp, Gebäudeart, fünf Booleanfragen, Annahmebestätigung, Site Check, internes und sichtbares Human Review, Zwischenstand, Pause und Vor-Ort-Prüfung ab. Unit- und Architekturtests prüfen Schemas, Zusatzfeldablehnung, Registryidentitäten und Immutabilität, Bindungen, Parameter, deterministischen Output, unveränderte Eingaben, Unknown/Skip, Texte und sämtliche Spezialfälle sowie verbotene Laufzeitkopplungen.
+
+Es gibt keine Antwortinterpretation oder Antwortnormalisierung, keine Knowledge-Claim-Erzeugung oder Knowledge-State-Mutation, keine Fotoanweisung, keine UI, keine Persistenz, keine Datenbankänderung, keine KI und keine WhatsApp-Integration. AP-15-02-02-02 bleibt das Folgepaket für Antwortinterpretation und Normalisierung.
+
+### Status
+
+- **QUESTION TEMPLATE REGISTRY IMPLEMENTED**
+- **DETERMINISTIC TEMPLATE RENDERING IMPLEMENTED**
+- **DECLARATIVE ANSWER CONTRACTS IMPLEMENTED**
+- **ANSWER NORMALIZATION NOT IMPLEMENTED**
+- **ANSWER INTERPRETATION NOT IMPLEMENTED**
+- **KNOWLEDGE CLAIM MAPPING NOT IMPLEMENTED**
+- **PHOTO REQUEST PLANNER NOT IMPLEMENTED**
+- **INTERNAL CONVERSATION SIMULATOR NOT IMPLEMENTED**
+- **AI ANALYSIS NOT IMPLEMENTED**
+- **WHATSAPP INTEGRATION NOT IMPLEMENTED**
+- **OFFER GENERATION NOT IMPLEMENTED**
+- **OVERALL PRODUCT NOT PRODUCTION READY**

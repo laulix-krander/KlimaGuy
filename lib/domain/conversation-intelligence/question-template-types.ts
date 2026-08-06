@@ -1,0 +1,25 @@
+import type { SelectedNextAction } from "./question-planner-schemas";
+import type { PlannerActionType } from "./question-planner-types";
+import type { PropertyKey } from "./types";
+
+export const QUESTION_TEMPLATE_LOCALES = ["de"] as const;
+export const QUESTION_MESSAGE_KINDS = ["question", "confirmation", "notice", "internal_notice", "intermediate_result", "collection_end"] as const;
+export const QUESTION_TEMPLATE_STATUSES = ["active", "deprecated"] as const;
+export const CONTROLLED_PARAMETER_KEYS = ["room_label", "information_label", "unit_label", "approximate_example", "assumption_label", "site_check_label", "assessment_level_label", "known_items", "assumption_items", "open_items", "next_step_label"] as const;
+export const ANSWER_OPTION_KEYS = ["yes", "no", "unknown", "skip", "confirm_assumption", "reject_assumption", "defer"] as const;
+export const NORMALIZED_OUTCOMES = ["yes", "no", "unknown", "skip", "confirm_assumption", "reject_assumption", "defer"] as const;
+export const ANSWER_VALIDATION_ERROR_CODES = ["text_answer_invalid", "boolean_answer_invalid", "approximate_number_invalid", "confirmation_answer_invalid"] as const;
+export const TEMPLATE_RENDER_ERROR_CODES = ["template_not_found", "template_version_not_found", "unsupported_action_type", "unsupported_answer_type", "information_key_mismatch", "missing_render_parameter", "invalid_render_parameter", "locale_not_supported", "answer_contract_mismatch", "template_registry_invalid", "render_failed", "stale_template_binding"] as const;
+export type QuestionTemplateLocale = typeof QUESTION_TEMPLATE_LOCALES[number];
+export type QuestionMessageKind = typeof QUESTION_MESSAGE_KINDS[number];
+export type ControlledParameterKey = typeof CONTROLLED_PARAMETER_KEYS[number];
+export type TemplateRenderErrorCode = typeof TEMPLATE_RENDER_ERROR_CODES[number];
+export type RenderParameterValue = string | readonly string[];
+export type RenderParameters = Readonly<Partial<Record<ControlledParameterKey, RenderParameterValue>>>;
+export type QuestionTemplateRegistry = readonly QuestionTemplate[];
+export type AnswerOption = Readonly<{ option_key: typeof ANSWER_OPTION_KEYS[number]; label: string; normalized_outcome: typeof NORMALIZED_OUTCOMES[number] }>;
+export type AnswerContract = Readonly<{ answer_type: "text" | "boolean" | "approximate_number"; required: boolean; allows_unknown: boolean; allows_skip: boolean; min_length?: number; max_length?: number; min_value?: number; max_value?: number; unit?: "sqm"; precision?: number; options: readonly AnswerOption[]; examples: readonly string[]; validation_error_code: typeof ANSWER_VALIDATION_ERROR_CODES[number]; maximum_attempts: number }>;
+export type QuestionTemplate = Readonly<{ template_key: string; template_version: number; locale: QuestionTemplateLocale; message_kind: QuestionMessageKind; supported_action_type: PlannerActionType; supported_answer_type?: "text" | "boolean" | "approximate_number"; information_key?: PropertyKey; primary_text: string; supporting_text?: string; help_text?: string; examples: readonly string[]; controlled_parameter_keys: readonly ControlledParameterKey[]; answer_contract?: AnswerContract; retry_variant_of?: string; retry_attempt?: number; customer_visible: boolean; status: typeof QUESTION_TEMPLATE_STATUSES[number]; accessibility_text?: string }>;
+export type RenderedCustomerInteraction = Readonly<{ template_key: string; template_version: number; locale: QuestionTemplateLocale; message_kind: QuestionMessageKind; primary_text: string; supporting_text?: string; help_text?: string; examples: readonly string[]; answer_contract?: AnswerContract; answer_options: readonly AnswerOption[]; customer_visible: boolean; accessibility_text?: string }>;
+export type RenderQuestionTemplateInput = Readonly<{ selected_action: SelectedNextAction; locale: string; template_version: number; render_parameters: RenderParameters; registry?: QuestionTemplateRegistry }>;
+export type RenderQuestionTemplateResult = Readonly<{ success: true; interaction: RenderedCustomerInteraction } | { success: false; code: TemplateRenderErrorCode }>;
