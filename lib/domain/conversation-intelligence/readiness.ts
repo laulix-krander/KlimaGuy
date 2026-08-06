@@ -21,7 +21,7 @@ export function deriveMissingInformation(state: KnowledgeState) {
   const relevant: PropertyKey[] = ["desired_installation_scope", "requested_room_count", "room_type", "room_area_sqm", "building_type", "indoor_unit_position_known", "outdoor_unit_position_known", "line_route_known", "estimated_line_length_m", "core_drilling_count", "condensate_route_known", "electrical_supply_known", "accessibility_known"];
   return relevant.flatMap((key) => {
     const claim = current.get(key);
-    if (claim && !contradictions.has(key)) return [];
+    if (usable(claim) && !contradictions.has(key)) return [];
     const entity_type = (Object.entries(PROPERTY_KEYS).find(([, keys]) => (keys as readonly string[]).includes(key))?.[0] ?? "project") as "project" | "room" | "installation";
     const entity_id = getEffectiveClaims(state).find((item) => item.entity_type === entity_type)?.entity_id ?? state.project_id;
     const rule = requirements[key];
