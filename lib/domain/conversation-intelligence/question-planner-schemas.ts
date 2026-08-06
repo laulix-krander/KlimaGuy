@@ -1,0 +1,42 @@
+import { z } from "zod";
+import { intermediateAssessmentSchema, knowledgeStateSchema, missingInformationSchema } from "./schemas";
+import { ALL_PROPERTY_KEYS, ENTITY_TYPES } from "./types";
+import { ASSUMPTION_KEYS, CANDIDATE_STATUSES, FALLBACK_PATHS, FEATURE_CLASSES, HUMAN_REVIEW_REASONS, INELIGIBILITY_CODES, PLANNER_ACTION_TYPES, PLANNER_ANSWER_TYPES, PLANNER_REASON_CODES, PLANNER_STOP_REASONS, PLANNER_TARGET, PRIORITY_BANDS, RETRY_OUTCOMES, TEMPLATE_KEYS } from "./question-planner-types";
+
+const uuid = z.string().uuid();
+const timestamp = z.string().datetime({ offset: true });
+const version = z.number().int().positive();
+export const plannerActionTypeSchema = z.enum(PLANNER_ACTION_TYPES);
+export const plannerAnswerTypeSchema = z.enum(PLANNER_ANSWER_TYPES);
+export const featureClassSchema = z.enum(FEATURE_CLASSES);
+export const priorityBandSchema = z.enum(PRIORITY_BANDS);
+export const ineligibilityCodeSchema = z.enum(INELIGIBILITY_CODES);
+export const retryStateSchema = z.object({ information_key: z.enum(ALL_PROPERTY_KEYS), entity_type: z.enum(ENTITY_TYPES), entity_id: uuid, attempts: z.number().int().min(0).max(2), last_outcome: z.enum(RETRY_OUTCOMES), last_attempt_at: timestamp.optional() }).strict();
+export type RetryState = Readonly<z.infer<typeof retryStateSchema>>;
+export const customerEffortStateSchema = z.object({ consecutive_technical_questions: z.number().int().min(0), unanswered_questions: z.number().int().min(0), repeated_questions: z.number().int().min(0), last_break_at: timestamp.optional() }).strict();
+export type CustomerEffortState = Readonly<z.infer<typeof customerEffortStateSchema>>;
+export const featureClassesSchema = z.object({ safety_relevance: featureClassSchema, feasibility_impact: featureClassSchema, sizing_impact: featureClassSchema, installation_impact: featureClassSchema, price_risk_impact: featureClassSchema, readiness_impact: featureClassSchema, expected_information_gain: featureClassSchema, answerability: featureClassSchema, customer_effort: featureClassSchema, repetition_penalty: featureClassSchema, contradiction_bonus: featureClassSchema, dependency_bonus: featureClassSchema, assumption_availability_penalty: featureClassSchema, site_check_availability_penalty: featureClassSchema }).strict();
+export type CandidateFeatureClasses = Readonly<z.infer<typeof featureClassesSchema>>;
+const answerContractSchema = z.object({ answer_type: plannerAnswerTypeSchema }).strict();
+export const questionCandidateSchema = z.object({ candidate_id: uuid, project_id: uuid, conversation_id: uuid, based_on_state_version: version, information_key: z.enum(ALL_PROPERTY_KEYS), entity_type: z.enum(ENTITY_TYPES), entity_id: uuid, action_type: plannerActionTypeSchema, answer_type: plannerAnswerTypeSchema.optional(), template_key: z.enum(TEMPLATE_KEYS).optional(), assumption_key: z.enum(ASSUMPTION_KEYS).optional(), priority_band: priorityBandSchema, feature_classes: featureClassesSchema, retry_count: z.number().int().min(0).max(2), max_retries: z.literal(2), dependency_keys: z.array(z.enum(ALL_PROPERTY_KEYS)).readonly(), fallback_paths: z.array(z.enum(FALLBACK_PATHS)).readonly(), reason_codes: z.array(z.enum(PLANNER_REASON_CODES)).min(1).readonly(), status: z.enum(CANDIDATE_STATUSES) }).strict().superRefine((candidate, context) => {
+  const asks = candidate.action_type.startsWith("ask_");
+  if (asks && (!candidate.answer_type || !candidate.template_key)) context.addIssue({ code: "custom", message: "answer_contract_required" });
+  if (!asks && candidate.answer_type) context.addIssue({ code: "custom", message: "answer_contract_not_allowed" });
+  if ((candidate.action_type === "offer_assumption") !== Boolean(candidate.assumption_key)) context.addIssue({ code: "custom", message: "assumption_key_mismatch" });
+});
+export type QuestionCandidate = Readonly<z.infer<typeof questionCandidateSchema>>;
+export const scoreBreakdownSchema = z.object({ safety_relevance: z.number().int(), feasibility_impact: z.number().int(), sizing_impact: z.number().int(), installation_impact: z.number().int(), price_risk_impact: z.number().int(), readiness_impact: z.number().int(), expected_information_gain: z.number().int(), answerability: z.number().int(), customer_effort: z.number().int(), repetition_penalty: z.number().int(), contradiction_bonus: z.number().int(), dependency_bonus: z.number().int(), assumption_availability_penalty: z.number().int(), site_check_availability_penalty: z.number().int(), total: z.number().int() }).strict();
+export type ScoreBreakdown = Readonly<z.infer<typeof scoreBreakdownSchema>>;
+export const selectedNextActionSchema = z.object({ decision_id: uuid, project_id: uuid, conversation_id: uuid, based_on_state_version: version, selected_candidate_id: uuid, action_type: plannerActionTypeSchema, information_key: z.enum(ALL_PROPERTY_KEYS), entity_type: z.enum(ENTITY_TYPES), entity_id: uuid, answer_contract: answerContractSchema.optional(), template_key: z.enum(TEMPLATE_KEYS).optional(), assumption_key: z.enum(ASSUMPTION_KEYS).optional(), fallback_paths: z.array(z.enum(FALLBACK_PATHS)).readonly(), reason_codes: z.array(z.enum(PLANNER_REASON_CODES)).min(1).readonly(), priority_band: priorityBandSchema, score_breakdown: scoreBreakdownSchema, created_at: timestamp, created_by_actor_class: z.literal("system") }).strict();
+export type SelectedNextAction = Readonly<z.infer<typeof selectedNextActionSchema>>;
+export const plannerStopResultSchema = z.object({ project_id: uuid, conversation_id: uuid, based_on_state_version: version, stop_reason: z.enum(PLANNER_STOP_REASONS), next_action_type: z.enum(["present_intermediate_result", "request_human_review", "mark_requires_site_check", "end_collection"]), assessment_id: uuid.optional(), reason_codes: z.array(z.enum(PLANNER_REASON_CODES)).min(1).readonly(), created_at: timestamp }).strict();
+export type PlannerStopResult = Readonly<z.infer<typeof plannerStopResultSchema>>;
+const activeQuestionSchema = z.object({ candidate_id: uuid, based_on_state_version: version, status: z.enum(["selected", "superseded"]) }).strict();
+export const plannerContextSchema = z.object({ project_id: uuid, conversation_id: uuid, state_version: version, knowledge_state: knowledgeStateSchema, intermediate_assessment: intermediateAssessmentSchema.optional(), missing_information: z.array(missingInformationSchema).readonly(), target_readiness_level: z.literal(PLANNER_TARGET), retry_state: z.array(retryStateSchema).readonly(), customer_effort_state: customerEffortStateSchema, active_question: activeQuestionSchema.optional(), human_takeover_reason: z.enum(HUMAN_REVIEW_REASONS).optional(), created_at: timestamp }).strict().superRefine((context, refinement) => {
+  if (context.knowledge_state.project_id !== context.project_id || context.knowledge_state.conversation_id !== context.conversation_id) refinement.addIssue({ code: "custom", message: "state_binding_mismatch" });
+  if (context.intermediate_assessment && (context.intermediate_assessment.project_id !== context.project_id || context.intermediate_assessment.conversation_id !== context.conversation_id)) refinement.addIssue({ code: "custom", message: "assessment_binding_mismatch" });
+  if (context.intermediate_assessment && context.intermediate_assessment.based_on_state_version !== context.state_version) refinement.addIssue({ code: "custom", message: "assessment_version_mismatch" });
+  if (context.missing_information.some((need) => need.entity_id !== context.project_id && !context.knowledge_state.claims.some((claim) => claim.entity_id === need.entity_id))) refinement.addIssue({ code: "custom", message: "missing_entity" });
+});
+export type PlannerContext = Readonly<z.infer<typeof plannerContextSchema>>;
+export type PlanNextActionResult = Readonly<{ kind: "selected_action"; action: SelectedNextAction } | { kind: "stop_result"; stop: PlannerStopResult }>;

@@ -569,3 +569,58 @@ Dieses Paket enthält ausschließlich dieses Auditdokument. Es enthält ausdrüc
 - keine echten Kundendaten oder personenbezogene Telemetrie.
 
 Alle Architektur- und DTO-Beispiele sind nicht ausführbare Planungsartefakte. Der nächste Schritt ist eine dokumentierte Ownerentscheidung, nicht die Behauptung einer Implementierungs- oder Produktionsfreigabe.
+## AP-15-02-01 Controlled Question Planner Domain Baseline Result
+
+AP-15-02-01 ergänzt den modularen Monolithen ausschließlich um die vier puren Domainmodule `question-planner-types.ts`, `question-planner-schemas.ts`, `question-planner.ts` und `question-planner-fixtures.ts`. Die öffentliche Oberfläche wird kontrolliert über den bestehenden Conversation-Intelligence-Index exportiert. AP-15-01 bleibt die einzige Quelle für Knowledge State, Missing Information, Readiness, Widersprüche und Intermediate Assessments.
+
+### Verträge und Ownerentscheidungen
+
+- Der feste, nicht frei wählbare Target ist ausschließlich `level_3_preliminary_installation`. Ein Lauf liefert höchstens eine primäre Aktion; Gruppen sind ausgeschlossen.
+- Action Types sind geschlossen auf `ask_text`, `ask_yes_no`, `ask_approximate_number`, `offer_assumption`, `mark_requires_site_check`, `request_human_review`, `present_intermediate_result` und `end_collection`. Answer Types sind geschlossen auf `text`, `boolean`, `approximate_number`, `unknown` und `skip`.
+- Der strikte Planner Context bindet Projekt, Conversation, positive State-Version, Knowledge State, versionsgleiches Intermediate Assessment, Missing Information, Retry State, Customer Effort, optional aktive Frage und Erstellzeit. Er enthält weder Nachrichten noch Medieninhalte oder Kontaktdaten.
+- Question Candidates enthalten ausschließlich UUID-/Versions-/Entitätsbindung, kontrollierte Aktion und optionalen Answer-/Template-/Assumption-Key, Prioritätsband, Featureklassen, Retrygrenze, Dependencies, Fallbacks, Reason Codes und Status. Es gibt keine freie Frage oder Begründung.
+- Selected Next Action enthält genau einen Candidate-Verweis und reproduzierbare Score-Komponenten; Actor-Klasse ist ausschließlich `system`. Stop Results wählen kontrolliert Zwischenstand, Mensch, Site Check oder Sammlungsschluss. Stop bedeutet kein zwingend permanentes Gesprächsende.
+
+### Erzeugung, Eligibility und Stale Detection
+
+Kandidaten werden deterministisch aus AP-15-01 Missing Information, Readiness/Widersprüchen, Retry State und Customer Effort für `room_type`, `room_area_sqm`, `building_type`, Innen-/Außenposition, Leitungsweg, Elektro und Zugänglichkeit erzeugt. Template Keys sind stabile Domainkeys ohne Text. Der zweite erfolglose Versuch führt bei der groben Raumgröße zum erlaubten Annahmeangebot und bei Leitungsweg beziehungsweise Elektro zum Site Check. `answered`, `unknown` und `skipped` bleiben verschiedene Zustände.
+
+Eligibility wird vor Ranking geprüft. Geschlossene Ausschlüsse decken ausreichende oder nicht anwendbare Information, Retrylimit, fehlende Dependency, fehlende Beantwortbarkeit, vorhandenen Site Check oder aktive Annahme, fehlende Target-Relevanz, vorrangigen Widerspruch, veraltete Version, fehlende Entität, Human Takeover, Belastungsgrenze und offene aktive Frage ab. Kein Score kann diese Constraints überstimmen. Eine Abweichung zwischen Context- und Knowledge-State-Version ergibt `stale_planner_context`; es gibt weder stilles Upgrade noch Mutation.
+
+### Featureklassen, Ranking und Tie-Break
+
+Alle 14 Merkmale verwenden ausschließlich `none`, `low`, `medium`, `high`, `critical`. Die transparente interne Abbildung ist 0, 1, 2, 3, 4. Safety, Feasibility, Sizing, Installation, Preisrisiko als reine Risikoklasse, Readiness, Information Gain, Answerability, Contradiction und Dependency werden addiert; Customer Effort, Repetition sowie verfügbare Annahme-/Site-Check-Alternativen werden subtrahiert. Das Resultat ist eine kleine Ganzzahl, keine Confidence oder Wahrscheinlichkeit.
+
+Vor dem Score gelten die Bänder `safety`, `feasibility`, `readiness_blocker`, `price_risk`, `technical_accuracy`, `optional`. Danach entscheidet der Score. Bei Gleichstand folgen niedriger Customer Effort, höhere Answerability, stärkerer Readiness Impact sowie lexikografisch `information_key`, `entity_id` und `candidate_id`. Es gibt keine Uhr, Zufallsquelle oder externe Eingabe als Scoreautorität.
+
+### Retry, Customer Effort und Auswege
+
+Retry State erlaubt null bis zwei Attempts und die geschlossenen Outcomes `answered`, `unknown`, `skipped`, `invalid`, `ignored`, `superseded`. Nach zwei nicht verwertbaren Attempts wird nicht ein drittes Mal gefragt. Customer Effort zählt ausschließlich technische Folgefragen, unbeantwortete und wiederholte Fragen; nach vier technischen Folgefragen wird keine weitere normale Ask-Aktion ausgewählt. Ein versionsgleiches Assessment wird als Zwischenstand bevorzugt, andernfalls wird kontrolliert beendet beziehungsweise ein anderer fachlicher Pfad gewählt.
+
+Die Annahme-Allowlist enthält nur grobe Raumgröße für Level 2, typische Raumhöhe ohne Dachgeschoss-/Sonderfall und Ein-Raum-MVP. Elektro, Außenposition, Leitungs-/Kondensatweg, Zugänglichkeit, Kernbohrung, Eigentum, Genehmigung, Schallschutz, Wandmaterial und finale Leitungslänge sind nicht automatisch annehmbar. Der Planner bietet eine Annahme nur an und mutiert keinen Claim. Site Checks sind für Elektro, Leitungs-/Kondensatweg, Zugänglichkeit und Außenposition nach Remote-/Retrygrenzen möglich. Human Takeover ist für kritischen Widerspruch, Safety-Konflikt, bindende Preisanfrage, Kundenwunsch, außerhalb der MVP-Domain, mögliche Gefahr und fehlende sichere Kundenaktion geschlossen vorgesehen.
+
+### Widersprüche, Referenzfälle und Tests
+
+Ein Raumgrößenwiderspruch erzeugt eine priorisierte Kläraktion mit `contradiction_requires_clarification`; es wird nicht der neueste Claim übernommen. Sicherheitskritische Konflikte führen ohne normale Kundenfrage zu `request_human_review`. Erreicht der State das Target, wird das vorhandene Assessment über `present_intermediate_result` referenziert.
+
+Synthetische Planner-Fixtures und fokussierte Vitest-Tests decken Schemahärtung, alle MVP-Keys, ersten/zweiten Unknown, Skip und Answered, Annahme-/Site-Check-Fallbacks, Eligibility, diskrete Scores, Prioritätsbänder, stabilen Tie-Break, genau eine Action, Target-/Effort-/No-Candidate-/Human-Stops, Stale Detection, Raumgrößen- und Safety-Widerspruch sowie Unveränderlichkeit ab. Architekturtests verbieten Runtimeprovider, Netzwerk, Environment, globale Uhr/Zufall, UI-Direktiven, Routes/Actions/Services, Fotoaktionen und freie Kundenfragefelder.
+
+Diese Baseline enthält ausdrücklich keine Frageformulierung, keine Texttemplates oder sichtbaren Kundentexte, keine Fotoaktionen/-anweisungen, keine UI, keinen Simulator, keine Persistenz, Migration, SQL/RPC/RLS-Änderung, keine Supabase-Nutzung, keine KI/LLM/Vision, kein WhatsApp und keine Preis- oder Angebotslogik.
+
+**CONTROLLED QUESTION PLANNER DOMAIN BASELINE IMPLEMENTED**
+
+**DETERMINISTIC CANDIDATE SELECTION IMPLEMENTED**
+
+**QUESTION TEMPLATES NOT IMPLEMENTED**
+
+**PHOTO REQUEST PLANNER NOT IMPLEMENTED**
+
+**INTERNAL CONVERSATION SIMULATOR NOT IMPLEMENTED**
+
+**AI ANALYSIS NOT IMPLEMENTED**
+
+**WHATSAPP INTEGRATION NOT IMPLEMENTED**
+
+**OFFER GENERATION NOT IMPLEMENTED**
+
+**OVERALL PRODUCT NOT PRODUCTION READY**
