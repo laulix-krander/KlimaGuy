@@ -586,3 +586,28 @@ Es gibt keine Antwortinterpretation oder Antwortnormalisierung, keine Knowledge-
 - **WHATSAPP INTEGRATION NOT IMPLEMENTED**
 - **OFFER GENERATION NOT IMPLEMENTED**
 - **OVERALL PRODUCT NOT PRODUCTION READY**
+
+## AP-15-02-02-02 Answer Contract Validation and Normalization Result
+
+Die Domainstruktur wurde um getrennte Typ-, Schema-, Normalisierungs- und synthetische Fixture-Module ergänzt. `RawCustomerAnswer` akzeptiert ausschließlich strikt gebundene Text- oder Optionswerte; `NormalizedCustomerAnswer` ist eine geschlossene, typisierte Outcome-Union ohne Claims, Evidence oder epistemischen Status.
+
+Die Validierung bindet Projekt, Conversation, Decision, Template-Key, Templateversion und Locale exakt an die gerenderte Interaktion. Ein fehlender, inkonsistenter oder veralteter Vertrag wird fail-closed behandelt. Positive ganzzahlige Attempts werden gegen `maximum_attempts` geprüft, ohne Retry-State zu verändern. Geschlossene Fehlercodes und eine deterministische Retryable-Zuordnung verhindern freie Fehlermeldungen und Zod-Rohfehler.
+
+Text wird ausschließlich getrimmt und bei Zeilenenden technisch vereinheitlicht; Inhalt einschließlich Prompt-Injection-artiger Formulierungen bleibt uninterpretiert. Boolean-Werte verwenden geschlossene deutsche Allowlists, während unsichere Formulierungen abgelehnt werden. Ungefähre Zahlen unterstützen Einzelwerte, kontrollierte Präfixe und Zweipunktbereiche mit deutschem oder englischem Dezimaltrenner. `m²`, `m2` und `qm` werden ausschließlich bei einem eindeutigen `sqm`-Vertrag normalisiert; Grenzen und Precision werden geprüft, andere Einheiten weder akzeptiert noch umgerechnet.
+
+Unknown und Skip bleiben getrennte erlaubnisgebundene Outcomes. Annahmen werden nur über die Vertragsoptionen beziehungsweise – sofern der Boolean-Vertrag Freitext zulässt – eine eindeutige Bestätigung bestätigt, abgelehnt oder zurückgestellt. Alle Funktionen sind pure und deterministisch, erzeugen neue Resultatobjekte und mutieren weder Input, Registry, Vertrag, Knowledge State noch Planner- oder Retry-State.
+
+Die synthetischen Fixtures decken Text, Whitespace, Unknown, Skip, Boolean, Unsicherheit, exakte/ungefähre Zahlen, Bereiche, Dezimalwerte, ungültige Werte und Einheiten, Annahme-Outcomes sowie fehlerhafte Bindungen ab. Fokussierte Schema-, Domain-, Immutabilitäts- und Architekturprüfungen sichern die Grenzen. Es gibt keine UI, Persistenz, KI, WhatsApp-Integration oder Claim-Erzeugung.
+
+- ANSWER CONTRACT VALIDATION IMPLEMENTED
+- DETERMINISTIC ANSWER NORMALIZATION IMPLEMENTED
+- TEXT BOOLEAN AND APPROXIMATE NUMBER NORMALIZATION IMPLEMENTED
+- UNKNOWN AND SKIP OUTCOMES IMPLEMENTED
+- KNOWLEDGE CLAIM MAPPING NOT IMPLEMENTED
+- KNOWLEDGE STATE MUTATION NOT IMPLEMENTED
+- PHOTO REQUEST PLANNER NOT IMPLEMENTED
+- INTERNAL CONVERSATION SIMULATOR NOT IMPLEMENTED
+- AI ANALYSIS NOT IMPLEMENTED
+- WHATSAPP INTEGRATION NOT IMPLEMENTED
+- OFFER GENERATION NOT IMPLEMENTED
+- OVERALL PRODUCT NOT PRODUCTION READY
