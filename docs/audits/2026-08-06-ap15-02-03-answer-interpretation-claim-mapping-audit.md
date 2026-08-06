@@ -554,3 +554,65 @@ Dieses Paket enthält ausschließlich diese neue Auditdatei und damit ausschlie�
 - keine echten Kunden- oder personenbezogenen Daten.
 
 Alle Strukturen, Funktionsnamen, Tabellen, Codes und Abläufe sind nicht ausführbare Architekturvorschläge. Der nächste Schritt ist eine dokumentierte Ownerentscheidung, nicht Implementierungs- oder Produktionsfreigabe.
+
+## AP-15-02-03-01 Interpretation Registry and Claim Proposals Result
+
+### Ergebnis und Ownerentscheidungen
+
+Das Paket implementiert ausschließlich pure, deterministische Interpretation bereits normalisierter Kundenantworten. Direkte und ungefähre Kundenwerte bleiben `reported`; die Approximation wird separat als `exact` oder `approximate` erhalten. Zahlenbereiche werden weder gemittelt noch als Claim vorgeschlagen, sondern mit `numeric_range_not_supported` zur menschlichen Prüfung gegeben. Booleanwerte einschließlich `false` werden als Kundenangabe gemappt. Insbesondere bedeutet `outdoor_unit_position_known = false` nur, dass der Kunde keine konkrete Position kennt; daraus folgen weder technische Nichtexistenz noch Eignung oder Freigabe.
+
+`unknown` erzeugt einen Null-Claim-Vorschlag mit Status `unknown`. Die minimale Regression in `deriveMissingInformation` behandelt einen solchen Claim weiterhin als offen. `skipped` erzeugt keine fachliche Evidence und keinen Property Claim. Freitext für `room_type` und `building_type` bleibt ohne Klassifikation deferred und führt zu `unsupported_text_mapping`.
+
+### Domainstruktur und Verträge
+
+Die neuen Module trennen geschlossene Types, strikte Zod-Schemas, statische Registry, pure Interpretation und synthetische Fixtures. Öffentliche Verträge werden über den Domain-Index exportiert. Der `InterpretationContext` bindet Interpretation, Projekt, Conversation, State-Version, Knowledge State, ausgewählte Action, gerenderte Interaction, normalisierte Antwort, UUID der Quellnachricht, Customer-Actor, Eingabezeit, Idempotenz und optionale explizite Kundenkorrektur. Er enthält weder Rohtext noch Kontakt- oder Adressdaten noch clientbestimmte epistemische Werte.
+
+Der Idempotenzschlüssel ist deterministisch an `conversation_id:decision_id:answer_id` gebunden. Ein optionaler, geschlossener Anwendungsstatus simuliert rein lokal `duplicate_answer` und `mapping_already_applied`; persistente Duplicate-Erkennung ist ausdrücklich nicht enthalten. `idempotent_success` kennzeichnet gleiche wirksame Werte ohne Stateänderung.
+
+### Registry, Property- und Entitybindung
+
+Die tief eingefrorene Registry enthält explizite Regeln für `room_area_sqm`, `indoor_unit_position_known`, `outdoor_unit_position_known`, `line_route_known`, `electrical_supply_known` und `accessibility_known`; `room_type` und `building_type` sind `deferred`. Jede Regel legt Information Key, Entity Type, AP-15-01 Property Key, normalisierten Kind, epistemischen Status, Unknown-/Skip-/Widerspruchs-/Supersessionstrategie, Evidenzquelle, Annahmefähigkeit und Status fest. Gleichnamigkeit allein erzeugt kein Mapping.
+
+Die Entity-ID stammt ausschließlich aus `selected_action.entity_id`; Entity Type und Projekt-/Conversation-/Decision-/Template-/Answerbindungen werden transitiv geprüft. Das heutige Knowledge-State-Modell besitzt keine separate Entityliste. Deshalb wird keine Entitätsexistenz vorgetäuscht: geprüft werden die Actionbindung und die Projektbindung vorhandener Claims; eine darüber hinausgehende Existenzprüfung bleibt einem späteren, reicheren Kontext vorbehalten.
+
+### Evidence-, Claim- und Transition-Proposals
+
+Normale Antworten schlagen ausschließlich strukturierte Customer-Message-Evidence mit opaque UUID, Customer-Actor, Eingabezeit und aktivem Status vor. Bestätigte Annahmen verwenden den serverseitigen Wert `25 sqm` aus der bestehenden Allowlist-Regel `rough_room_area_for_level_2` und erzeugen genau zwei Evidence Proposals (`system_rule`, `customer_message`). Abgelehnte oder zurückgestellte Annahmen erzeugen keinen Claim.
+
+Knowledge Claim Proposals führen Claim-ID, Projekt-/Entity-/Propertybindung, typisierten Wert, epistemischen Status, Evidence, Basis- und Zielversion, optionale Approximation, optionale Supersessionreferenz und geschlossene Reason Codes. Sie sind keine angewendeten Knowledge Claims. StateTransitionProposals sind streng typisiert und tragen ausschließlich eingegebene IDs/Zeitpunkte, `based_on_state_version`, deterministisches `proposed_state_version`, Retry Outcome und strukturierte Explanation Codes. Stateänderungen schlagen exakt Basisversion plus eins vor; No-Change-Transitionen behalten die Basisversion.
+
+### Widerspruch, Supersession und Reviewer-Schutz
+
+Ein realer Kundenwert kann einen wirksamen `unknown`- oder `assumed`-Claim zur Supersession vorschlagen. Ein ausdrücklich gebundener `explicit_customer_correction`-Kontext darf einen abweichenden normalen Claim supersedieren. Gleiche Werte führen zu `duplicate_no_change`; abweichende normale Kundenangaben bleiben als parallele Claims mit `contradiction_recorded` sichtbar. Claims mit Reviewer-Evidence, Reviewer-Actor oder `manually_corrected` sind geschützt und führen zu `reviewer_correction_protected` sowie menschlicher Prüfung. Originalclaims werden nie verändert.
+
+### Retry, Erklärbarkeit und Fehler
+
+Der deklarative Retry Outcome lautet für Antworten und bestätigte/abgelehnte Annahmen `answered`, für Unknown `unknown` und für Skip/Deferred `skipped`. Es erfolgt keine Retry-State-Mutation. Erklärbarkeit besteht nur aus geschlossenen Codes für angewendete Regel, Kundenangabe, erhaltene Approximation, Unknown, Skip, Serverannahme, Bestätigungsevidence, Unknown-/Assumption-Supersession, Duplikat, parallelen Widerspruch, explizite Korrektur, Reviewer-Schutz und Range-Deferred.
+
+Geschlossene Fehler decken ungültigen Kontext, Projekt, Conversation, State-Version, Decision, Template, Answer, fehlende Registry-/Property-/Entitybindung, Werttyp/Outcome, Text/Range, Annahmen, Evidence, Duplikat/Anwendungsstatus, Widerspruch, Supersession und Reviewer-Schutz ab. Stale State ist fail closed, nicht retryable, verlangt Replanning und erzeugt keine Stateänderung.
+
+### Fixtures, Tests und Grenzen
+
+Synthetische Fixtures und Tests decken exakte/ungefähre Raumgröße, Range, Boolean true/false, deferred Text, Unknown, Skip, Annahme confirm/reject/defer, Wert nach Unknown/Assumption, Duplikat, parallelen Widerspruch, explizite Korrektur, Reviewer-Schutz, stale State sowie Schema-, Registry-, Idempotenz-, Immutability- und Architekturgrenzen ab. Sämtliche Daten sind künstlich. Der produktive Mapper ruft weder `addClaim` noch `supersedeClaim` auf.
+
+Es gibt keine Knowledge-State-Anwendung, Conversation Events, Retry-State-Anwendung, Readiness- oder Planner-Neuberechnung, UI, Route, Action, Persistenz, Migration, SQL/RPC/RLS-Änderung, Supabase-Nutzung, freie Textklassifikation, KI/LLM/Vision, WhatsApp, Preis- oder Angebotslogik und keine neue Abhängigkeit.
+
+### Status
+
+- **ANSWER INTERPRETATION REGISTRY IMPLEMENTED**
+- **EVIDENCE AND CLAIM PROPOSALS IMPLEMENTED**
+- **UNKNOWN CLAIM PROPOSALS IMPLEMENTED**
+- **ASSUMPTION CLAIM PROPOSALS IMPLEMENTED**
+- **DETERMINISTIC STATE TRANSITION PROPOSALS IMPLEMENTED**
+- **KNOWLEDGE STATE TRANSITION APPLICATION NOT IMPLEMENTED**
+- **CONVERSATION EVENT APPLICATION NOT IMPLEMENTED**
+- **RETRY STATE APPLICATION NOT IMPLEMENTED**
+- **TEXT KNOWLEDGE EXTRACTION NOT IMPLEMENTED**
+- **PHOTO REQUEST PLANNER NOT IMPLEMENTED**
+- **INTERNAL CONVERSATION SIMULATOR NOT IMPLEMENTED**
+- **AI ANALYSIS NOT IMPLEMENTED**
+- **WHATSAPP INTEGRATION NOT IMPLEMENTED**
+- **OFFER GENERATION NOT IMPLEMENTED**
+- **OVERALL PRODUCT NOT PRODUCTION READY**
+
+Das verbleibende Folgepaket **AP-15-02-03-02** darf diese Proposals später kontrolliert auf den Knowledge State anwenden; diese Anwendung ist nicht Bestandteil dieses Ergebnisses.

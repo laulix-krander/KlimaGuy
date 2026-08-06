@@ -17,3 +17,8 @@ export * from "./answer-normalization-types";
 export * from "./answer-normalization-schemas";
 export * from "./answer-normalization";
 export * from "./answer-normalization-fixtures";
+export * from "./answer-interpretation-types";
+export * from "./answer-interpretation-schemas";
+export * from "./answer-interpretation-registry";
+export * from "./answer-interpretation";
+export * from "./answer-interpretation-fixtures";
