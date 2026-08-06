@@ -505,3 +505,73 @@ Zwischen AP-15-01 und Persistenz ist bei Bedarf ein eigenes Data/RLS-Paket einzu
 ## 35. Scope-Bestätigung
 
 Die einzige Änderung dieses Pakets ist dieses Auditdokument. Es enthält ausschließlich Audit, Analyse und Dokumentation. Es enthält **keine** Implementierung, UI, Komponente, Route, Server Action, Service, Domain-TypeScript-Datei, Migration, Tabelle, SQL/RPC/RLS-/Grant-/Storageänderung, Queue, Scheduler, WhatsApp-API/-Integration, KI-API/-Integration, Providercode, produktiven Prompt, Preis-/Angebotslogik, Benutzer-/Rollenänderung, technische Service Role, Environmentvariable, Secrets, Kundendaten, echte Kontaktdaten/Bilder, Tests/Teständerungen, externe Abhängigkeit oder `package.json`-Änderung.
+## AP-15-01 Conversation Domain and Knowledge State Baseline Result
+
+AP-15-01 setzt die im Audit festgelegte reduzierte Domain-Baseline unter
+`lib/domain/conversation-intelligence/` um. Die Struktur umfasst geschlossene
+Domainwerte und Zod-Schemas, pure Knowledge-State-Regeln, regelbasierte
+Readiness und Missing Information, unveränderliche Intermediate Assessments
+sowie ausschließlich synthetische Fixtures für ein Ein-Projekt-/Ein-Raum-Szenario.
+
+- Die technischen Actor-Klassen sind `customer`, `admin`, `reviewer`, `system`
+  und `ai`. `reviewer` bleibt ein menschlicher interner Actor; `ai` erhält keine
+  Reviewerrechte und wird im Referenzfall nicht verwendet.
+- Conversation Events sind eine streng validierte discriminated union für
+  Kundennachricht, interne Notiz, Claim-Erfassung, Supersession, Assessment und
+  Reviewer-Korrektur. Jede Payload enthält nur IDs und Versionsbezüge.
+- Evidence References enthalten ausschließlich Quelltyp, opaque Source-ID,
+  Actor, Zeitpunkt und Status. Sie enthalten keine Nachricht, URL, Datei oder
+  personenbezogene Angabe.
+- Die epistemischen Status `confirmed`, `reported`, `observed`, `estimated`,
+  `assumed`, `unknown`, `not_applicable`, `contradicted` und
+  `requires_site_check` trennen Wissen und Unsicherheit ohne numerische
+  Confidence.
+- Claims binden Projekt, Entität, geschlossenen Property Key, streng passenden
+  Werttyp, epistemischen Status und mindestens eine Evidence Reference. Projekt-,
+  Raum- und Installationsproperties entsprechen der MVP-Allowlist des Audits.
+- Der Knowledge State ist positiv versioniert. `addClaim` und `supersedeClaim`
+  erzeugen neue States, erhöhen die Version exakt, erhalten Originalclaims und
+  mutieren Eingaben nicht. Effective-Claim-Regeln schließen supersedierte Claims
+  und Claims mit ausschließlich inaktiver Evidenz aus.
+- Widersprüche bleiben als geschlossene Diagnosen mit betroffenen Claim-IDs
+  sichtbar. Die Regeln raten keine fachliche Wahrheit.
+- Missing Information ist eine strukturierte Liste aus Information Key,
+  Entitätsbezug, Importance, Reason Code, blockierter Stufe sowie zulässigem
+  Annahme-/Vor-Ort-Ausweg. Es werden keine Kundenfragen formuliert oder gewählt.
+- Readiness umfasst die Stufen 0 bis 5 und die Dimensionen Bedarf,
+  Dimensionierung, Innen-/Außenposition, Leitungsweg, Kernbohrung, Kondensat,
+  Elektro, Zugänglichkeit und Gesamtstand. Level 5 wird ohne implementierte
+  menschliche Freigabe niemals automatisch erreicht.
+- Intermediate Assessments sind unveränderliche, an die State-Version gebundene
+  Snapshots. Sie trennen Fakten, Angaben, Annahmen, Unbekanntes, Widersprüche und
+  Vor-Ort-Punkte und liefern ausschließlich geschlossene erlaubte bzw. verbotene
+  Output-Codes. Festpreis, finales Angebot, finale technische Freigabe und
+  Human Approval bleiben ausdrücklich verboten.
+- Der synthetische Referenzfall bildet A (Level 1), B (Level 2), C (Level 3), D
+  (Level 4), E (widersprüchliche Raumgröße) und F (sicherheitsrelevanter
+  Vor-Ort-Prüfpunkt) ohne Production- oder personenbezogene Daten ab.
+- Fokussierte Vitest-Schema-, Regel-, Assessment-, Fixture- und Architekturtests
+  sichern Allowlisten, strikte Payloads, Versionierung, Supersession,
+  Widersprüche, Missing Information, Readiness und ausgeschlossene Kopplungen.
+
+Dieses Ergebnis enthält keine Persistenz, Migration, SQL/RPC/RLS-Änderung,
+Supabase-Nutzung, Frageplanung, UI, Route, Action, KI-/LLM-/Bildanalyse,
+WhatsApp-Integration oder Preis-/Angebotsberechnung.
+
+**CONVERSATION DOMAIN BASELINE IMPLEMENTED**
+
+**KNOWLEDGE STATE PURE RULES IMPLEMENTED**
+
+**READINESS BASELINE IMPLEMENTED**
+
+**QUESTION PLANNER NOT IMPLEMENTED**
+
+**INTERNAL SIMULATOR NOT IMPLEMENTED**
+
+**AI ANALYSIS NOT IMPLEMENTED**
+
+**WHATSAPP INTEGRATION NOT IMPLEMENTED**
+
+**OFFER GENERATION NOT IMPLEMENTED**
+
+**OVERALL PRODUCT NOT PRODUCTION READY**
