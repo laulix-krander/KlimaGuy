@@ -13,3 +13,7 @@ export * from "./question-template-schemas";
 export * from "./question-template-registry";
 export * from "./question-template-renderer";
 export * from "./question-template-fixtures";
+export * from "./answer-normalization-types";
+export * from "./answer-normalization-schemas";
+export * from "./answer-normalization";
+export * from "./answer-normalization-fixtures";

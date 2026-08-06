@@ -32,7 +32,7 @@ export function renderQuestionTemplate(input: RenderQuestionTemplateInput): Rend
   const parsedParameters = renderParametersSchema.safeParse(input.render_parameters);
   if (!parsedParameters.success) return failure("invalid_render_parameter");
   const renderedText = applyControlledParameters(template, parsedParameters.data);
-  const interaction = { template_key: template.template_key, template_version: template.template_version, locale: template.locale, message_kind: template.message_kind, ...renderedText, examples: [...template.examples], answer_contract: template.answer_contract, answer_options: template.answer_contract ? [...template.answer_contract.options] : [], customer_visible: template.customer_visible };
+  const interaction = { project_id: action.data.project_id, conversation_id: action.data.conversation_id, decision_id: action.data.decision_id, template_key: template.template_key, template_version: template.template_version, locale: template.locale, message_kind: template.message_kind, ...renderedText, examples: [...template.examples], answer_contract: template.answer_contract, answer_options: template.answer_contract ? [...template.answer_contract.options] : [], customer_visible: template.customer_visible };
   const parsedInteraction = renderedCustomerInteractionSchema.safeParse(interaction);
   return parsedInteraction.success ? { success: true, interaction: parsedInteraction.data } : failure("render_failed");
 }
