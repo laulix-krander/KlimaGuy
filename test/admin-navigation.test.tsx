@@ -25,6 +25,15 @@ describe("Admin-Navigation", () => {
     expect(screen.queryByRole("link", { name: "Benutzer & Rollen" })).toBeNull();
   });
 
+  it("zeigt ausschließlich Admins den Conversation Simulator", () => {
+    const { rerender } = render(<Nav role="admin" />);
+    expect(screen.getByRole("link", { name: "Conversation Simulator" }).getAttribute("href")).toBe("/admin/intelligence/simulator");
+    rerender(<Nav role="reviewer" />);
+    expect(screen.queryByRole("link", { name: "Conversation Simulator" })).toBeNull();
+    rerender(<Nav role={null} />);
+    expect(screen.queryByRole("link", { name: "Conversation Simulator" })).toBeNull();
+  });
+
   it("verlinkt die Medien-Inventur mit der vorhandenen Adminroute", () => {
     render(<Nav role="admin" />);
 
