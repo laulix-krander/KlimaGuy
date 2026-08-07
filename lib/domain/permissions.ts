@@ -60,6 +60,11 @@ export function canViewUserAdministration(role: Role | null): boolean {
   return role === "admin";
 }
 
+/** Grants access to the transient, synthetic conversation simulator. */
+export function canUseConversationSimulator(role: Role | null): boolean {
+  return role === "admin";
+}
+
 export function canChangeUserRole(role: Role | null): boolean {
   return role === "admin";
 }

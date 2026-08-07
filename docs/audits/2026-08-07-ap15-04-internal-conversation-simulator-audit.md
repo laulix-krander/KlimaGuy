@@ -570,3 +570,62 @@ Dieses Paket enthält ausschließlich die neue Auditdatei und damit ausschließl
 - keine externe Abhängigkeit und keine `package.json`-Änderung.
 
 Alle Datenverträge, Routes, Permissions, Layouts und Workflows sind ausschließlich Planungsartefakte. Der nächste zulässige Schritt ist eine dokumentierte Ownerentscheidung und danach ein separates Implementierungspaket.
+
+## AP-15-04-01 Internal Conversation Simulator Result
+
+### Ownerentscheidungen, Zugriff und Architektur
+
+Die verbindlichen Ownerentscheidungen wurden für den ersten MVP umgesetzt: Der Simulator liegt unter `/admin/intelligence/simulator`, ist ausschließlich für `admin` freigeschaltet und weist `reviewer`, fehlende Sessions, fehlende beziehungsweise ungültige Profile fail closed ab. Die zentrale Capability `canUseConversationSimulator` ist die einzige Sichtbarkeitsregel des neuen Administration-Navigationseintrags. Es wurde keine Rolle ergänzt.
+
+Die Route bleibt eine Server Component und übernimmt ausschließlich Session-, Profil- und Rollenprüfung. Die interaktive `ConversationSimulator`-Client-Insel erhält keine Produktionsdaten und lädt keine Projekte oder Conversations. Szenario, Knowledge State, Retry State, Customer Effort, Transcript, letzter Cycle, Cycle-Historie, Interaction, Events, State-Versionen, Debugstatus, Pendingstatus und Fehlerstatus existieren ausschließlich als flüchtiger React-State. Es gibt weder Server Action noch Netzwerk- oder Supabase-Simulatorquery, Cookie-, URL-, Browser-Storage- oder Datenbankpersistenz.
+
+### Scenario Fixtures, Empty Start und Conversation View
+
+Die schmale UI-Registry bietet die acht statischen synthetischen Szenarien `minimal_room`, `unknown_room_area`, `contradictory_room_area`, `assumption_required`, `human_review_required`, `retry_limit`, `level_3_reached` und `empty_synthetic_project` mit deutschen Labels. IDs und Zeitpunkte stammen aus festen synthetischen Namensräumen und einer deterministischen Timeline. Gleiche Fixture und Antwortsequenz erzeugen denselben Domainoutput. Der schema-valide leere Start verwendet den bestehenden Domainvertrag mit leerer Claimliste und einer kontrolliert gerenderten initialen Raumfrage; es wurde keine UI-Sonderfachlogik in die Engine eingebaut.
+
+Die responsive Hauptansicht verbindet eine chatartige Conversation View mit dem Intelligence Inspector. Systemfrage, Testerantwort und kontrollierte End-/Reviewhinweise sind fachlich getrennt; es gibt keine Provider-, Telefonnummern-, Versandstatus- oder WhatsAppdarstellung. Die aktuelle Interaction zeigt Haupttext, Hilfetext, Beispiele und Answer Options. Nicht kunden-sichtbare Actions werden nicht als normale Kundenfrage dargestellt.
+
+### Answer Controls und Domain Cycle Integration
+
+Text-, Boolean-, Approximate-Number-, Unknown-, Skip- und Assumption-Optionen werden ausschließlich aus dem vorhandenen `AnswerContract` gerendert. Die UI erzeugt einen schmalen `RawCustomerAnswer`, ruft die bestehende autoritative `normalizeCustomerAnswer`-Funktion auf und übergibt das normalisierte Ergebnis an `runConversationCycle`. Der vollständige bestehende Cycle läuft atomar nach jeder Antwort. Es gibt keinen manuellen Step Executor, keine zweite Interpretation, keine eigene Preis-, Readiness-, Missing-Information- oder Plannerlogik und keine künstliche Verzögerung. Eine synchrone Ref-Sperre verhindert lokalen Doppelsubmit.
+
+### Inspector, Diff, Readiness und Planner
+
+Der fachliche Inspector enthält Übersicht, gruppierbare Knowledge Claims mit verständlichen Property- und epistemischen Statuslabels, State Diff, Readiness, offene Informationen, Planner, Retry/Aufwand, Event Timeline, read-only Pipeline und Debugansicht. Aktive Claims, Unknowns, Annahmen, Widersprüche und Site-Check-Punkte werden aus den Domainresultaten dargestellt. Der Diff nutzt die vom Cycle gelieferten Previous-/Current-State-Versionen und zeigt No-change ausdrücklich; er ist keine freie fachliche Diff-Engine.
+
+Readiness zeigt das diskrete aktuelle Level, Ziel Level 3 sowie vorhandene Dimensionstatus und Blocker ohne Prozent-Confidence. Missing Information bleibt in der bestehenden Domainreihenfolge und zeigt Importance, blocks_level, Reason, Annahme- und Site-Check-Fähigkeit. Der Planner Inspector zeigt ausgewählte Action beziehungsweise Stop, Priority Band und Score. Der Score ist ausdrücklich als „Interner Rankingwert – keine Sicherheitsschätzung“ gekennzeichnet. Technische Information-/Template-Keys, Reason Codes, Score Breakdown und rohe begrenzte Objekte bleiben Debugdetails.
+
+Retry Items zeigen Attempts und Last Outcome; Customer Effort zeigt technische Folgefragen, unbeantwortete und wiederholte Fragen sowie die kontrollierten Grenzen von zwei Versuchen und vier technischen Folgefragen. Events werden chronologisch mit deutschen Labels dargestellt. Event-ID, Correlation-ID, Sequence und State-Versionen sind nur im Debugmodus sichtbar. Die sieben Pipelinestufen Raw Answer, Normalized Answer, Interpretation, State Transition, Recalculation, Planner und Rendering sind read-only einklappbar und können nicht einzeln ausgeführt oder mutiert werden.
+
+### Reset, Replay, Fehler und Human Review
+
+„Szenario zurücksetzen“ löscht ausschließlich lokalen React-State und stellt das ursprüngliche Fixture wieder her. Der lokale Replay startet erneut am originalen Fixture, führt die gespeicherten synthetischen Raw Answers deterministisch durch Normalisierung und bestehenden Cycle und meldet „Replay stimmt überein“ oder „Replay weicht ab“. Es gibt keinen Export und keine Regression-Testpersistenz.
+
+Ungültige Antwort, Cyclefehler und fachliche Stopzustände werden mit neutralen deutschen Texten kontrolliert angezeigt. Human Review wird prominent als „Dieser Fall benötigt eine fachliche Prüfung.“ behandelt und nicht als Kundenfrage fortgesetzt. Intermediate Result und Collection Stop werden als Zwischen- beziehungsweise Endzustand ohne Preis, Angebot oder Produktionsbehauptung präsentiert. Technische Fehlerobjekte erscheinen nur im expliziten Debugmodus.
+
+### Accessibility und Tests
+
+Formulare besitzen echte Labels, Controls sind tastaturbedienbar und haben sichtbare Fokuszustände. Die Simulatorregion nutzt `aria-busy`; normale Rückmeldungen verwenden `role=status`, Fehler `role=alert`, und die nativen `details`/`summary`-Accordions bleiben semantisch bedienbar. Das responsive Raster wird mobil einspaltig. Zustände werden textlich und nicht ausschließlich farblich unterschieden.
+
+Fokussierte Vitest-Tests sichern Permission-Matrix, Adminnavigation und Route, statische synthetische Registry, leeren Start, Normalisierung, bestehenden Cycle-Aufruf, State-Version, Unknown, Widerspruch, Retry/Human-Review-Grenze sowie deterministischen Replayoutput. Architekturprüfungen bestätigen, dass Simulatorcode keine Production-Projekte, Persistenz, Server Action, externe Anfrage, KI, WhatsApp, Knowledge Base, Quality Metrics oder Paketänderung einführt.
+
+### Explizite Grenzen und Status
+
+- **PURE CONVERSATION CYCLE IMPLEMENTED**
+- **INTERNAL CONVERSATION SIMULATOR IMPLEMENTED**
+- **SYNTHETIC SCENARIO TESTING IMPLEMENTED**
+- **KNOWLEDGE STATE INSPECTOR IMPLEMENTED**
+- **READINESS AND PLANNER INSPECTOR IMPLEMENTED**
+- **LOCAL RESET AND REPLAY IMPLEMENTED**
+- **SIMULATOR PERSISTENCE NOT IMPLEMENTED**
+- **QUALITY ISSUE CAPTURE NOT IMPLEMENTED**
+- **KNOWLEDGE BASE NOT IMPLEMENTED**
+- **OPEN QUESTIONS WORKFLOW NOT IMPLEMENTED**
+- **QUALITY METRICS NOT IMPLEMENTED**
+- **HISTORICAL CHAT LEARNING NOT IMPLEMENTED**
+- **PHOTO REQUEST PLANNER NOT IMPLEMENTED**
+- **VISION ANALYSIS NOT IMPLEMENTED**
+- **AI / LLM LAYER NOT IMPLEMENTED**
+- **WHATSAPP INTEGRATION NOT IMPLEMENTED**
+- **OFFER GENERATION NOT IMPLEMENTED**
+- **OVERALL PRODUCT NOT PRODUCTION READY**
