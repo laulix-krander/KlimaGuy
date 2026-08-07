@@ -5,6 +5,7 @@ import type { RawCustomerAnswer } from "@/lib/domain/conversation-intelligence";
 import {
   createSimulatorStart,
   executeSimulatorAnswer,
+  executeSimulatorContinuation,
   SIMULATOR_SCENARIOS,
   type SimulatorScenarioId,
 } from "@/lib/domain/conversation-intelligence";
@@ -85,6 +86,7 @@ export function ConversationSimulator() {
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const lock = useRef(false);
+  const continuationConsumed = useRef(false);
   const last = runs.at(-1);
   const interaction = currentInteraction;
   const reset = (id: SimulatorScenarioId = scenario) => {
@@ -99,6 +101,7 @@ export function ConversationSimulator() {
     setValue("");
     setError(undefined);
     setNotice("Szenario wurde zurückgesetzt.");
+    continuationConsumed.current = false;
   };
   const choose = (id: SimulatorScenarioId) => {
     setScenario(id);
@@ -156,6 +159,7 @@ export function ConversationSimulator() {
         return;
       }
       const cycleResult = execution.result;
+      continuationConsumed.current = false;
       if (execution.next) setContext(execution.next);
       const nextInteraction = activeInteractionFor(cycleResult);
       setCurrentInteraction(nextInteraction);
@@ -175,6 +179,50 @@ export function ConversationSimulator() {
             : "Für diesen Testlauf ist aktuell keine weitere Kundenfrage vorgesehen.",
         );
       setValue("");
+    } finally {
+      setPending(false);
+      lock.current = false;
+    }
+  };
+  const continueConversation = () => {
+    if (lock.current || continuationConsumed.current || !last?.success || last.cycle_status !== "intermediate_result_ready") return;
+    lock.current = true;
+    continuationConsumed.current = true;
+    setPending(true);
+    setError(undefined);
+    setNotice(undefined);
+    try {
+      const execution = executeSimulatorContinuation(context, last, runs.length + 101);
+      if (!execution.result.success) {
+        continuationConsumed.current = false;
+        setError("Das Gespräch konnte nicht kontrolliert fortgesetzt werden.");
+        return;
+      }
+      const cycle = runs.length + 1;
+      if (execution.result.status === "human_review_required") {
+        setMessages((items) => [...items, statusMessage(cycle, "human_review", "Fachliche Prüfung erforderlich")]);
+        setNotice("Dieser Fall benötigt eine fachliche Prüfung.");
+        return;
+      }
+      if (execution.result.status === "stopped") {
+        setMessages((items) => [...items, statusMessage(cycle, "intermediate", "Zwischenstand erreicht")]);
+        setNotice("Für diesen Testlauf ist aktuell keine weitere Kundenfrage vorgesehen.");
+        return;
+      }
+      const nextInteraction = execution.result.rendered_interaction;
+      if (!execution.next || !nextInteraction) {
+        continuationConsumed.current = false;
+        setError("Das Gespräch konnte nicht kontrolliert fortgesetzt werden.");
+        return;
+      }
+      setContext(execution.next);
+      setCurrentInteraction(nextInteraction);
+      setMessages((items) => [
+        ...items,
+        statusMessage(cycle, "intermediate", "Gespräch wird fortgesetzt."),
+        interactionMessage(nextInteraction, cycle),
+      ]);
+      setNotice(undefined);
     } finally {
       setPending(false);
       lock.current = false;
@@ -408,6 +456,14 @@ export function ConversationSimulator() {
                   Readiness: {last.readiness.readiness_level} · Offene
                   Informationen: {last.missing_information.length}
                 </p>
+              ) : null}
+              {last?.success && last.cycle_status === "intermediate_result_ready" ? (
+                <div className="mt-4 space-y-3">
+                  <p className="text-sm">Der nächste Fragenblock kann jetzt gestartet werden.</p>
+                  <button className="rounded bg-teal-800 px-4 py-2 text-white disabled:opacity-50" disabled={pending} onClick={continueConversation} type="button">
+                    Gespräch fortsetzen
+                  </button>
+                </div>
               ) : null}
             </article>
           )}

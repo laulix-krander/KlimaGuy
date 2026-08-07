@@ -72,6 +72,15 @@ describe("Internal Conversation Simulator", () => {
     expect(screen.getAllByText("Zwischenstand erreicht").length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "Ja" })).toBeNull();
     expect(screen.queryByLabelText("Synthetische Antwort")).toBeNull();
+    expect(screen.getByText("Der nächste Fragenblock kann jetzt gestartet werden.")).toBeTruthy();
+    const systemQuestionsBefore = screen.getAllByText("Systemfrage").length;
+    const continueButton = screen.getByRole("button", { name: "Gespräch fortsetzen" });
+    fireEvent.click(continueButton);
+    fireEvent.click(continueButton);
+    expect(screen.getAllByText("Gespräch wird fortgesetzt.")).toHaveLength(1);
+    expect(screen.getAllByText("Systemfrage")).toHaveLength(systemQuestionsBefore + 1);
+    expect(screen.getByText("Aktuelle Kundeninteraktion").closest("article")?.textContent).not.toContain(route);
+    expect(screen.getAllByText(route)).toHaveLength(1);
   });
 
   it("ersetzt eine beantwortete Frage durch die nächste echte Interaction und protokolliert beide nur einmal", () => {
