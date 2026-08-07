@@ -661,3 +661,41 @@ Eine Fortsetzung nach dem Zwischenstand bleibt eine offene Folgeentscheidung: Ei
 - **MISSING-INFORMATION REMOVAL — VALIDATED**
 - **PLANNER INTERMEDIATE RESULT STOP — PRESERVED**
 - **POST-INTERMEDIATE CONTINUATION — NOT IMPLEMENTED**
+
+## AP-15-04-01-02 Controlled Continuation After Intermediate Result
+
+### Motivation und Conversation-Break-Semantik
+
+Der Intermediate Result Break nach vier aufeinanderfolgenden technischen Fragen bleibt ein fachlicher, expliziter Gesprächsabschnitt. Er ist kein endgültiges Ende der lokalen Simulation und wird nicht automatisch übersprungen. Erst der Control „Gespräch fortsetzen“ schließt den Break ab; dabei wird keine Kundenantwort erzeugt oder interpretiert.
+
+### Erlaubte und nicht erlaubte Continuation
+
+Die pure Domainfunktion erlaubt die Fortsetzung ausschließlich nach einem schema-validen `stop_result` mit `next_action_type = present_intermediate_result`, `stop_reason = maximum_customer_effort_reached` und dem Reason Code `customer_effort_break`. Human Review, Site Visit, No Eligible Candidate, ein fachlich finales Target, stale State, Cycle Failure, Selected Action und jeder andere Stop führen zu einem kontrollierten Fehler. Es gibt keine stille Fortsetzung.
+
+### Effort Reset, Knowledge- und Retry-Invarianten
+
+Der Break setzt ausschließlich `consecutive_technical_questions` auf null und dokumentiert den injizierten Zeitpunkt in `last_break_at`. `unanswered_questions` und `repeated_questions` bleiben erhalten. Knowledge State einschließlich Claims, Evidence, Supersession und State Version sowie der vollständige Retry State einschließlich Attempts, Unknowns und Skips bleiben unverändert. Es werden keine Claims geschrieben und keine Versionen künstlich erhöht.
+
+### Planner Recalculation und Version Invariant
+
+Auf demselben Knowledge State werden Missing Information und Readiness mit den bestehenden Domainfunktionen abgeleitet, ein Intermediate Assessment auf derselben Version gebaut und der vorhandene Planner mit unverändertem Retry State sowie zurückgesetzter technischer Fragenfolge ausgeführt. Nur eine echte kundenfähige Selected Action wird über den bestehenden Template Renderer gerendert. Previous State Version, Continuation State Version, Assessment-Version, Planner-Version und Selected-Action-Version müssen identisch sein; Abweichungen führen kontrolliert zum Invariantenfehler. IDs und Zeitpunkte werden injiziert, ohne `Date.now` oder `Math.random`.
+
+### Simulator UI und Transcript
+
+Beim Status „Zwischenstand erreicht“ zeigt der Simulator den neutralen Hinweis „Der nächste Fragenblock kann jetzt gestartet werden.“ und den expliziten Button „Gespräch fortsetzen“. Eine synchrone Ref-Sperre und ein einmaliger Consumption Guard verhindern doppelte lokale Continuation-Läufe. Erfolg aktiviert genau die neu gerenderte Interaction und ergänzt einmal „Gespräch wird fortgesetzt.“ sowie einmal die neue Systeminteraction. Die alte Frage bleibt entfernt. Erneute Stops, Human Review und Fehler erhalten kontrollierte neutrale Darstellungen ohne Fake Answer, Netzwerk, Server Action oder Persistenz.
+
+### Tests
+
+Domain- und UI-Tests prüfen Intermediate Result → neue andere Frage, Deep Equality von Knowledge State und Claims, identische State Version, unveränderte Retry Attempts, den Erhalt unbeantworteter und wiederholter Fragen, Ablehnung von Human Review/finalem Target/anderen Resultaten und stale State, deterministischen Replay, fehlende alte Interaction, genau eine neue Transcriptinteraction sowie den Doppelklickschutz. Der bestehende Vier-Fragen-Break und die Regression gegen stale Interactions bleiben abgesichert.
+
+### Grenzen und Status
+
+Dieses Paket führt ausschließlich lokale, kontrollierte Fortsetzung nach einem Customer-Effort-Intermediate-Result ein. Es ändert weder Knowledge-/Missing-/Readiness-/Ranking-/Retry-/Interpretationsregeln noch die Grenze von vier technischen Folgefragen. Es ergänzt keinen persistenten Eventtyp, keine Persistenz, Datenbank, Supabase-Simulatorquery, KI, WhatsApp, Knowledge Base, Metrics oder Abhängigkeit.
+
+- **INTERMEDIATE RESULT BREAK — IMPLEMENTED**
+- **CONTROLLED POST-INTERMEDIATE CONTINUATION — IMPLEMENTED**
+- **KNOWLEDGE STATE PRESERVED DURING CONTINUATION**
+- **RETRY STATE PRESERVED DURING CONTINUATION**
+- **CUSTOMER EFFORT BREAK RESET — IMPLEMENTED**
+- **PERSISTENT CONVERSATION CONTINUATION — NOT IMPLEMENTED**
+- **WHATSAPP CONTINUATION — NOT IMPLEMENTED**

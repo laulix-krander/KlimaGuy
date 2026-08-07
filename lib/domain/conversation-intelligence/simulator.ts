@@ -5,6 +5,7 @@ import { runConversationCycle } from "./conversation-cycle";
 import { createSyntheticConversationCycleContext } from "./conversation-cycle-fixtures";
 import type { ConversationCycleContext, ConversationCycleResult } from "./conversation-cycle-types";
 import { createInterpretationIdempotencyKey } from "./answer-interpretation";
+import { continueConversationAfterIntermediateResult } from "./conversation-continuation";
 
 export const SIMULATOR_SCENARIOS = [
   ["minimal_room", "Minimaler Ein-Raum-Fall"], ["unknown_room_area", "Raumgröße unbekannt"],
@@ -51,4 +52,11 @@ export function executeSimulatorAnswer(context: ConversationCycleContext, rawVal
   if (!result.success || !result.rendered_interaction || result.planner_result.kind !== "selected_action") return { raw, normalized, result };
   return { raw, normalized, result, next: { ...runContext, knowledge_state: result.knowledge_state, retry_state: result.retry_state, customer_effort_state: result.customer_effort_state, expected_state_version: result.current_state_version, previous_events: result.events,
     interpretation_inputs: { ...runContext.interpretation_inputs, selected_action: result.planner_result.action, rendered_interaction: result.rendered_interaction } } };
+}
+
+export function executeSimulatorContinuation(context: ConversationCycleContext, previous: Extract<ConversationCycleResult, { success: true }>, cycle: number) {
+  const result = continueConversationAfterIntermediateResult({ project_id: previous.knowledge_state.project_id, conversation_id: previous.knowledge_state.conversation_id, knowledge_state: previous.knowledge_state, retry_state: previous.retry_state, customer_effort_state: previous.customer_effort_state, previous_planner_result: previous.planner_result, expected_state_version: previous.current_state_version, assessment_id: id(cycle, 205), planner_decision_id: id(cycle, 206), planner_candidate_ids: [], occurred_at: time(cycle), template_version: context.template_version, locale: context.locale });
+  if (!result.success || result.status !== "next_action_selected" || result.planner_result.kind !== "selected_action" || !result.rendered_interaction) return { result };
+  const next: ConversationCycleContext = { ...context, knowledge_state: result.knowledge_state, retry_state: result.retry_state, customer_effort_state: result.customer_effort_state, expected_state_version: result.knowledge_state.state_version, assessment_id: id(cycle, 205), planner_decision_id: id(cycle, 206), occurred_at: time(cycle), interpretation_inputs: { ...context.interpretation_inputs, selected_action: result.planner_result.action, rendered_interaction: result.rendered_interaction } };
+  return { result, next };
 }
