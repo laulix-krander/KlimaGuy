@@ -669,3 +669,56 @@ Dieses Paket enthält keine Persistenz, Datenbank, Migration, SQL/RPC/RLS-Änder
 - **WHATSAPP INTEGRATION NOT IMPLEMENTED**
 - **OFFER GENERATION NOT IMPLEMENTED**
 - **OVERALL PRODUCT NOT PRODUCTION READY**
+
+## AP-15-02-03-03 Conversation Events, Retry State and Pure Conversation Cycle Result
+
+### Domainstruktur und Verträge
+
+`conversation-cycle-types.ts` und `conversation-cycle-schemas.ts` definieren den strikten, unveränderlichen Cycle Context, die geschlossene Result-/Status-/Fehlerwelt, den separaten Retry-Collection-Vertrag und die discriminated Event Union. `conversation-events.ts`, `conversation-retry-state.ts` und `conversation-cycle.ts` enthalten ausschließlich pure Anwendungen und Orchestrierung; synthetische In-Memory-Fälle liegen in `conversation-cycle-fixtures.ts`. IDs, Zeitpunkt und Sequenzstart werden vollständig injiziert.
+
+### Conversation Events, Payloads und Sequenz
+
+Die Cycle-Allowlist umfasst `customer_answer_interpreted`, `knowledge_claim_recorded`, `knowledge_claim_superseded`, `answer_unknown_recorded`, `answer_skipped`, `assumption_confirmed`, `assumption_rejected`, `assumption_deferred`, `human_review_requested` und `conversation_cycle_completed`. Die Payloads enthalten ausschließlich technische IDs, `information_key` oder geschlossene Resultcodes, niemals Nachrichtentext, Kontaktdaten, Adresse, URL, Token, Medium, Prompt oder Providerantwort. Customer-Interpretation und kundenseitige Antwortentscheidungen verwenden Actor `customer`; Claim-, Review- und Completion-Events `system`. Die positive Startsequence wird als Eingabe übernommen und innerhalb eines Cycles streng fortgeführt. Es wird weder globale noch persistente Sequenzierung behauptet.
+
+### Retry State und Customer Effort
+
+Die Retry Collection bindet eindeutige Items an Projekt, Conversation sowie `information_key/entity_type/entity_id`. `answered` beendet den fachlichen Retry ohne den Zähler zu erhöhen, `unknown` und `skipped` erhöhen bis zum Plannermaximum zwei, und `superseded` erzeugt keinen falschen Kundenversuch. Updates erzeugen neue Arrays und Werte. Customer Effort wird ausschließlich anhand der bestehenden Actiontypen bestimmt: technische Ask-Actions erhöhen die technische Folge, tatsächliche Retries die Wiederholungen und Unknown/Skip die unbeantworteten Fragen; nichttechnische Break-Actions setzen die Folge zurück. Es existiert kein psychologischer Score und keine Profilbildung.
+
+### Cycle Context, Result, Status und Fehler
+
+Der Context bindet Cycle/Correlation/Projekt/Conversation, Knowledge-, Retry- und Effort-State, normalisierte Antwort, Interpretation Inputs, erwartete Version, injizierte Apply-/Event-/Assessment-/Planner-IDs, Sequenz, Zeitpunkt, Templateversion, Locale und `not_processed | already_processed`. Erfolgsresultate enthalten neuen Knowledge/Retry/Effort-State, Missing Information, Readiness, Assessment, Plannerresultat, optionale gerenderte Interaction und Events. Statuswerte sind `next_action_selected`, `intermediate_result_ready`, `collection_stopped`, `human_review_required` und `no_state_change`.
+
+Die geschlossene Fehlerallowlist enthält `invalid_cycle_context`, `cycle_state_version_mismatch`, `interpretation_failed`, `transition_application_failed`, `retry_state_application_failed`, `customer_effort_application_failed`, `event_derivation_failed`, `missing_information_derivation_failed`, `readiness_derivation_failed`, `assessment_creation_failed`, `planner_failed`, `template_render_failed`, `cycle_version_invariant_failed`, `cycle_already_processed`, `human_review_required` und `conversation_cycle_failed`; Retry-, Replanning- und Human-Review-Flags sind deterministisch.
+
+### Orchestrierung, Recalculation und Versionsinvarianten
+
+Die feste Reihenfolge lautet Interpretation → State Apply → Retry/Effort → Missing Information → Readiness → Intermediate Assessment → Question Planner → optionales Template Rendering → Result/Events. Bestehende Mapping-, Apply-, Missing-, Readiness-, Assessment-, Planner- und Rendererfunktionen werden wiederverwendet; der Orchestrator implementiert keine zweite fachliche Wahrheit. Assessment, Plannerresultat und Selected Action müssen exakt auf `apply_result.new_state_version` gebunden sein, andernfalls schließt der Cycle mit `cycle_version_invariant_failed`.
+
+No-change-Transitionen behalten die Knowledge-State-Version, dürfen Retry/Effort verändern und werden anschließend auf genau diesem State neu berechnet. Stale Inputs brechen vor Interpretation, Apply, Retry, Effort und Events mit Replanning ab. `already_processed` ist eine explizite zustandslose Eingabegrenze, unterbindet zweite Retry-/Effort-/Event-Anwendung und behauptet keine Exactly-once-Garantie.
+
+### Assessment, Planner, Rendering, Human Review und Stop Results
+
+Der neue State ist alleinige Grundlage für Missing Information, Readiness und Assessment. Der Planner erhält aktualisierte Retry-/Effortwerte und Target `level_3_preliminary_installation`. Ask-Actions werden zuletzt über die bestehende Registry gerendert. Interne Human-Review-Actions werden nicht als Kundenfrage gerendert. Kontrollierte Intermediate-Parameter werden ausschließlich aus Assessment-IDs, Keys und Readiness abgeleitet; es entstehen weder freie Zusammenfassungen noch Preise oder Freigaben. Planner-Stops mit Intermediate Action werden `intermediate_result_ready`, Human Review wird `human_review_required`, übrige Stopaktionen `collection_stopped`; die kanonischen Stop Reasons bleiben unverändert im Plannerresultat.
+
+### Atomicity, Immutabilität, Fixtures und Tests
+
+Alle Stufen arbeiten auf neuen Werten. Ein später Fehler exponiert keine Zwischenwerte und mutiert keinen Input. Fixtures und fokussierte Tests decken exakte/ungefähre Raumgröße, Unknown, Skip, Annahmebestätigung/-ablehnung, Retrylimit, stale und Replay, Sequenz/Actor/Payload/PII-Grenzen, Versionbindung, Recalculation, Rendering und Input-Immutabilität ab. Weitere vorhandene Interpretation-, Transition-, Planner-, Template- und AP-15-01-Fixtures decken Boolean false, Widerspruch, Reviewer-Schutz, Target Readiness, maximale technische Folgen, No Candidate und Site-Check-Fallbacks auf den wiederverwendeten Einzelstufen ab.
+
+Dieses Paket enthält keine Persistenz, Datenbank, Migration, SQL/RPC/RLS-Änderung, Supabase-Nutzung, UI, Route, Server Action, Queue, Scheduler, KI/LLM/Vision, WhatsApp, Fotoanforderung, Preis-/Angebotslogik, externe Dependency oder `package.json`-Änderung.
+
+### Status
+
+- **ANSWER INTERPRETATION REGISTRY IMPLEMENTED**
+- **KNOWLEDGE STATE TRANSITION APPLICATION IMPLEMENTED**
+- **CONVERSATION EVENT DOMAIN APPLICATION IMPLEMENTED**
+- **RETRY STATE APPLICATION IMPLEMENTED**
+- **CUSTOMER EFFORT STATE APPLICATION IMPLEMENTED**
+- **PURE CONVERSATION CYCLE ORCHESTRATION IMPLEMENTED**
+- **DETERMINISTIC ANSWER-TO-NEXT-ACTION LOOP IMPLEMENTED**
+- **PERSISTENT CONVERSATION ENGINE NOT IMPLEMENTED**
+- **PHOTO REQUEST PLANNER NOT IMPLEMENTED**
+- **INTERNAL CONVERSATION SIMULATOR NOT IMPLEMENTED**
+- **AI ANALYSIS NOT IMPLEMENTED**
+- **WHATSAPP INTEGRATION NOT IMPLEMENTED**
+- **OFFER GENERATION NOT IMPLEMENTED**
+- **OVERALL PRODUCT NOT PRODUCTION READY**
