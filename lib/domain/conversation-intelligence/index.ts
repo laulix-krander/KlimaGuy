@@ -22,3 +22,7 @@ export * from "./answer-interpretation-schemas";
 export * from "./answer-interpretation-registry";
 export * from "./answer-interpretation";
 export * from "./answer-interpretation-fixtures";
+export * from "./state-transition-types";
+export * from "./state-transition-schemas";
+export * from "./state-transition";
+export * from "./state-transition-fixtures";
