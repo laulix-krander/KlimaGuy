@@ -629,3 +629,35 @@ Fokussierte Vitest-Tests sichern Permission-Matrix, Adminnavigation und Route, s
 - **WHATSAPP INTEGRATION NOT IMPLEMENTED**
 - **OFFER GENERATION NOT IMPLEMENTED**
 - **OVERALL PRODUCT NOT PRODUCTION READY**
+
+## AP-15-04-01-01 Intermediate Result Lifecycle Production Finding
+
+### Reproduziertes Symptom und Inspectorbefund
+
+Nach der einmaligen Beantwortung der Leitungswegfrage blieb sie unter „Aktuelle Kundeninteraktion“ sichtbar und ihre Ja-/Nein-Controls blieben bedienbar. Ein weiterer Submit ergänzte dieselbe Systemfrage und eine weitere Testerantwort erneut im lokalen Transcript. Der Inspector belegte dagegen den korrekten Domainzustand: `line_route_known = true` lag als wirksamer, aus `customer_message` stammender Kunden-Claim vor und der Need `line_route_known` war aus `missing_information` entfernt.
+
+Der reproduzierte erfolgreiche Cycle liefert `cycle_status = intermediate_result_ready`, ein `planner_result` der Art `stop_result` mit `stop.next_action_type = present_intermediate_result` und kein `rendered_interaction`. Dieses Ergebnis ist fachlich konsistent: Nach vier aufeinanderfolgenden technischen Fragen setzt der Planner den vorgesehenen Customer-Effort-Break. Er fragt den bereits erfüllten Leitungsweg-Need nicht erneut ab.
+
+### Konkrete Root Cause
+
+Die Ursache lag ausschließlich im lokalen Simulator-Lifecycle. `executeSimulatorAnswer` erzeugt absichtlich nur dann einen `next`-Context, wenn der aktuelle Planner eine `selected_action` und eine gerenderte Folgeinteraction liefert. `simulator-view.tsx` leitete die sichtbare Interaction jedoch direkt aus `context.interpretation_inputs.rendered_interaction` ab und ersetzte den Context nur bedingt mit `if (execution.next)`. Beim korrekten Planner-Stop fehlte `execution.next`; dadurch blieb der Context aus Cycle N mitsamt der bereits beantworteten Leitungswegfrage als scheinbar aktive Interaction in Cycle N+1 erhalten. Die Controls wurden allein aus dieser stale Interaction gerendert.
+
+Zusätzlich ergänzte der Submit-Handler bei jeder Antwort die aus dem alten Context gelesene Systemfrage erneut im Transcript. Weil die stale Interaction weiter beantwortbar blieb, erzeugte jeder weitere Submit einen weiteren Eintrag derselben Frage. Es gab keinen Planner-Fallback auf diese Frage und keine Domainwiederholung; die Wiederholung entstand vollständig in UI-State und Transcriptprojektion.
+
+### Fix und Regressionabsicherung
+
+Der Simulator hält die aktive Kundeninteraction nun als explizit nullable lokalen Zustand. Jeder verarbeitete Cycle räumt sie zunächst ab. Nur ein aktuelles `selected_action` mit kundenfähigem `rendered_interaction` und `AnswerContract` setzt eine neue aktive Interaction und Controls. `intermediate_result_ready`, `human_review_required`, `collection_stopped`, Fehler sowie Planner-Stops behalten niemals die vorherige Frage. Ein `no_state_change` bleibt dabei kein impliziter Stop: Liefert der aktuelle Planner eine gültige neue Interaction, wird sie aktiv; stoppt er, bleibt sie gelöscht.
+
+Das Transcript enthält jede tatsächlich ausgewählte Systeminteraction genau einmal: die initiale beziehungsweise neu gerenderte Interaction wird beim Aktivwerden eingetragen, bei der Antwort kommt nur die Testerantwort hinzu. Ohne neues Rendering wird kein alter Fragetext angehängt. Ein vorhandenes gerendertes Zwischenresultat würde als nicht beantwortbarer Statuseintrag verwendet; im reproduzierten Cycle ohne Rendering erscheint ausschließlich der neutrale Status „Zwischenstand erreicht“ zusammen mit den bereits vorhandenen Readiness- und Missing-Information-Daten. Human Review und Collection Stop erhalten eigene neutrale Statuseinträge und keine Answer Controls.
+
+Die Regressionstests decken den vollständigen Leitungswegablauf, das Löschen der Interaction und Controls beim Zwischenstand, den Schutz vor erneutem Submit, die fehlende Transcriptduplikation, den normalen Wechsel auf eine andere Folgefrage und Human Review ab. Der Domainregressionstest validiert gesondert den wirksamen `line_route_known`-Claim, die Entfernung des Needs und den zulässigen `present_intermediate_result`-Stop. Damit bleiben Planner- und Simulator-Lifecycle-Fehler künftig eindeutig unterscheidbar.
+
+Die bestehende Grenze von maximal vier aufeinanderfolgenden technischen Fragen bleibt unverändert. Es gibt weder Planner-, Knowledge-State-, Missing-Information-, Retry- noch Customer-Effort-Regeländerungen.
+
+Eine Fortsetzung nach dem Zwischenstand bleibt eine offene Folgeentscheidung: Ein späteres Paket kann einen expliziten Control „Gespräch fortsetzen“ bewerten, der kontrolliert einen Customer-Effort-Break anwendet, den Planner erneut ausführt und den nächsten Themenblock startet. Dieses Paket implementiert weder diesen Control noch einen automatischen Plannerlauf oder einen versteckten Effort-Reset.
+
+- **SIMULATOR STALE INTERACTION BUG — FIXED**
+- **DOMAIN LINE-ROUTE CLAIM APPLICATION — VALIDATED**
+- **MISSING-INFORMATION REMOVAL — VALIDATED**
+- **PLANNER INTERMEDIATE RESULT STOP — PRESERVED**
+- **POST-INTERMEDIATE CONTINUATION — NOT IMPLEMENTED**
