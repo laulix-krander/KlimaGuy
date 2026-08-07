@@ -616,3 +616,56 @@ Es gibt keine Knowledge-State-Anwendung, Conversation Events, Retry-State-Anwend
 - **OVERALL PRODUCT NOT PRODUCTION READY**
 
 Das verbleibende Folgepaket **AP-15-02-03-02** darf diese Proposals später kontrolliert auf den Knowledge State anwenden; diese Anwendung ist nicht Bestandteil dieses Ergebnisses.
+
+## AP-15-02-03-02 Knowledge State Transition Application Result
+
+### Domainstruktur und Verträge
+
+Die Transition-Anwendung liegt ausschließlich in den puren Modulen `state-transition-types.ts`, `state-transition-schemas.ts`, `state-transition.ts` und `state-transition-fixtures.ts`. Der strikte `StateTransitionApplyContext` bindet `project_id`, `conversation_id`, validierten `current_state`, validiertes `proposal`, extern vorgegebenes `applied_at`, `apply_id` und optional den expliziten Idempotenzstatus `not_applied | already_applied`. Zusätzliche Felder, ungültige UUIDs und ungültige Zeitstempel werden abgewiesen; Rohantworten, Kundennachrichten und PII sind kein Bestandteil des Vertrags.
+
+Das `StateTransitionApplyResult` ist eine strikte Union aus `transition_applied`, `transition_no_change`, `transition_already_applied` und strukturierten Fehlern. Erfolgsresultate enthalten nur technische Bindungsmetadaten, Versionsgrenzen, Transitiontyp sowie angewendete beziehungsweise supersedierte Claim-IDs. Fehler geben ausschließlich Code und deterministische Flags für Retry, Replanning und Human Review zurück; rohe Zod-Fehler und freie Fehlermeldungen werden nicht exponiert.
+
+### Versionsgrenze und Idempotenz
+
+Die pure CAS-Grenze verlangt die exakte Gleichheit von `proposal.based_on_state_version` und `current_state.state_version`. Ein stale Proposal liefert `state_version_mismatch` mit `requires_replanning = true`; eine automatische Rebase findet nicht statt. State-changing Transitions müssen exakt `current + 1`, No-change Transitions exakt die unveränderte Version vorschlagen. Abweichungen liefern `proposed_state_version_mismatch` und werden nicht still korrigiert.
+
+Die Apply-Idempotenz ist bewusst zustandslos: Der Aufrufer übergibt den bereits festgestellten Status. `already_applied` liefert erfolgreich `transition_already_applied`, ohne Claim, Supersession oder Versionsänderung. Es existiert weder eine globale Registry noch ein mutables Set oder versteckte Runtime-Persistenz.
+
+### Anwendung von Claims und Evidence
+
+State-changing sind `claim_created`, `unknown_recorded`, `assumption_confirmed`, `claim_supersession_proposed` und `contradiction_recorded`. Evidence- und Claim-Proposals werden vollständig vor der Anwendung geprüft. IDs, Quellen, Actor-Klassen und Zeitstempel werden unverändert übernommen; neue IDs, Evidence oder Zeitstempel werden nicht erzeugt. Die globale Evidence-Liste muss exakt den claimgebundenen Evidence-Proposals entsprechen. Claim-, Evidence-, Projekt-, Entity-, Property-, Wert-, Status- und Versionsbindungen werden fail closed geprüft.
+
+`unknown_recorded` akzeptiert ausschließlich `null`, `unknown` und Customer Evidence. `assumption_confirmed` übernimmt den Status `assumed` und sämtliche vorgeschlagenen Evidence References, ohne die Assumption Rule erneut auszuwerten oder den Status aufzuwerten. Bei Supersession bleibt das Original erhalten, der neue Claim verweist auf `supersedes_claim_id`, und Ziel sowie Entity-/Propertybindung werden geprüft. Reviewerclaims mit Reviewer Evidence oder `manually_corrected` Evidence sind geschützt und führen zu `reviewer_correction_protected` mit Human Review.
+
+Ein `contradiction_recorded` Claim wird parallel und ohne Supersession angelegt. Die rein mögliche Nachprüfung über `findContradictions` verlangt, dass der behauptete Konflikt im resultierenden State tatsächlich erkennbar ist; andernfalls folgt `contradiction_application_invalid`. Es wird keine Wahrheit ausgewählt, kein Claim bestätigt und kein älterer Claim gelöscht.
+
+### No-change, Atomicity, Immutabilität und Validierung
+
+`skip_recorded`, `assumption_rejected`, `assumption_deferred`, `duplicate_no_change` und `human_review_required` verändern weder Claims noch Version. Sie liefern `transition_no_change`; insbesondere erzeugt ein Duplicate keine zusätzliche Evidence. Alle Claims und Evidence eines Proposals werden vor der Anwendung geprüft. Die Anwendung ist All-or-Nothing: ein ungültiger Teil verhindert State- und Versionsänderung. Ein einzelner Claim nutzt die bestehenden puren `addClaim`-/`supersedeClaim`-Grenzen; mehrere bereits vollständig validierte Claims werden als ein State der Proposalversion atomar materialisiert.
+
+Input-State, Proposal, Claims und Evidence werden nicht mutiert. Der neue State besteht aus neuen Strukturen und wird nach jeder Änderung erneut mit dem `KnowledgeState`-Schema validiert. Damit werden Projektbindung, eindeutige Claim-IDs, Claim-Schemas und exakte Version erneut geprüft. Es findet keine Missing-Information-, Readiness-, Assessment-, Planner- oder Template-Neuberechnung statt.
+
+### Fixtures, Fehler und Tests
+
+Synthetische Fixtures A–V decken reported exakte und ungefähre Raumgröße, Unknown, Boolean true/false, bestätigte Annahme mit Multi-Evidence, sämtliche No-change-Arten, drei Supersessiongründe, parallelen Widerspruch, Reviewer-Schutz, stale/falsche Version, Claim-ID-Konflikt, fehlendes Ziel, Already-applied, ungültige Evidence und atomare Multi-Evidence-Anwendung ab. Es werden keine echten Kundendaten verwendet.
+
+Fokussierte Vitest-Tests prüfen strikte Schemas, Bindungen, Versionierung, State-changing und No-change Transitions, unveränderte Werte und IDs, Unknown, Assumption Evidence, Supersession, Reviewer-Schutz, Widerspruchserkennung, Idempotenz, Atomicity, Deep-Freeze-Immutabilität, Ergebnisflags und die Architekturgrenze. Implementiert sind die Codes `invalid_apply_context`, `project_mismatch`, `conversation_mismatch`, `state_version_mismatch`, `proposed_state_version_mismatch`, `invalid_transition_proposal`, `invalid_transition_type`, `claim_proposal_invalid`, `evidence_proposal_invalid`, `claim_id_conflict`, `evidence_id_conflict`, `claim_not_found`, `superseded_claim_not_found`, `supersession_mismatch`, `duplicate_transition`, `transition_already_applied`, `reviewer_correction_protected`, `contradiction_application_invalid`, `unexpected_state_change` und `transition_apply_failed`.
+
+Dieses Paket enthält keine Persistenz, Datenbank, Migration, SQL/RPC/RLS-Änderung, Supabase-Nutzung, Conversation Events, Retry-State-Mutation, Recalculation Pipeline, UI, KI, LLM, Vision, WhatsApp sowie Preis- oder Angebotslogik. AP-15-02-03-03 bleibt für Events, Retry State und Orchestrierung separat.
+
+### Status
+
+- **ANSWER INTERPRETATION REGISTRY IMPLEMENTED**
+- **EVIDENCE AND CLAIM PROPOSALS IMPLEMENTED**
+- **KNOWLEDGE STATE TRANSITION APPLICATION IMPLEMENTED**
+- **VERSIONED PURE STATE APPLICATION IMPLEMENTED**
+- **IDEMPOTENT TRANSITION APPLICATION BASELINE IMPLEMENTED**
+- **CONVERSATION EVENT APPLICATION NOT IMPLEMENTED**
+- **RETRY STATE APPLICATION NOT IMPLEMENTED**
+- **CONVERSATION ORCHESTRATION NOT IMPLEMENTED**
+- **PHOTO REQUEST PLANNER NOT IMPLEMENTED**
+- **INTERNAL CONVERSATION SIMULATOR NOT IMPLEMENTED**
+- **AI ANALYSIS NOT IMPLEMENTED**
+- **WHATSAPP INTEGRATION NOT IMPLEMENTED**
+- **OFFER GENERATION NOT IMPLEMENTED**
+- **OVERALL PRODUCT NOT PRODUCTION READY**
