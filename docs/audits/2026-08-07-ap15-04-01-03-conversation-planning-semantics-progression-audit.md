@@ -389,3 +389,45 @@ Es wurden weder Planner-Reihenfolge noch Dependencies, Phasen, Progressionsgraph
 **VISION — NOT IMPLEMENTED**
 **WHATSAPP — NOT IMPLEMENTED**
 **OVERALL PRODUCT — NOT PRODUCTION READY**
+
+## AP-15-04-01-05 Controlled Conversation Progression Result
+
+### Progressionsmodell und Bänder
+
+Der pure Planner verwendet jetzt einen statischen Goal-/Dependency-Graph in der geschlossenen Reihenfolge `basic_need`, `room_context`, `placement_context`, `installation_context`, `technical_clarification`. Die Bänder sind keine Screens: Sie begrenzen Auswahl und Priorität, bevor der vorhandene qualitative Score und der stabile Tie-Break innerhalb des frühesten kundenfähigen Bands wirken. Safety-/Human-Gates bleiben vorgelagert.
+
+### Dependency Graph
+
+Die Taxonomie ist auf `hard`, `progression` und `contextual` geschlossen. Innenposition besitzt Raumtyp als Progressions- und grobe Fläche als Kontextdependency; Außenposition Gebäudeart als Progressions- und Raumtyp als Kontextdependency. Der Leitungsweg hat harte Dependencies auf Innen- und Außenpositionskontext. Zugänglichkeit benötigt mindestens Innenpositions-/Montagekontext hart und nutzt Außenposition kontextuell. Elektro folgt dem Leitungsweg als Progressionsdependency und verdrängt deshalb nicht länger die Grundlagen. Hard Dependencies sind nicht durch Score überstimmbar; Progressions- und Contextual-Dependencies dokumentieren Reihenfolge beziehungsweise sinnstiftenden Kontext ohne eine allgemeine Rule Engine.
+
+### Collection-aware Eligibility und Revisit Policy
+
+`InformationCollectionState` ist Bestandteil des Planner-Inputs. `customer_does_not_know`, `customer_cannot_provide`, `skipped`, `deferred` und `requires_additional_evidence` blockieren die identische Kundenfrage, obwohl Missing Information und Readiness technisch offen bleiben. Die geschlossenen Trigger sind `new_dependency_information`, `new_customer_evidence`, `contradiction_detected` und `explicit_customer_correction`. Nur ein explizit an Need und Entity gebundener Trigger öffnet den Revisit; Plannerlauf, Zeit, Intermediate Result und Continue erzeugen keinen Trigger.
+
+Für den konkreten Positions-/Leitungswegfall genügt **nicht**, nur nach einer erschöpften Routenfrage eine einzelne Innenposition zu beantworten. Ein zulässiger Revisit erfordert (1) erfüllten Innen- und Außenpositionskontext und (2) den expliziten Trigger `new_dependency_information` für genau den Leitungsweg und dieselbe Entity. Damit bleibt eine mit `customer_does_not_know` beziehungsweise `requires_additional_evidence` abgeschlossene Routenfrage ohne neuen Pfad gesperrt.
+
+### Customer Effort, Intermediate und Continuation
+
+Die Grenze von vier aufeinanderfolgenden technischen Fragen und der Intermediate Break bleiben unverändert. Continue setzt weiterhin ausschließlich den Effort-Counter kontrolliert zurück und ist kein Revisit-Trigger. Die Second-Continuation-Fixture bindet neue Decision-/Assessment-IDs und State-Versionen; nach dem zweiten Block folgt deterministisch eine echte eligible Action oder `no_eligible_customer_action`, nie eine stale Interaction oder erfundene Antwort.
+
+### Dead End, Missing Information, Readiness und Site Check
+
+Ein Planner Dead End heißt jetzt `no_eligible_customer_action` und trägt denselben strukturierten Reason Code; er wird nicht mehr fälschlich `customer_effort_break` genannt und löst keine künstliche Human-Review-Eskalation aus. Missing Information und Readiness bleiben ausschließlich technical-state-basiert. Collection-Progression kann daher eine Kundenfrage sperren, ohne den Technical Need oder die Readiness zu erfüllen. Bestehende Site-Check-Fallbacks bleiben verfügbar, sobald deren bisherige Retry-/Fachsemantik greift; es wurden keine Foto-, Vision- oder neuen Site-Check-Aktionen eingeführt.
+
+### Simulator Inspector, Regression Fixtures und Tests
+
+Der Inspector zeigt für die selektierte Action Progressionsband, Dependency Status, Collection Eligibility und Revisit Status; technische Detailobjekte bleiben im Debugmodus. Deterministische Fixtures decken Happy-Path-Reihenfolge, unbekannte/übersprungene Position und Route, Positionsdependencies, Zugänglichkeit, Elektro, gültigen Raum-/Gebäudekontext, Revisit mit/ohne Trigger, Intermediate/Continue, Second Continue, Dead End, Immutability sowie bestehende Safety-/Human-Gates ab. Adaptive Information-Gain-Optimierung, Fotoanforderungen und neue Templates bleiben außerhalb des Pakets.
+
+**CONTROLLED PROGRESSION BANDS — IMPLEMENTED**
+**STATIC DEPENDENCY GRAPH — IMPLEMENTED**
+**COLLECTION-AWARE ELIGIBILITY — IMPLEMENTED**
+**CONTROLLED REVISIT BASELINE — IMPLEMENTED**
+**IDENTICAL RETRY WITHOUT NEW PATH — BLOCKED**
+**PLANNER DEAD-END SEMANTICS — IMPLEMENTED**
+**SECOND CONTINUATION REGRESSION — COVERED**
+**ADAPTIVE INFORMATION-GAIN POLICY — NOT IMPLEMENTED**
+**PHOTO REQUEST PLANNING — NOT IMPLEMENTED**
+**VISION — NOT IMPLEMENTED**
+**KNOWLEDGE BASE — NOT IMPLEMENTED**
+**WHATSAPP — NOT IMPLEMENTED**
+**OVERALL PRODUCT — NOT PRODUCTION READY**

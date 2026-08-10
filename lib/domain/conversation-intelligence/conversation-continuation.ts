@@ -8,6 +8,7 @@ import type { RenderedCustomerInteraction } from "./question-template-types";
 import { deriveMissingInformation, deriveReadiness } from "./readiness";
 import { knowledgeStateSchema, type IntermediateAssessment, type KnowledgeState } from "./schemas";
 import type { ConversationRetryState } from "./conversation-cycle-types";
+import { informationCollectionStateSchema, type InformationCollectionState } from "./information-collection";
 
 export const CONTINUATION_ERROR_CODES = [
   "invalid_continuation_context", "continuation_not_allowed", "previous_result_not_intermediate",
@@ -20,6 +21,7 @@ export type ConversationContinuationContext = Readonly<{
   project_id: string;
   conversation_id: string;
   knowledge_state: KnowledgeState;
+  information_collection_state: InformationCollectionState;
   retry_state: ConversationRetryState;
   customer_effort_state: CustomerEffortState;
   previous_planner_result: PlanNextActionResult;
@@ -34,6 +36,7 @@ export type ConversationContinuationContext = Readonly<{
 
 type ContinuationData = Readonly<{
   knowledge_state: KnowledgeState;
+  information_collection_state: InformationCollectionState;
   retry_state: ConversationRetryState;
   customer_effort_state: CustomerEffortState;
   missing_information: ReturnType<typeof deriveMissingInformation>;
@@ -48,7 +51,7 @@ export type ConversationContinuationResult =
 
 const uuid = z.string().uuid();
 const contextSchema = z.object({
-  project_id: uuid, conversation_id: uuid, knowledge_state: knowledgeStateSchema,
+  project_id: uuid, conversation_id: uuid, knowledge_state: knowledgeStateSchema, information_collection_state: informationCollectionStateSchema,
   retry_state: conversationRetryStateSchema, customer_effort_state: customerEffortStateSchema,
   previous_planner_result: z.union([z.object({ kind: z.literal("stop_result"), stop: plannerStopResultSchema }).strict(), z.object({ kind: z.literal("selected_action"), action: selectedNextActionSchema }).strict()]), expected_state_version: z.number().int().positive(),
   assessment_id: uuid, planner_decision_id: uuid, planner_candidate_ids: z.array(uuid).readonly(),
@@ -76,7 +79,7 @@ export function continueConversationAfterIntermediateResult(input: unknown): Con
     const readiness = deriveReadiness(ctx.knowledge_state);
     const assessmentResult = buildIntermediateAssessment(ctx.knowledge_state, { assessment_id: ctx.assessment_id, project_id: ctx.project_id, conversation_id: ctx.conversation_id, based_on_state_version: ctx.knowledge_state.state_version, created_at: ctx.occurred_at, created_by_actor_class: "system" });
     if (!assessmentResult.success) return failure("assessment_failed");
-    const planned = planNextAction({ project_id: ctx.project_id, conversation_id: ctx.conversation_id, state_version: ctx.knowledge_state.state_version, knowledge_state: ctx.knowledge_state, intermediate_assessment: assessmentResult.data, missing_information: missing, target_readiness_level: "level_3_preliminary_installation", retry_state: ctx.retry_state.items, customer_effort_state: effortResult.data, created_at: ctx.occurred_at }, { decision_id: ctx.planner_decision_id, created_at: ctx.occurred_at });
+    const planned = planNextAction({ project_id: ctx.project_id, conversation_id: ctx.conversation_id, state_version: ctx.knowledge_state.state_version, knowledge_state: ctx.knowledge_state,information_collection_state:ctx.information_collection_state, intermediate_assessment: assessmentResult.data, missing_information: missing, target_readiness_level: "level_3_preliminary_installation", retry_state: ctx.retry_state.items,revisit_triggers:[], customer_effort_state: effortResult.data, created_at: ctx.occurred_at }, { decision_id: ctx.planner_decision_id, created_at: ctx.occurred_at });
     if (!planned.success) return failure("planner_failed");
     const plannerResult = planned.data;
     const plannerVersion = plannerResult.kind === "selected_action" ? plannerResult.action.based_on_state_version : plannerResult.stop.based_on_state_version;
@@ -88,7 +91,7 @@ export function continueConversationAfterIntermediateResult(input: unknown): Con
       rendered = renderResult.interaction;
       if (plannerResult.action.based_on_state_version !== ctx.knowledge_state.state_version) return failure("continuation_version_invariant_failed");
     }
-    const data: ContinuationData = { knowledge_state: ctx.knowledge_state, retry_state: ctx.retry_state, customer_effort_state: effortResult.data, missing_information: missing, readiness, assessment: assessmentResult.data, planner_result: plannerResult, ...(rendered ? { rendered_interaction: rendered } : {}) };
+    const data: ContinuationData = { knowledge_state: ctx.knowledge_state, information_collection_state:ctx.information_collection_state, retry_state: ctx.retry_state, customer_effort_state: effortResult.data, missing_information: missing, readiness, assessment: assessmentResult.data, planner_result: plannerResult, ...(rendered ? { rendered_interaction: rendered } : {}) };
     const status = plannerResult.kind === "selected_action" ? (plannerResult.action.action_type === "request_human_review" ? "human_review_required" : "next_action_selected") : plannerResult.stop.next_action_type === "request_human_review" ? "human_review_required" : "stopped";
     return { success: true, status, ...data };
   } catch {
