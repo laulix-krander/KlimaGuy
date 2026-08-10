@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { continueConversationAfterIntermediateResult, createSimulatorStart, executeSimulatorAnswer } from "@/lib/domain/conversation-intelligence";
+import { continueConversationAfterIntermediateResult, createSimulatorStart, executeSimulatorAnswer, executeSimulatorContinuation } from "@/lib/domain/conversation-intelligence";
 
 function intermediateCycle() {
   let context = createSimulatorStart("empty_synthetic_project");
@@ -7,7 +7,7 @@ function intermediateCycle() {
     const interaction = context.interpretation_inputs.rendered_interaction;
     const answer = interaction.answer_contract?.answer_type === "boolean"
       ? { kind: "option" as const, option_key: "yes" }
-      : { kind: "text" as const, value: cycle === 1 ? "ca. 25 m²" : "Wohnzimmer" };
+      : { kind: "text" as const, value: interaction.template_key === "ask_room_area_approximate" ? "ca. 25 m²" : interaction.template_key === "ask_building_type" ? "Einfamilienhaus" : "Wohnzimmer" };
     const execution = executeSimulatorAnswer(context, answer, cycle);
     if (execution.result?.success && execution.result.cycle_status === "intermediate_result_ready") return { context, result: execution.result };
     context = execution.next!;
@@ -21,6 +21,7 @@ function continuationInput() {
     project_id: result.knowledge_state.project_id,
     conversation_id: result.knowledge_state.conversation_id,
     knowledge_state: result.knowledge_state,
+    information_collection_state: result.information_collection_state,
     retry_state: { ...result.retry_state, items: [{ information_key: "room_area_sqm" as const, entity_type: "room" as const, entity_id: result.knowledge_state.claims.find((claim) => claim.entity_type === "room")!.entity_id, attempts: 1, last_outcome: "unknown" as const, last_attempt_at: "2026-08-07T10:04:00.000Z" }] },
     customer_effort_state: { ...result.customer_effort_state, unanswered_questions: 3, repeated_questions: 2 },
     previous_planner_result: result.planner_result,
@@ -35,6 +36,10 @@ function continuationInput() {
 }
 
 describe("controlled post-intermediate continuation", () => {
+  it("verarbeitet auch ein zweites Continue deterministisch ohne stale Interaction",()=>{
+    let context=createSimulatorStart("empty_synthetic_project");let continuations=0;
+    for(let cycle=1;cycle<=20;cycle+=1){const interaction=context.interpretation_inputs.rendered_interaction;const raw=interaction.answer_contract?.answer_type==="boolean"?{kind:"option" as const,option_key:"yes"}:{kind:"text" as const,value:interaction.template_key==="ask_room_area_approximate"?"ca. 25 m²":interaction.template_key==="ask_building_type"?"Einfamilienhaus":"Wohnzimmer"};const answered=executeSimulatorAnswer(context,raw,cycle);if(answered.next){context=answered.next;continue;}if(answered.result?.success&&answered.result.cycle_status==="intermediate_result_ready"){continuations+=1;const continued=executeSimulatorContinuation(context,answered.result,cycle+20);expect(continued.result.success).toBe(true);if(continuations===2){expect(continued.result.success&&continued.result.planner_result.kind).toMatch(/selected_action|stop_result/u);return;}if(continued.next){context=continued.next;continue;}}break;}throw new Error("second_continuation_not_reached");
+  });
   it("resets only the technical-question break and selects a new action without state mutation", () => {
     const input = continuationInput();
     const knowledge = structuredClone(input.knowledge_state);

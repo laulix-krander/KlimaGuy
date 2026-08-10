@@ -67,7 +67,7 @@ describe("Eligibility, Ranking und Auswahl", () => {
   it("nutzt Ganzzahlscore, Bänder und stabilen Tie-Break", () => {
     const candidates = generated(); const area = candidates.find((item) => item.information_key === "room_area_sqm")!; const electrical = candidates.find((item) => item.information_key === "electrical_supply_known")!;
     expect(Number.isInteger(scoreCandidate(area).total)).toBe(true); expect(FEATURE_CLASS_VALUES).toEqual({ none: 0, low: 1, medium: 2, high: 3, critical: 4 });
-    expect(rankCandidates([area, electrical])[0].priority_band).toBe("safety"); expect(rankCandidates(candidates)).toEqual(rankCandidates(clone(candidates)));
+    expect(rankCandidates([area, electrical])[0].progression_band).toBe("room_context"); expect(rankCandidates(candidates)).toEqual(rankCandidates(clone(candidates)));
     const tied = [{ ...area, information_key: "room_type" as const, candidate_id: "70000000-0000-4000-8000-000000000002" }, { ...area, candidate_id: "70000000-0000-4000-8000-000000000001" }]; expect(rankCandidates(tied)[0].information_key).toBe("room_area_sqm");
   });
   it("wählt genau eine Action sowie kontrollierte Stops", () => {

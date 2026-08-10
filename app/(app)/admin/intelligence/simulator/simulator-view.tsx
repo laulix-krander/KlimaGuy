@@ -631,6 +631,10 @@ export function ConversationSimulator() {
                     Selected Action: {last.planner_result.action.action_type}
                   </p>
                   <p>Priorität: {last.planner_result.action.priority_band}</p>
+                  <p>Progressionsband: {last.planner_result.action.progression_band}</p>
+                  <p>Dependencies: {last.planner_result.action.dependency_status}</p>
+                  <p>Collection: {last.planner_result.action.collection_eligibility}</p>
+                  <p>Revisit: {last.planner_result.action.revisit_status}</p>
                   <p>
                     Score: {last.planner_result.action.score_breakdown.total}
                   </p>
