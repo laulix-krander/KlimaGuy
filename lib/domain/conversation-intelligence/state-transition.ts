@@ -40,7 +40,7 @@ export function applyStateTransitionProposal(input: unknown): StateTransitionApp
         if (typeof input.conversation_id === "string" && (input.conversation_id !== state.data.conversation_id || proposal.conversation_id !== input.conversation_id)) return failure("conversation_mismatch");
         if (typeof proposal.based_on_state_version === "number" && proposal.based_on_state_version !== state.data.state_version) return failure("state_version_mismatch");
         if (typeof proposal.transition_type === "string" && (TRANSITION_TYPES as readonly string[]).includes(proposal.transition_type) && typeof proposal.proposed_state_version === "number") {
-          const changes = !NO_CHANGE.has(proposal.transition_type as StateTransitionProposal["transition_type"]);
+          const changes = Array.isArray(proposal.claim_proposals) ? proposal.claim_proposals.length > 0 : !NO_CHANGE.has(proposal.transition_type as StateTransitionProposal["transition_type"]);
           if (proposal.proposed_state_version !== state.data.state_version + (changes ? 1 : 0)) return failure("proposed_state_version_mismatch");
         }
       }
@@ -53,7 +53,7 @@ export function applyStateTransitionProposal(input: unknown): StateTransitionApp
   const metadata = { apply_id: context.apply_id, transition_id: proposal.transition_id, interpretation_id: proposal.interpretation_id, idempotency_key: proposal.idempotency_key, previous_state_version: state.state_version, applied_transition_type: proposal.transition_type } as const;
   if (context.idempotency_status === "already_applied") return stateTransitionApplyResultSchema.parse({ success: true, changed: false, code: "transition_already_applied", ...metadata, new_state_version: state.state_version, knowledge_state: state, applied_claim_ids: [], superseded_claim_ids: [] }) as StateTransitionApplyResult;
   if (proposal.based_on_state_version !== state.state_version) return failure("state_version_mismatch");
-  const changes = !NO_CHANGE.has(proposal.transition_type);
+  const changes = proposal.claim_proposals.length > 0;
   if (proposal.proposed_state_version !== state.state_version + (changes ? 1 : 0)) return failure("proposed_state_version_mismatch");
   if (!changes) {
     if (proposal.claim_proposals.length || proposal.evidence_proposals.length || proposal.superseded_claim_ids.length) return failure("unexpected_state_change");
