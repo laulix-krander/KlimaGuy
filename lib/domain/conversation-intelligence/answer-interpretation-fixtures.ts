@@ -7,8 +7,8 @@ import { SYNTHETIC_TEMPLATE_RENDER_FIXTURES } from "./question-template-fixtures
 
 const AT = "2026-08-06T16:00:00.000Z";
 const IDS = { interpretation: "83000000-0000-4000-8000-000000000001", message: "83000000-0000-4000-8000-000000000002", transition: "83000000-0000-4000-8000-000000000003", claim: "83000000-0000-4000-8000-000000000004", customerEvidence: "83000000-0000-4000-8000-000000000005", systemEvidence: "83000000-0000-4000-8000-000000000006", existingClaim: "83000000-0000-4000-8000-000000000007", existingEvidence: "83000000-0000-4000-8000-000000000008", existingSource: "83000000-0000-4000-8000-000000000009" } as const;
-type FixtureKey = "roomArea" | "roomType" | "buildingType" | "indoorPosition" | "outdoorPosition" | "assumption";
-const entityType = (key: FixtureKey) => key === "buildingType" ? "project" as const : key === "outdoorPosition" ? "installation" as const : "room" as const;
+type FixtureKey = "roomArea" | "roomType" | "buildingType" | "indoorPosition" | "outdoorPosition" | "lineRoute" | "electrical" | "accessibility" | "assumption";
+const entityType = (key: FixtureKey) => key === "buildingType" ? "project" as const : ["outdoorPosition","lineRoute","electrical","accessibility"].includes(key) ? "installation" as const : "room" as const;
 export function createSyntheticInterpretationContext(key: FixtureKey = "roomArea", outcome: "exact" | "approximate" | "range" | "true" | "false" | "text" | "unknown" | "skipped" | "assumption_confirmed" | "assumption_rejected" | "deferred" = "exact", existing?: Pick<KnowledgeClaim, "value" | "value_type" | "epistemic_status"> & Partial<KnowledgeClaim>, correction_context?: InterpretationContext["correction_context"]): InterpretationContext {
   const fixture = SYNTHETIC_TEMPLATE_RENDER_FIXTURES[key]; const sourceAction = fixture[0]; const type = entityType(key);
   const action = selectedNextActionSchema.parse({ ...sourceAction, entity_type: type, entity_id: type === "project" ? sourceAction.project_id : type === "installation" ? "81000000-0000-4000-8000-000000000006" : sourceAction.entity_id });

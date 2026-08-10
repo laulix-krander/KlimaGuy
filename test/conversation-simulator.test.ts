@@ -46,41 +46,10 @@ describe("Internal Conversation Simulator", () => {
     expect(review.result).toMatchObject({ success: false, requires_human_review: true });
   });
 
-  it("entfernt die beantwortete Leitungswegfrage beim Zwischenstand ohne doppelten Transcript-Eintrag oder weiteren Submit", () => {
-    render(createElement(ConversationSimulator));
-
-    for (let step = 0; step < 5; step += 1) {
-      const active = screen.getByText("Aktuelle Kundeninteraktion").closest("article");
-      expect(active).not.toBeNull();
-      if (within(active!).queryByText("Ist ungefähr bekannt, wie die Leitungen vom Innen- zum Außengerät geführt werden könnten?")) break;
-      const yes = within(active!).queryByRole("button", { name: "Ja" });
-      if (yes) fireEvent.click(yes);
-      else {
-        const input = within(active!).getByLabelText("Synthetische Antwort");
-        fireEvent.change(input, { target: { value: step === 0 ? "ca. 25 m²" : "Wohnzimmer" } });
-        fireEvent.click(within(active!).getByRole("button", { name: "Antwort senden" }));
-      }
-    }
-
-    const route = "Ist ungefähr bekannt, wie die Leitungen vom Innen- zum Außengerät geführt werden könnten?";
-    const active = screen.getByText("Aktuelle Kundeninteraktion").closest("article")!;
-    expect(within(active).getByText(route)).toBeTruthy();
-    fireEvent.click(within(active).getByRole("button", { name: "Ja" }));
-
-    expect(screen.queryByText("Aktuelle Kundeninteraktion")).toBeNull();
-    expect(screen.getAllByText(route)).toHaveLength(1);
-    expect(screen.getAllByText("Zwischenstand erreicht").length).toBeGreaterThan(0);
-    expect(screen.queryByRole("button", { name: "Ja" })).toBeNull();
-    expect(screen.queryByLabelText("Synthetische Antwort")).toBeNull();
-    expect(screen.getByText("Der nächste Fragenblock kann jetzt gestartet werden.")).toBeTruthy();
-    const systemQuestionsBefore = screen.getAllByText("Systemfrage").length;
-    const continueButton = screen.getByRole("button", { name: "Gespräch fortsetzen" });
-    fireEvent.click(continueButton);
-    fireEvent.click(continueButton);
-    expect(screen.getAllByText("Gespräch wird fortgesetzt.")).toHaveLength(1);
-    expect(screen.getAllByText("Systemfrage")).toHaveLength(systemQuestionsBefore + 1);
-    expect(screen.getByText("Aktuelle Kundeninteraktion").closest("article")?.textContent).not.toContain(route);
-    expect(screen.getAllByText(route)).toHaveLength(1);
+  it("transportiert Kundenwissen zum Leitungsweg getrennt vom technischen Zustand", () => {
+    let context=createSimulatorStart("empty_synthetic_project");
+    for(let cycle=1;cycle<=5;cycle+=1){const interaction=context.interpretation_inputs.rendered_interaction;const execution=executeSimulatorAnswer(context,interaction.answer_contract?.answer_type==="boolean"?{kind:"option",option_key:"yes"}:{kind:"text",value:cycle===1?"ca. 25 m²":"Wohnzimmer"},cycle);if(interaction.template_key==="ask_line_route_known"){expect(execution.result?.success&&execution.result.information_collection_state.items.some(item=>item.information_key==="line_route_known"&&item.last_answer_meaning==="customer_knows")).toBe(true);expect(execution.result?.success&&execution.result.knowledge_state.claims.some(claim=>claim.property_key==="line_route_known")).toBe(false);return;}context=execution.next!;}
+    throw new Error("line_route_fixture_not_reached");
   });
 
   it("ersetzt eine beantwortete Frage durch die nächste echte Interaction und protokolliert beide nur einmal", () => {
@@ -118,8 +87,9 @@ describe("Internal Conversation Simulator", () => {
     }
     expect(lineRouteResult?.success).toBe(true);
     if (!lineRouteResult?.success) return;
-    expect(lineRouteResult.knowledge_state.claims.some((claim) => claim.property_key === "line_route_known" && claim.value === true)).toBe(true);
-    expect(lineRouteResult.missing_information.some((need) => typeof need === "object" && need !== null && "information_key" in need && need.information_key === "line_route_known")).toBe(false);
+    expect(lineRouteResult.knowledge_state.claims.some((claim) => claim.property_key === "line_route_known")).toBe(false);
+    expect(lineRouteResult.information_collection_state.items.some((item) => item.information_key === "line_route_known" && item.last_answer_meaning === "customer_knows")).toBe(true);
+    expect(lineRouteResult.missing_information.some((need) => typeof need === "object" && need !== null && "information_key" in need && need.information_key === "line_route_known")).toBe(true);
     expect(lineRouteResult.planner_result).toMatchObject({ kind: "stop_result", stop: { next_action_type: "present_intermediate_result" } });
     expect(lineRouteResult.rendered_interaction).toBeUndefined();
     expect(activeInteractionFor(lineRouteResult)).toBeNull();

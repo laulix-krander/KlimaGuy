@@ -335,3 +335,57 @@ Für den Befund **`observed_but_not_deterministically_reproduced`** ist eine Fix
 Dieses Paket ist ausschließlich Audit/Analyse. Es wurden **keine** Produktionslogik, Tests, Plannerregeln, Dependencies, Knowledge-/Property-/Schema-/Retry-/Review-/Template-/UI-/Simulatorregeln, Persistenz, Migrationen, SQL/RPC/RLS/Grants, Supabase-Konfiguration, KI/LLM/Vision/Foto/WhatsApp/Knowledge Base/Metriken, Preis- oder Angebotslogik geändert. `package.json` und Lockfiles bleiben unverändert. Es wurden absichtlich keine Anwendungstests ausgeführt.
 
 **Abschlussstatus: READY FOR OWNER DECISION — NOT PRODUCTION READY.**
+
+## AP-15-04-01-04 Semantic Information and Answer Meaning Contracts Result
+
+### Finalisierte Ownerentscheidungen
+
+Das freigegebene hybride Modell ist umgesetzt. `KnowledgeState` bleibt ausschließlich der technische Wahrheits- und Claim-Layer. Der neue immutable `InformationCollectionState` hält dagegen pro Information und Entity den Erhebungsstatus, die letzte kontrollierte Antwortbedeutung, höchstens zwei Attempts, Evidence-Bedarf und Revisit-Status. Attempts werden weiterhin vom bestehenden Retry State abgeleitet; Collection State führt keine eigene Retrystrategie ein.
+
+Jede aktive kundenfähige Frage/Bestätigung besitzt einen geschlossenen `semantic_mode`. Jede Boolean-Regel besitzt explizite Bedeutungen für `yes`, `no`, `unknown` und `skip`; es existiert kein generisches Boolean→Technical-Claim-Mapping mehr. Interpretationen unterscheiden `technical_transition`, `collection_update_only`, `technical_and_collection_update`, `no_change` und `unsupported_mapping`. Interpretation und Collection-Anwendung bleiben pure und verändern ihre Inputs nicht.
+
+### Technical Knowledge vs Collection State
+
+Epistemische Antworten werden nicht in `KnowledgeState` gequetscht. Ein Collection-only-Ergebnis erhöht ausschließlich die Collection-Version; die Knowledge-State-Version bleibt unverändert. Technical Missing Information und Readiness werden weiterhin aus Technical Knowledge abgeleitet. `customer_does_not_know`, `customer_knows`, `leave_information_open` oder `requires_additional_evidence` erfüllen daher keinen technischen Need und erzeugen keine Readiness.
+
+### Answer Meaning Contract und Boolean-Semantik
+
+| Information | Semantic Mode | Ja | Nein | Unknown | Skip | Technical Claim |
+|---|---|---|---|---|---|---|
+| `indoor_unit_position_known` | `customer_preference` | `customer_can_provide` | `customer_does_not_know` | `leave_information_open` | `defer_collection` | keiner |
+| `outdoor_unit_position_known` | `customer_knowledge` | `customer_knows` | `customer_does_not_know` | `leave_information_open` | `defer_collection` | keiner |
+| `line_route_known` | `customer_knowledge` | `customer_knows` | `requires_additional_evidence` | `leave_information_open` | `defer_collection` | keiner |
+| `electrical_supply_known` | `customer_observation` | `technical_true` (reported) | `customer_does_not_know` | `leave_information_open` | `defer_collection` | nur Ja |
+| `accessibility_known` | `technical_property` | `technical_true` (reported) | `technical_false` (reported) | `leave_information_open` | `defer_collection` | Ja/Nein |
+
+`accessibility_known` bleibt aus Kompatibilitätsgründen benannt wie bisher; der sichtbare Text fragt faktisch die technische Erreichbarkeit. Eine breite Property-Umbenennung ist ausdrücklich nicht Bestandteil dieses Pakets.
+
+### Kontrollierte Textwerte
+
+`room_type` akzeptiert ausschließlich kontrollierte deutsche Werte und mappt auf `living_room`, `bedroom`, `office`, `attic_room` oder `other`. `building_type` mappt kontrolliert auf `single_family_house`, `semi_detached_house`, `terraced_house`, `multi_family_house`, `apartment`, `commercial` oder `other`; unter anderem wird „Einfamilienhaus“ exakt auf `single_family_house` abgebildet. Normalisierung ist ausschließlich trim-/case-basiert mit expliziten Umlautvarianten; es gibt weder Fuzzy Matching noch freie Klassifikation.
+
+Andere Textwerte bleiben `unsupported_text_mapping`. Zahlenbereiche bleiben `numeric_range_not_supported`; es wird weder gemittelt noch ein Randwert gewählt. Beide Mapping-Lücken erzeugen keinen fachlichen Human Review, verändern keinen State und verlangen einen kontrollierten Replan/alternativen Erhebungsweg. Reviewer-geschützte Claims bleiben weiterhin echter Human-Review-Fall.
+
+### Collection State und Cycle Integration
+
+`applyInformationCollectionOutcome` validiert streng, ersetzt genau ein gebundenes Item immutable und liefert `collection_outcome_applied` oder `collection_outcome_unchanged`. Der Conversation Cycle transportiert den Zustand und wendet Collection Outcomes nach dem unveränderten Retry Outcome an. Retry bleibt Attempts-/Historienmechanik mit Maximum zwei; Collection State bleibt semantische Wahrheit. Eine Collection-Änderung erzeugt keinen Fake-Claim und keine Knowledge-Version.
+
+Die synthetischen Fixtures und Tests decken Außenposition Nein/Unknown/Ja, Innenposition Nein, Leitungsweg Nein, Elektro Nein, Zugänglichkeit Ja/Nein, kontrollierte Raum-/Gebäudetypen, fail-closed Text, Range ohne Human Review, Missing Information, Immutability und Cycle-Transport ab. Der Simulator verwendet den Collection State intern weiter; keine UI-Neugestaltung war erforderlich.
+
+### Verbleibende Grenzen
+
+Es wurden weder Planner-Reihenfolge noch Dependencies, Phasen, Progressionsgraph oder Information-Gain-Policy verändert. Offene technische Needs können nach Collection-only-Antworten mit der bisherigen Planner-/Retrymechanik weiterhin erneut auftauchen; eine kontextabhängige Revisit-Policy ist bewusst das nächste eigenständige Paket. Es gibt keine Persistenz, Datenbank-, Supabase-, Foto-, Vision-, WhatsApp-, Knowledge-Base-, Metrik-, Preis- oder Angebotslogik.
+
+**SEMANTIC INFORMATION MODEL — IMPLEMENTED**
+**ANSWER MEANING CONTRACTS — IMPLEMENTED**
+**TECHNICAL KNOWLEDGE / COLLECTION STATE SEPARATION — IMPLEMENTED**
+**ROOM TYPE CONTROLLED MAPPING — IMPLEMENTED**
+**BUILDING TYPE CONTROLLED MAPPING — IMPLEMENTED**
+**FALSE / UNKNOWN SEMANTIC SEPARATION — IMPLEMENTED**
+**PLANNER PROGRESSION GRAPH — NOT IMPLEMENTED**
+**INFORMATION-GAIN RETRY POLICY — NOT IMPLEMENTED**
+**HUMAN REVIEW REWORK — NOT IMPLEMENTED**
+**PHOTO REQUEST PLANNER — NOT IMPLEMENTED**
+**VISION — NOT IMPLEMENTED**
+**WHATSAPP — NOT IMPLEMENTED**
+**OVERALL PRODUCT — NOT PRODUCTION READY**

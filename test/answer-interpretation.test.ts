@@ -11,9 +11,9 @@ describe("AP-15-02-03-01 schemas and registry", () => {
     expect(stateTransitionProposalSchema.safeParse(result.proposal).success).toBe(true); expect(evidenceProposalSchema.safeParse(result.proposal.evidence_proposals[0]).success).toBe(true); expect(knowledgeClaimProposalSchema.safeParse(result.proposal.claim_proposals[0]).success).toBe(true);
     expect(interpretationContextSchema.safeParse({ ...F.A, extra: true }).success).toBe(false); expect(interpretationContextSchema.safeParse({ ...F.A, source_message_id: "bad" }).success).toBe(false); expect(interpretationContextSchema.safeParse({ ...F.A, correction_context: "reviewer" }).success).toBe(false);
   });
-  it("is unique, explicit and deeply immutable with deferred text rules", () => {
+  it("is unique, explicit and deeply immutable with explicit semantic rules", () => {
     expect(validateAnswerInterpretationRegistry(ANSWER_INTERPRETATION_REGISTRY)).toBe(true); expect(Object.isFrozen(ANSWER_INTERPRETATION_REGISTRY)).toBe(true); expect(Object.isFrozen(ANSWER_INTERPRETATION_REGISTRY[0])).toBe(true);
-    expect(ANSWER_INTERPRETATION_REGISTRY).toEqual(expect.arrayContaining([expect.objectContaining({ information_key: "room_area_sqm", entity_type: "room", property_key: "room_area_sqm" }), expect.objectContaining({ information_key: "outdoor_unit_position_known", entity_type: "installation" }), expect.objectContaining({ information_key: "room_type", status: "deferred" })]));
+    expect(ANSWER_INTERPRETATION_REGISTRY).toEqual(expect.arrayContaining([expect.objectContaining({ information_key: "room_area_sqm", entity_type: "room", property_key: "room_area_sqm" }), expect.objectContaining({ information_key: "outdoor_unit_position_known", entity_type: "installation" }), expect.objectContaining({ information_key: "room_type", status: "active", semantic_mode: "technical_property" })]));
     expect(ASSUMPTION_VALUE_REGISTRY.rough_room_area_for_level_2.value).toBe(25);
   });
 });
@@ -22,13 +22,13 @@ describe("answer interpretation mapping", () => {
   it("preserves exact and approximate numbers without range averaging", () => {
     expect(claim(run(F.A))).toMatchObject({ value: 25, value_type: "number", epistemic_status: "reported", approximation: "exact" });
     expect(claim(run(F.B))).toMatchObject({ value: 25, epistemic_status: "reported", approximation: "approximate" });
-    expect(run(F.C)).toEqual({ success: false, code: "numeric_range_not_supported", retryable: false, requires_replanning: false, requires_human_review: true, causes_state_change: false });
+    expect(run(F.C)).toEqual({ success: false, code: "numeric_range_not_supported", retryable: false, requires_replanning: true, requires_human_review: false, causes_state_change: false });
   });
-  it("maps true and false as reported booleans", () => {
-    expect(claim(run(F.D))).toMatchObject({ value: true, value_type: "boolean", epistemic_status: "reported" }); expect(claim(run(F.E))).toMatchObject({ value: false, value_type: "boolean", epistemic_status: "reported" });
+  it("does not generically map customer-knowledge booleans", () => {
+    expect(run(F.D)).toMatchObject({success:true,proposal:{semantic_result_type:"collection_update_only",claim_proposals:[],collection_outcome:{answer_meaning:"customer_can_provide"}}}); expect(run(F.E)).toMatchObject({success:true,proposal:{semantic_result_type:"collection_update_only",claim_proposals:[],collection_outcome:{answer_meaning:"customer_does_not_know"}}});
   });
   it("defers text, records unknown and skips without a property claim", () => {
-    expect(run(F.F)).toMatchObject({ success: false, code: "unsupported_text_mapping", requires_human_review: true });
+    expect(run(F.F)).toMatchObject({ success: false, code: "unsupported_text_mapping", requires_human_review: false, requires_replanning: true });
     expect(claim(run(F.G))).toMatchObject({ value: null, value_type: "unknown", epistemic_status: "unknown", evidence: [expect.objectContaining({ source_type: "customer_message", actor_class: "customer" })] });
     const missing = deriveMissingInformation({ ...F.G.knowledge_state, claims: [claim(run(F.G)) as never] }); expect(missing.some((item) => item.information_key === "room_area_sqm")).toBe(true);
     expect(run(F.H)).toMatchObject({ success: true, proposal: { transition_type: "skip_recorded", retry_outcome: "skipped", claim_proposals: [], evidence_proposals: [], explanation_codes: ["mapping_rule_applied", "skip_without_property_claim"] } });

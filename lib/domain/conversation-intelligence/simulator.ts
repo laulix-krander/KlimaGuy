@@ -50,7 +50,7 @@ export function executeSimulatorAnswer(context: ConversationCycleContext, rawVal
     interpretation_inputs: { ...context.interpretation_inputs, interpretation_id: id(cycle, 7), source_message_id: id(cycle, 8), interpreted_at: time(cycle), idempotency_key: createInterpretationIdempotencyKey(context.conversation_id, interaction.decision_id, raw.answer_id), proposal_ids: { transition_id: id(cycle, 9), claim_id: id(cycle, 10), customer_evidence_id: id(cycle, 11), system_evidence_id: id(cycle, 12) } } };
   const result = runConversationCycle(runContext);
   if (!result.success || !result.rendered_interaction || result.planner_result.kind !== "selected_action") return { raw, normalized, result };
-  return { raw, normalized, result, next: { ...runContext, knowledge_state: result.knowledge_state, retry_state: result.retry_state, customer_effort_state: result.customer_effort_state, expected_state_version: result.current_state_version, previous_events: result.events,
+  return { raw, normalized, result, next: { ...runContext, knowledge_state: result.knowledge_state, information_collection_state: result.information_collection_state, retry_state: result.retry_state, customer_effort_state: result.customer_effort_state, expected_state_version: result.current_state_version, previous_events: result.events,
     interpretation_inputs: { ...runContext.interpretation_inputs, selected_action: result.planner_result.action, rendered_interaction: result.rendered_interaction } } };
 }
 

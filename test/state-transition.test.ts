@@ -22,7 +22,7 @@ describe("AP-15-02-03-02 schemas and bindings", () => {
 
 describe("state-changing application", () => {
   it("applies exact, approximate, boolean and unknown proposals without inventing data", () => {
-    for (const fixture of [F.A, F.B, F.D, F.E, F.C]) { const result = applyStateTransitionProposal(fixture); expect(result).toMatchObject({ success: true, changed: true, code: "transition_applied", previous_state_version: 1, new_state_version: 2 }); if (result.success && result.changed) { const proposal = fixture.proposal.claim_proposals[0]; const applied = result.knowledge_state.claims.at(-1)!; expect(applied).toMatchObject({ claim_id: proposal.claim_id, property_key: proposal.property_key, value: proposal.value, epistemic_status: proposal.epistemic_status, evidence: proposal.evidence }); } }
+    for (const fixture of [F.A, F.B, F.C]) { const result = applyStateTransitionProposal(fixture); expect(result).toMatchObject({ success: true, changed: true, code: "transition_applied", previous_state_version: 1, new_state_version: 2 }); if (result.success && result.changed) { const proposal = fixture.proposal.claim_proposals[0]; const applied = result.knowledge_state.claims.at(-1)!; expect(applied).toMatchObject({ claim_id: proposal.claim_id, property_key: proposal.property_key, value: proposal.value, epistemic_status: proposal.epistemic_status, evidence: proposal.evidence }); } }
     const unknown = applyStateTransitionProposal(F.C); if (unknown.success && unknown.changed) expect(unknown.knowledge_state.claims.at(-1)).toMatchObject({ value: null, value_type: "unknown", epistemic_status: "unknown" });
   });
   it("applies the confirmed assumption with both evidence references atomically", () => {
@@ -44,7 +44,7 @@ describe("state-changing application", () => {
 describe("no-change, idempotency and immutability", () => {
   it("does not increment skip, rejected/deferred assumptions, duplicate or human review", () => {
     const humanReview = { ...F.G, proposal: { ...F.G.proposal, transition_type: "human_review_required" as const } };
-    for (const fixture of [F.G, F.H, F.I, F.J, humanReview]) expect(applyStateTransitionProposal(fixture)).toMatchObject({ success: true, changed: false, code: "transition_no_change", previous_state_version: 1, new_state_version: 1, applied_claim_ids: [], superseded_claim_ids: [] });
+    for (const fixture of [F.D, F.E, F.G, F.H, F.I, F.J, humanReview]) expect(applyStateTransitionProposal(fixture)).toMatchObject({ success: true, changed: false, code: "transition_no_change", previous_state_version: 1, new_state_version: 1, applied_claim_ids: [], superseded_claim_ids: [] });
   });
   it("returns already applied without a second claim or version", () => { expect(applyStateTransitionProposal(F.T)).toMatchObject({ success: true, changed: false, code: "transition_already_applied", knowledge_state: { state_version: 1, claims: [] } }); });
   it("rejects ID conflicts and leaves deeply frozen inputs unchanged", () => {
