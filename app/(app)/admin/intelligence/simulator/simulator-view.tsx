@@ -59,6 +59,8 @@ const propertyLabels: Record<string, string> = {
   room_type: "Raumtyp",
   building_type: "Gebäudetyp",
 };
+const collectionPathLabels: Record<string,string>={customer_question:"Kundenfrage",customer_clarification:"Kontrollierte Rückfrage",existing_evidence:"Vorhandene Evidence",future_photo_request:"Späteres Foto / zusätzliche Evidence",future_document_request:"Späteres Dokument",assumption:"Mögliche Annahme",site_check:"Vor-Ort-Prüfung",human_review:"Fachliche Prüfung",leave_open:"Offen lassen"};
+const gainReasonLabels:Record<string,string>={new_information_expected:"Neue Information zu erwarten",alternate_question_strategy:"Alternativer Frageweg",dependency_context_changed:"Dependency-Kontext verändert",same_context_as_previous_attempt:"Kontext unverändert",customer_path_exhausted:"Kundenpfad ausgeschöpft",additional_evidence_required:"Zusätzliche Evidence erforderlich",retry_limit_reached:"Versuchslimit erreicht",future_photo_path:"Späterer Fotopfad",site_check_path:"Vor-Ort-Pfad",no_available_collection_path:"Aktuell kein Erhebungsweg"};
 const box = "rounded-xl border bg-white p-4 shadow-sm";
 
 export function ConversationSimulator() {
@@ -635,6 +637,8 @@ export function ConversationSimulator() {
                   <p>Dependencies: {last.planner_result.action.dependency_status}</p>
                   <p>Collection: {last.planner_result.action.collection_eligibility}</p>
                   <p>Revisit: {last.planner_result.action.revisit_status}</p>
+                  <p>Erkenntnisweg: {collectionPathLabels[last.planner_result.action.collection_path]}</p>
+                  <p>Grund: {last.planner_result.action.gain_reason_codes.map(code=>gainReasonLabels[code]).join(", ")}</p>
                   <p>
                     Score: {last.planner_result.action.score_breakdown.total}
                   </p>

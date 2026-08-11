@@ -2,6 +2,7 @@ export * from "./types";
 export * from "./schemas";
 export * from "./knowledge-state";
 export * from "./information-collection";
+export * from "./information-gain";
 export * from "./readiness";
 export * from "./intermediate-assessment";
 export * from "./fixtures";
