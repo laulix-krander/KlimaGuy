@@ -485,3 +485,69 @@ Fokussierte Tests decken geschlossene und strikte Schemas, Determinismus, Immuta
 **WHATSAPP — NOT IMPLEMENTED**
 
 **OVERALL PRODUCT — NOT PRODUCTION READY**
+
+## AP-15-04-01-07 Controlled Evidence Request Planner Result
+
+### Architecture
+
+Der kontrollierte Evidence Request Planner ist ein reines, deterministisches Domain-Modul hinter der Information-Gain-Entscheidung. Er konsumiert ausschließlich offene Information Needs und deren geschlossenen Collection Path. Nur `future_photo_request` kann eine Fotoaktion erzeugen; `site_check`, `human_review`, normale Kundenfragen und `leave_open` bleiben eigenständige autoritative Pfade. Der Planner erzeugt weder freien Kundentext noch Technical Claims.
+
+### Evidence Request Contracts
+
+Die Action-Allowlist umfasst `request_photo`, `request_multiple_photos`, `request_document` und `no_evidence_request`; eine generische Dateiaktion existiert nicht. `SelectedEvidenceRequest` bindet Request-ID, Action, kontrolliertes Target beziehungsweise Bundle, Information Keys, Purpose Codes, Template, Views, Anzahlgrenzen und Reason Codes. URLs, Dateinamen, Storagepfade und Medientypen sind ausgeschlossen. `EvidenceRequestState` ist lokal, immutable, projekt-/conversationgebunden und versioniert Requests mit den Status `planned`, `requested`, `provided`, `skipped`, `declined`, `superseded` und `cancelled`.
+
+### Target Registry, Purpose Codes und Mapping
+
+Die statische, tief eingefrorene Registry enthält alle geprüften Targets. Für den MVP sind `room_overview`, `indoor_area_overview`, `outdoor_area_overview`, `line_route_context`, `electrical_area` und `accessibility_context` aktiv. Spezifische Wand-/Standort-/Abmessungs-, Gebäude-, Kondensat- und Kernbohrungsziele sind deferred. Jedes Target besitzt geschlossene Purposes, Views, Counts, Dependencies, Safety Constraints und `supports_information_keys`. Das Information-Key-Mapping wird explizit aus diesen kontrollierten Definitionen veröffentlicht; es gibt keine Stringnamen-Ableitung.
+
+### Eligibility, Deduplication und Sequencing
+
+Eligibility verlangt einen offenen Need mit `future_photo_request`, ein aktives gemapptes Target, erfüllte Dependencies, freie Request-/Effort-Kapazität sowie das Fehlen eines Human-Review- oder autoritativen Site-Check-Gates. Bereits angeforderte, abgelehnte, übersprungene, bereitgestellte oder als verfügbar markierte Evidence sperrt die unmittelbare Wiederholung. Ein kontrollierter Revisit ist im Contract vorgesehen, aber nicht automatisch aus Zeit, Continue oder erneutem Plannerlauf ableitbar. Maximal zwei aufeinanderfolgende und vier Evidence Requests im Abschnitt verhindern eine endlose Fotocheckliste.
+
+### Bundling und Customer Effort
+
+Mehrere offene Needs werden zuerst durch ein einzelnes Target mit breiter `supports_information_keys`-Abdeckung bedient. So kann `outdoor_area_overview` Außenposition und Zugänglichkeit gemeinsam abdecken. Beliebige dynamische Bundles sind ausgeschlossen; nur `indoor_context_bundle`, `outdoor_context_bundle` und `installation_route_bundle` sind registriert. Der aktive Innenkontext kann als kontrollierte Mehrfotoaktion geplant werden. Evidence Effort bleibt getrennt von technischen Ask-Fragen und wird nur über schmale Evidence-Counter begrenzt; das bestehende Question-Effort-Modell wurde nicht umgebaut.
+
+### Safety und Templates
+
+Alle Targets tragen harte Constraints gegen das Öffnen von Geräten, Leiter-/Kletterhandlungen, schwere Gegenstände und gefährliche Bereiche. Die statischen deutschen Templates bleiben neutral und enthalten keine Freigabe oder Garantie. Insbesondere fordert Elektro nur ein Foto des bekannten Umgebungsbereichs an und verbietet Öffnen oder Verändern; Zugänglichkeit verbietet die Nutzung einer Leiter.
+
+### Simulator und Available Unanalysed Evidence
+
+Das Domain-Simulatorcontract rendert die Überschrift „Foto benötigt“, den kontrollierten deutschen Text und die fachlichen Purpose Codes. Es stellt ausschließlich „Foto als vorhanden simulieren“, „Kann ich nicht liefern“ und „Überspringen“ bereit. Die Provided-Simulation erzeugt kein Bild, sondern setzt den lokalen Request auf `provided` und die Availability auf `available_unanalysed`. Decline und Skip lösen den Request kontrolliert, ohne den Technical Need zu schließen.
+
+### Planner-/Cycle-Integration und Readiness Boundary
+
+Der Evidence Planner liefert den eigenständigen Resulttyp `evidence_request_selected` mit Request, Rendering und lokal weiterführbarem State-Contract; die normale Question-Action kann keine Fotoaktion erfinden. Die Integration ist als kontrollierte Delegationsgrenze `Missing Need → Information Gain → future_photo_request → Evidence Request Planner` verfügbar. Unanalysierte Evidence verändert weder `KnowledgeState` noch Missing Information oder Readiness. Eine spätere, ausdrücklich nicht implementierte Interpretation müsste zuerst einen kontrollierten Technical Claim erzeugen.
+
+### Human Review, Site Check und Document Boundary
+
+Human Review und ein autoritativer Site Check blockieren Evidence Requests hart. Ein Foto ersetzt diese Pfade nicht. `request_document` bleibt Teil der geschlossenen Action-Taxonomie, aber es existieren weder aktive Dokumenttargets noch Templates oder Simulatorcontrols, weil das aktuelle MVP keinen hinreichend konkreten dokumentbasierten Need besitzt.
+
+### Tests und verbleibende Grenzen
+
+Fokussierte Vitest-Szenarien prüfen strikte Schemas, Registry/Mapping/Immutability, alle aktiven MVP-Ziele, Dependencies, Human Review, Site Check, Effort, Deduplication, vorhandene unanalysierte Evidence, Multi-Need-Abdeckung, kontrolliertes Bundling, Safety-Texte, Simulatorcontrols, unverändertes Knowledge und den deferred Dokumentpfad. Es wurden keine Dependency-, Package-, Datenbank- oder Medienänderungen eingeführt.
+
+**CONTROLLED EVIDENCE REQUEST PLANNER — IMPLEMENTED**
+
+**PHOTO REQUEST DOMAIN ACTION — IMPLEMENTED**
+
+**PHOTO REQUEST TEMPLATE REGISTRY — IMPLEMENTED**
+
+**PHOTO REQUEST DEDUPLICATION — IMPLEMENTED**
+
+**PHOTO SAFETY CONTRACT — IMPLEMENTED**
+
+**SYNTHETIC EVIDENCE AVAILABILITY — IMPLEMENTED**
+
+**REAL PHOTO UPLOAD — NOT IMPLEMENTED**
+
+**PROJECT MEDIA BINDING — NOT IMPLEMENTED**
+
+**VISION ANALYSIS — NOT IMPLEMENTED**
+
+**DOCUMENT REQUESTS — DEFERRED / NOT IMPLEMENTED**
+
+**WHATSAPP MEDIA COLLECTION — NOT IMPLEMENTED**
+
+**OVERALL PRODUCT — NOT PRODUCTION READY**
