@@ -431,3 +431,57 @@ Der Inspector zeigt für die selektierte Action Progressionsband, Dependency Sta
 **KNOWLEDGE BASE — NOT IMPLEMENTED**
 **WHATSAPP — NOT IMPLEMENTED**
 **OVERALL PRODUCT — NOT PRODUCTION READY**
+
+## AP-15-04-01-06 Controlled Information Gain and Revisit Policy Result
+
+### Information-Gain-Vertrag
+
+Die Engine besitzt nun den strikt validierten, versions- und entity-gebundenen Vertrag `InformationGainAssessment`. Der Input bindet Projekt, Conversation, Information Key, Entity, Knowledge- und Collection-Version, Attempts, Collection-/Answer-Status, kontrollierte aktuelle und letzte Dependency-Signaturen, einen optionalen Revisit-Trigger und eine geschlossene Verfügbarkeit möglicher Evidence-Kanäle. Das Ergebnis enthält ausschließlich `gain_status`, `preferred_collection_path`, `revisit_allowed` und geschlossene `reason_codes`; es gibt weder freie Begründungen noch Confidence, Wahrscheinlichkeit oder fachliche Wahrheitsentscheidung.
+
+Die Gain-Status-Allowlist lautet `new_information_expected`, `context_changed`, `no_new_information_expected`, `additional_evidence_needed`, `customer_path_exhausted`, `deferred_until_dependency`, `site_check_candidate` und `collection_complete_for_channel`. Die Collection-Path-Taxonomie lautet `customer_question`, `customer_clarification`, `existing_evidence`, `future_photo_request`, `future_document_request`, `assumption`, `site_check`, `human_review` und `leave_open`.
+
+### Retry, Revisit und Dependency Delta
+
+Retry bleibt derselbe Collection-Vorgang mit einer kontrolliert anderen Erhebungsstrategie. Die bestehende konkrete Raumgrößen-Retryfrage ist deshalb als `customer_clarification` zulässig. Revisit ist dagegen eine spätere Erhebung nach einem echten Kontextwechsel. `post_intermediate_progression`, Continue, Zeitablauf und ein neuer Plannerlauf reichen allein nicht. Das Maximum von zwei Attempts gilt für beide Wege und kann durch einen Revisit nicht umgangen werden.
+
+Die pure Dependency-Delta-Prüfung betrachtet nur kontrollierte Property Keys und Zustände `missing`, `unavailable`, `available` und `sufficiently_known`. Relevant ist ausschließlich der Übergang eines kontrollierten Keys von nicht verfügbar zu verfügbar beziehungsweise ausreichend bekannt. Es gibt keine generische Object-Diff-Engine, keine Text-Hashes und keine Raw-Dumps.
+
+Collection Items können minimal `last_dependency_signature`, `last_collection_path` und `last_gain_reason` tragen. Diese Historie enthält keine Antworten, Nachrichten, URLs, Dateien oder PII. Die Anwendung eines Collection Outcomes bleibt immutable und erkennt auch eine kontrollierte Historienänderung als Revision.
+
+### Referenzverhalten
+
+Beim Leitungsweg blockieren Unknown beziehungsweise `requires_additional_evidence` eine identische Wiederholung. Eine erstmals bekannte Innenposition bei weiterhin unbekannter Außenposition reicht nicht. Erst wenn beide Positionskontexte verfügbar sind, die gespeicherte Dependency-Signatur einen echten Delta nachweist und `new_dependency_information` gebunden vorliegt, darf ein Clarification-Revisit erfolgen. Es zählt weiterhin gegen das Attempt-Limit.
+
+Innen- und Außenposition werden nach `customer_does_not_know`, Unknown oder Skip nicht identisch erneut gefragt. Für geeignete offene Positions- oder Elektro-Needs kann `future_photo_request` ausschließlich als künftiger Planungswert erscheinen. Zugänglichkeit kann nach einem echten neuen Montagekontext kontrolliert erneut klärbar werden; unveränderter Kontext reicht nicht. Elektro erzeugt weder eine Freigabe noch eine Safety-Annahme und kann bei ausgeschöpftem Kundenpfad Foto-, Site-Check- oder Leave-open-Semantik erhalten.
+
+Fachlich bereits erlaubte Annahmen dürfen nur als `assumption`-Pfad vorgeschlagen werden; die bestehende Assumption Confirmation bleibt autoritativ. Wenn ein Need Vor-Ort-Prüfung erlaubt und kein geeigneter Kundenpfad besteht, kann `site_check` gewählt werden. Human Review ist kein Missing-/Unknown-Fallback und bleibt den bestehenden Safety-, Reviewer-Protection- und echten fachlichen Konfliktfällen vorbehalten. Ohne verfügbaren Pfad bleibt der Need mit `leave_open` technisch offen; der Planner kann andere Needs verfolgen oder kontrolliert `no_eligible_customer_action` liefern.
+
+### Planner und Simulator
+
+Information Gain wird nach Dependency- und Collection-Auswertung, aber vor Progressionsband-Ranking als harte Eligibility-/Path-Semantik berechnet. Ask-Actions sind nur bei `customer_question` oder `customer_clarification` zulässig. Candidate und Selected Action transportieren Gain-Status, Collection Path und Reason Codes; diese Daten sind kein Scorebonus. Der Simulator-Inspector zeigt minimal den deutsch bezeichneten Erkenntnisweg und seine kontrollierten Gründe. Es gibt keine neue Action zum Anfordern von Fotos oder Dokumenten und keinen sichtbaren Foto-Fragetext.
+
+### Tests und verbleibende Grenzen
+
+Fokussierte Tests decken geschlossene und strikte Schemas, Determinismus, Immutability, First Ask, Unknown/Does-not-know/Cannot-provide/Skip, Raumgrößen-Alternative, Dependency Delta, Leitungsweg mit unvollständigem und vollständigem Positionskontext, Intermediate/Continuation ohne Gain, Attempt-Maximum, Future-Photo-, Site-Check- und Leave-open-Pfade ab. Bestehende Progressions-, Safety-/Human-, Cycle-, Continuation- und Simulatorregressionen bleiben Teil der vollständigen Suite.
+
+`future_photo_request` und `future_document_request` sind ausschließlich Domain-Planungswerte. Fotoanforderung, Upload, Medienverknüpfung, Vision, Persistenz, Datenbank, Supabase, KI/LLM, Knowledge Base, WhatsApp, Metrics sowie Preis-/Angebotslogik bleiben außerhalb dieses Pakets.
+
+**CONTROLLED INFORMATION GAIN POLICY — IMPLEMENTED**
+
+**RETRY / REVISIT SEMANTICS — IMPLEMENTED**
+
+**SAME-CONTEXT IDENTICAL RE-ASK — BLOCKED**
+
+**DEPENDENCY-DELTA REVISIT — IMPLEMENTED**
+
+**FUTURE PHOTO COLLECTION PATH — MODELED**
+
+**PHOTO REQUEST ACTION — NOT IMPLEMENTED**
+
+**VISION — NOT IMPLEMENTED**
+
+**KNOWLEDGE BASE — NOT IMPLEMENTED**
+
+**WHATSAPP — NOT IMPLEMENTED**
+
+**OVERALL PRODUCT — NOT PRODUCTION READY**
