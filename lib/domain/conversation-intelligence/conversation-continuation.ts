@@ -9,6 +9,7 @@ import { deriveMissingInformation, deriveReadiness } from "./readiness";
 import { knowledgeStateSchema, type IntermediateAssessment, type KnowledgeState } from "./schemas";
 import type { ConversationRetryState } from "./conversation-cycle-types";
 import { informationCollectionStateSchema, type InformationCollectionState } from "./information-collection";
+import { evidenceAvailabilitySchema, evidenceRequestStateSchema, type EvidenceAvailability, type EvidenceRequestState } from "./evidence-request";
 
 export const CONTINUATION_ERROR_CODES = [
   "invalid_continuation_context", "continuation_not_allowed", "previous_result_not_intermediate",
@@ -24,6 +25,8 @@ export type ConversationContinuationContext = Readonly<{
   information_collection_state: InformationCollectionState;
   retry_state: ConversationRetryState;
   customer_effort_state: CustomerEffortState;
+  evidence_request_state: EvidenceRequestState;
+  evidence_availability: readonly EvidenceAvailability[];
   previous_planner_result: PlanNextActionResult;
   expected_state_version: number;
   assessment_id: string;
@@ -39,6 +42,8 @@ type ContinuationData = Readonly<{
   information_collection_state: InformationCollectionState;
   retry_state: ConversationRetryState;
   customer_effort_state: CustomerEffortState;
+  evidence_request_state: EvidenceRequestState;
+  evidence_availability: readonly EvidenceAvailability[];
   missing_information: ReturnType<typeof deriveMissingInformation>;
   readiness: ReturnType<typeof deriveReadiness>;
   assessment: IntermediateAssessment;
@@ -52,7 +57,7 @@ export type ConversationContinuationResult =
 const uuid = z.string().uuid();
 const contextSchema = z.object({
   project_id: uuid, conversation_id: uuid, knowledge_state: knowledgeStateSchema, information_collection_state: informationCollectionStateSchema,
-  retry_state: conversationRetryStateSchema, customer_effort_state: customerEffortStateSchema,
+  retry_state: conversationRetryStateSchema, customer_effort_state: customerEffortStateSchema, evidence_request_state:evidenceRequestStateSchema,evidence_availability:z.array(evidenceAvailabilitySchema).readonly(),
   previous_planner_result: z.union([z.object({ kind: z.literal("stop_result"), stop: plannerStopResultSchema }).strict(), z.object({ kind: z.literal("selected_action"), action: selectedNextActionSchema }).strict()]), expected_state_version: z.number().int().positive(),
   assessment_id: uuid, planner_decision_id: uuid, planner_candidate_ids: z.array(uuid).readonly(),
   occurred_at: z.string().datetime({ offset: true }), template_version: z.number().int().positive(), locale: z.literal("de"),
@@ -91,7 +96,7 @@ export function continueConversationAfterIntermediateResult(input: unknown): Con
       rendered = renderResult.interaction;
       if (plannerResult.action.based_on_state_version !== ctx.knowledge_state.state_version) return failure("continuation_version_invariant_failed");
     }
-    const data: ContinuationData = { knowledge_state: ctx.knowledge_state, information_collection_state:ctx.information_collection_state, retry_state: ctx.retry_state, customer_effort_state: effortResult.data, missing_information: missing, readiness, assessment: assessmentResult.data, planner_result: plannerResult, ...(rendered ? { rendered_interaction: rendered } : {}) };
+    const data: ContinuationData = { knowledge_state: ctx.knowledge_state, information_collection_state:ctx.information_collection_state, retry_state: ctx.retry_state, customer_effort_state: effortResult.data, evidence_request_state:ctx.evidence_request_state,evidence_availability:ctx.evidence_availability, missing_information: missing, readiness, assessment: assessmentResult.data, planner_result: plannerResult, ...(rendered ? { rendered_interaction: rendered } : {}) };
     const status = plannerResult.kind === "selected_action" ? (plannerResult.action.action_type === "request_human_review" ? "human_review_required" : "next_action_selected") : plannerResult.stop.next_action_type === "request_human_review" ? "human_review_required" : "stopped";
     return { success: true, status, ...data };
   } catch {

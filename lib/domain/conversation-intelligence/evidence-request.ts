@@ -25,6 +25,10 @@ export type EvidenceAvailability=z.infer<typeof evidenceAvailabilitySchema>;
 export type SelectedEvidenceRequest=z.infer<typeof selectedEvidenceRequestSchema>;
 export type EvidenceTargetKey=typeof EVIDENCE_TARGET_KEYS[number];
 export type EvidencePurposeCode=typeof EVIDENCE_PURPOSE_CODES[number];
+export const EVIDENCE_RESPONSE_OUTCOMES=["provided","declined","skipped"] as const;
+export const EVIDENCE_ORCHESTRATION_ERROR_CODES=["invalid_evidence_cycle_context","evidence_request_planning_failed","evidence_request_render_failed","evidence_response_invalid","evidence_request_not_active","evidence_request_already_resolved","evidence_cycle_invariant_failed"] as const;
+export type EvidenceResponseOutcome=typeof EVIDENCE_RESPONSE_OUTCOMES[number];
+export type EvidenceResponseResult=Readonly<{success:true;state:EvidenceRequestState;availability?:EvidenceAvailability}|{success:false;code:"evidence_response_invalid"|"evidence_request_not_active"|"evidence_request_already_resolved";state?:never;availability?:never}>;
 
 export type EvidenceTargetDefinition=Readonly<{target_key:EvidenceTargetKey;status:typeof EVIDENCE_TARGET_STATUSES[number];supports_information_keys:readonly PropertyKey[];purpose_codes:readonly EvidencePurposeCode[];required_views:readonly typeof EVIDENCE_REQUIRED_VIEWS[number][];minimum_count:number;maximum_count:number;template_key?:typeof EVIDENCE_TEMPLATE_KEYS[number];dependency_keys:readonly PropertyKey[];safety_constraints:readonly ("do_not_open_equipment"|"do_not_use_ladders"|"do_not_climb"|"do_not_move_heavy_objects"|"do_not_enter_hazardous_areas")[]}>;
 const target=(definition:EvidenceTargetDefinition)=>Object.freeze({...definition,supports_information_keys:Object.freeze([...definition.supports_information_keys]),purpose_codes:Object.freeze([...definition.purpose_codes]),required_views:Object.freeze([...definition.required_views]),dependency_keys:Object.freeze([...definition.dependency_keys]),safety_constraints:Object.freeze([...definition.safety_constraints])});
@@ -73,4 +77,11 @@ export function planEvidenceRequest(input:EvidencePlannerInput):EvidencePlannerR
 }
 
 export function appendPlannedEvidenceRequest(state:EvidenceRequestState,request:SelectedEvidenceRequest,at:string):EvidenceRequestState{return evidenceRequestStateSchema.parse({...state,revision:state.revision+1,requests:[...state.requests,{request_id:request.request_id,target_key:request.target_key,...(request.bundle_key?{bundle_key:request.bundle_key}:{}),requested_for_information_keys:request.information_keys,purpose_codes:request.purpose_codes,status:"requested",attempts:1,requested_at:at}]});}
-export function resolveSyntheticEvidenceRequest(state:EvidenceRequestState,requestId:string,outcome:"provided"|"declined"|"skipped",at:string):Readonly<{state:EvidenceRequestState;availability?:EvidenceAvailability}>{const requests=state.requests.map(r=>r.request_id===requestId?{...r,status:outcome,resolved_at:at}:r);const next=evidenceRequestStateSchema.parse({...state,revision:state.revision+1,requests});const item=next.requests.find(r=>r.request_id===requestId);return{state:next,...(outcome==="provided"&&item?{availability:evidenceAvailabilitySchema.parse({target_key:item.target_key,status:"available_unanalysed",request_id:item.request_id})}:{})};}
+export function resolveSyntheticEvidenceRequest(state:EvidenceRequestState,requestId:string,outcome:EvidenceResponseOutcome,at:string):Extract<EvidenceResponseResult,{success:true}>;
+export function resolveSyntheticEvidenceRequest(state:unknown,requestId:string,outcome:string,at:string):EvidenceResponseResult;
+export function resolveSyntheticEvidenceRequest(state:unknown,requestId:string,outcome:string,at:string):EvidenceResponseResult{
+ const parsed=evidenceRequestStateSchema.safeParse(state);if(!parsed.success||!EVIDENCE_RESPONSE_OUTCOMES.includes(outcome as EvidenceResponseOutcome))return{success:false,code:"evidence_response_invalid"};
+ const item=parsed.data.requests.find(request=>request.request_id===requestId);if(!item)return{success:false,code:"evidence_request_not_active"};if(item.status!=="requested")return{success:false,code:"evidence_request_already_resolved"};
+ const requests=parsed.data.requests.map(request=>request.request_id===requestId?{...request,status:outcome as EvidenceResponseOutcome,resolved_at:at}:request);const next=evidenceRequestStateSchema.parse({...parsed.data,revision:parsed.data.revision+1,requests});
+ return{success:true,state:next,...(outcome==="provided"?{availability:evidenceAvailabilitySchema.parse({target_key:item.target_key,status:"available_unanalysed",request_id:item.request_id})}:{})};
+}
