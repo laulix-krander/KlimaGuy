@@ -6,6 +6,9 @@ import { createSyntheticConversationCycleContext } from "./conversation-cycle-fi
 import type { ConversationCycleContext, ConversationCycleResult } from "./conversation-cycle-types";
 import { createInterpretationIdempotencyKey } from "./answer-interpretation";
 import { continueConversationAfterIntermediateResult } from "./conversation-continuation";
+import { resolveSyntheticEvidenceRequest, type EvidenceResponseOutcome } from "./evidence-request";
+
+export type SimulatorInput=Readonly<{kind:"customer_answer";raw_value:RawCustomerAnswer["raw_value"]}|{kind:"evidence_response";request_id:string;outcome:EvidenceResponseOutcome}>;
 
 export const SIMULATOR_SCENARIOS = [
   ["minimal_room", "Minimaler Ein-Raum-Fall"], ["unknown_room_area", "Raumgröße unbekannt"],
@@ -50,13 +53,23 @@ export function executeSimulatorAnswer(context: ConversationCycleContext, rawVal
     interpretation_inputs: { ...context.interpretation_inputs, interpretation_id: id(cycle, 7), source_message_id: id(cycle, 8), interpreted_at: time(cycle), idempotency_key: createInterpretationIdempotencyKey(context.conversation_id, interaction.decision_id, raw.answer_id), proposal_ids: { transition_id: id(cycle, 9), claim_id: id(cycle, 10), customer_evidence_id: id(cycle, 11), system_evidence_id: id(cycle, 12) } } };
   const result = runConversationCycle(runContext);
   if (!result.success || !result.rendered_interaction || result.planner_result.kind !== "selected_action") return { raw, normalized, result };
-  return { raw, normalized, result, next: { ...runContext, knowledge_state: result.knowledge_state, information_collection_state: result.information_collection_state, retry_state: result.retry_state, customer_effort_state: result.customer_effort_state, expected_state_version: result.current_state_version, previous_events: result.events,
+  return { raw, normalized, result, next: { ...runContext, knowledge_state: result.knowledge_state, information_collection_state: result.information_collection_state, retry_state: result.retry_state, customer_effort_state: result.customer_effort_state, evidence_request_state:result.evidence_request_state,evidence_availability:result.evidence_availability,next_evidence_request_id:id(cycle+1,13), expected_state_version: result.current_state_version, previous_events: result.events,
     interpretation_inputs: { ...runContext.interpretation_inputs, selected_action: result.planner_result.action, rendered_interaction: result.rendered_interaction } } };
 }
 
+/** Applies a synthetic evidence response and performs a deterministic no-claim replanning boundary. */
+export function executeSimulatorEvidenceResponse(context:ConversationCycleContext,previous:Extract<ConversationCycleResult,{success:true}>,input:Extract<SimulatorInput,{kind:"evidence_response"}>,cycle:number):Readonly<{result:Extract<ConversationCycleResult,{success:true}>;next:ConversationCycleContext}|{result:{success:false;code:string};next?:never}>{
+ const resolved=resolveSyntheticEvidenceRequest(previous.evidence_request_state,input.request_id,input.outcome,time(cycle)) as import("./evidence-request").EvidenceResponseResult;
+ if(!resolved.success)return{result:resolved};
+ const availability=resolved.availability?[...previous.evidence_availability.filter(item=>item.target_key!==resolved.availability?.target_key),resolved.availability]:previous.evidence_availability;
+ const result:Extract<ConversationCycleResult,{success:true}>={...previous,cycle_status:"collection_stopped",evidence_request_state:resolved.state,evidence_availability:availability,selected_evidence_request:undefined,rendered_evidence_request:undefined};
+ const next:ConversationCycleContext={...context,knowledge_state:result.knowledge_state,information_collection_state:result.information_collection_state,retry_state:result.retry_state,customer_effort_state:result.customer_effort_state,evidence_request_state:result.evidence_request_state,evidence_availability:result.evidence_availability,next_evidence_request_id:id(cycle+1,13),expected_state_version:result.current_state_version};
+ return{result,next};
+}
+
 export function executeSimulatorContinuation(context: ConversationCycleContext, previous: Extract<ConversationCycleResult, { success: true }>, cycle: number) {
-  const result = continueConversationAfterIntermediateResult({ project_id: previous.knowledge_state.project_id, conversation_id: previous.knowledge_state.conversation_id, knowledge_state: previous.knowledge_state, information_collection_state: previous.information_collection_state, retry_state: previous.retry_state, customer_effort_state: previous.customer_effort_state, previous_planner_result: previous.planner_result, expected_state_version: previous.current_state_version, assessment_id: id(cycle, 205), planner_decision_id: id(cycle, 206), planner_candidate_ids: [], occurred_at: time(cycle), template_version: context.template_version, locale: context.locale });
+  const result = continueConversationAfterIntermediateResult({ project_id: previous.knowledge_state.project_id, conversation_id: previous.knowledge_state.conversation_id, knowledge_state: previous.knowledge_state, information_collection_state: previous.information_collection_state, retry_state: previous.retry_state, customer_effort_state: previous.customer_effort_state, evidence_request_state:previous.evidence_request_state,evidence_availability:previous.evidence_availability, previous_planner_result: previous.planner_result, expected_state_version: previous.current_state_version, assessment_id: id(cycle, 205), planner_decision_id: id(cycle, 206), planner_candidate_ids: [], occurred_at: time(cycle), template_version: context.template_version, locale: context.locale });
   if (!result.success || result.status !== "next_action_selected" || result.planner_result.kind !== "selected_action" || !result.rendered_interaction) return { result };
-  const next: ConversationCycleContext = { ...context, knowledge_state: result.knowledge_state, information_collection_state: result.information_collection_state, retry_state: result.retry_state, customer_effort_state: result.customer_effort_state, expected_state_version: result.knowledge_state.state_version, assessment_id: id(cycle, 205), planner_decision_id: id(cycle, 206), occurred_at: time(cycle), interpretation_inputs: { ...context.interpretation_inputs, selected_action: result.planner_result.action, rendered_interaction: result.rendered_interaction } };
+  const next: ConversationCycleContext = { ...context, knowledge_state: result.knowledge_state, information_collection_state: result.information_collection_state, retry_state: result.retry_state, customer_effort_state: result.customer_effort_state,evidence_request_state:result.evidence_request_state,evidence_availability:result.evidence_availability, expected_state_version: result.knowledge_state.state_version, assessment_id: id(cycle, 205), planner_decision_id: id(cycle, 206), occurred_at: time(cycle), interpretation_inputs: { ...context.interpretation_inputs, selected_action: result.planner_result.action, rendered_interaction: result.rendered_interaction } };
   return { result, next };
 }

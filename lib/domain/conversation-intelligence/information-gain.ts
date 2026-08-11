@@ -29,7 +29,7 @@ export function assessInformationGain(input:InformationGainAssessmentInput):Info
  const requiredRouteContext=value.information_key!=="line_route_known"||(["indoor_unit_position_known","outdoor_unit_position_known"] as const).every(key=>AVAILABLE.has(value.dependency_signature[key]??"missing"));
  const genuineRevisit=value.revisit_trigger==="new_customer_evidence"||value.revisit_trigger==="contradiction_detected"||value.revisit_trigger==="explicit_customer_correction"||(value.revisit_trigger==="new_dependency_information"&&dependencyDelta&&requiredRouteContext);
  if(exhaustedStatuses.has(value.collection_status)&&genuineRevisit&&value.available_evidence_channels.customer_clarification)return result("context_changed","customer_clarification",true,["dependency_context_changed"]);
- if(exhaustedStatuses.has(value.collection_status)){
+ if(exhaustedStatuses.has(value.collection_status)||(value.collection_status==="asked"&&["leave_information_open","customer_does_not_know","requires_additional_evidence"].includes(value.last_answer_meaning??""))){
   if(value.available_evidence_channels.existing_evidence)return result("additional_evidence_needed","existing_evidence",false,["additional_evidence_required"]);
   if(value.available_evidence_channels.future_photo_request)return result("additional_evidence_needed","future_photo_request",false,["additional_evidence_required","future_photo_path"]);
   if(value.available_evidence_channels.future_document_request)return result("additional_evidence_needed","future_document_request",false,["additional_evidence_required"]);

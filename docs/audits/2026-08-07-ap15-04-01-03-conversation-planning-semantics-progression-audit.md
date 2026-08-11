@@ -551,3 +551,53 @@ Fokussierte Vitest-Szenarien prüfen strikte Schemas, Registry/Mapping/Immutabil
 **WHATSAPP MEDIA COLLECTION — NOT IMPLEMENTED**
 
 **OVERALL PRODUCT — NOT PRODUCTION READY**
+
+## AP-15-04-01-08 Evidence Request Conversation Orchestration Result
+
+### Cycle Integration und Result Contract
+
+Der pure Conversation Cycle delegiert nach einem `no_eligible_customer_action` ausschließlich dann an den bestehenden Evidence Request Planner, wenn die bestehenden Information-Gain-Candidates einen offenen `future_photo_request`-Pfad ausweisen. Eine erfolgreiche Delegation liefert `cycle_status: evidence_request_selected` sowie `selected_evidence_request` und `rendered_evidence_request`; Question Ranking und Evidence Ranking bleiben getrennt. Ein nicht zulässiges Target führt kontrolliert zum bestehenden Collection Stop und erfindet weder Target noch freien Requesttext.
+
+### Evidence Request State, Effort und Continuation
+
+`EvidenceRequestState` und Evidence Availability werden als explizite, projekt-/conversationgebundene Zustände neben Knowledge, Collection, Retry und Customer Effort durch Cycle, Simulator und Continuation transportiert. Der Initialzustand ist strikt leer (`revision: 0`, `requests: []`). Der Cycle verwendet die bestehende Evidence-Deduplizierung und deren Grenzwerte von höchstens zwei aufeinanderfolgenden beziehungsweise vier gesamten Evidence Actions; technische Fragen-Counter werden dadurch nicht erhöht. Continue bewahrt Request-Historie und Availability unverändert.
+
+### Simulator UI, Transcript und Inspector
+
+Der Simulator zeigt einen Evidence Request als getrennte Karte „Foto benötigt“ mit kontrolliert gerendertem Text, erwarteter Fotoanzahl und ausschließlich den erlaubten Aktionen „Foto als vorhanden simulieren“, „Kann ich nicht liefern“ und „Überspringen“. Transcript-Einträge unterscheiden Fotoanforderung und synthetische Fotoantwort von Systemfrage und Testerantwort. Der Inspector zeigt Target, Status, unterstützte offene Informationen, Availability und Attempts; technische IDs erscheinen nur im Debugmodus. Die Pipeline nennt Evidence Planning sowie Evidence Response/Replanning ausdrücklich und enthält keinen Vision-Schritt.
+
+### Provided / Declined / Skip, Replay und Events
+
+Provided setzt ausschließlich den Request auf `provided` und Availability auf `available_unanalysed`; die Standardansicht bezeichnet dies als „Foto vorhanden – noch nicht ausgewertet“. Declined und Skip setzen ausschließlich `declined` beziehungsweise `skipped`. Alle drei Outcomes lassen den Technical Need offen und blockieren durch die bestehende Request-Historie eine unmittelbare identische Wiederholung. Simulator Inputs unterscheiden `customer_answer` und `evidence_response`; IDs und Zeitpunkte bleiben injiziert und gemischte Replay-Schritte deterministisch. Die bestehende Cycle-Completion-Eventfolge trägt den neuen Resultcode; Medien-/Uploadevents wurden nicht ergänzt.
+
+### Readiness und Missing Information Boundary
+
+Auswahl und synthetische Bereitstellung erzeugen keinen Claim, keine Evidence Reference an einem Claim, keine Knowledge-Version und keinen Readiness-Fortschritt. `available_unanalysed` ist nur Verfügbarkeit, keine technische Interpretation. Missing Information bleibt bis zu einer späteren kontrollierten Evidence Interpretation bestehen.
+
+### Human Review, Site Check und Errors
+
+Bestehende Human-Review-Gates bleiben vor Evidence Planning autoritativ. Nur `future_photo_request`, niemals `site_check`, kann den Evidence Planner aktivieren. Geschlossene Orchestrierungs-/Response-Codes decken ungültigen Kontext, Planning-/Rendering-/Invariantfehler sowie ungültige, inaktive und bereits gelöste Responses ab; technische Fehltexte werden nicht als freie UI-Ausgabe verwendet.
+
+### End-to-End Fixtures, Tests und Validation
+
+Fokussierte Cycle-/Simulatorfixtures prüfen den Übergang von unbekannter Position über Information Gain und kontrolliertes Target zu `evidence_request_selected`, alle drei synthetischen Outcomes, `available_unanalysed`, unverändertes Knowledge/Readiness/Missing Information, geschlossene Response-Fehler und deterministische Zustandsübergänge. Registrytests decken Innen-/Außenposition, Leitungsweg-Dependencies, sichere Elektroanforderung, Zugänglichkeit, Multi-Need-Coverage, Effort, Human Review, Site Check und fehlende zulässige Targets ab. Vollständige Typecheck-, Lint-, Test- und Buildvalidierung wird im Abschlussbericht mit echtem Exitcode ausgewiesen.
+
+**EVIDENCE REQUEST CONVERSATION ORCHESTRATION — IMPLEMENTED**
+
+**EVIDENCE REQUEST SIMULATOR FLOW — IMPLEMENTED**
+
+**SYNTHETIC PROVIDED / DECLINED / SKIP — IMPLEMENTED**
+
+**AVAILABLE UNANALYSED EVIDENCE FLOW — IMPLEMENTED**
+
+**EVIDENCE REQUEST REPLAY — IMPLEMENTED**
+
+**REAL PHOTO UPLOAD — NOT IMPLEMENTED**
+
+**PROJECT MEDIA BINDING — NOT IMPLEMENTED**
+
+**VISION ANALYSIS — NOT IMPLEMENTED**
+
+**WHATSAPP MEDIA COLLECTION — NOT IMPLEMENTED**
+
+**OVERALL PRODUCT — NOT PRODUCTION READY**

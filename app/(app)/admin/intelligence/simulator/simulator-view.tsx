@@ -6,6 +6,7 @@ import {
   createSimulatorStart,
   executeSimulatorAnswer,
   executeSimulatorContinuation,
+  executeSimulatorEvidenceResponse,
   SIMULATOR_SCENARIOS,
   type SimulatorScenarioId,
 } from "@/lib/domain/conversation-intelligence";
@@ -17,6 +18,8 @@ type Message = {
   kind:
     | "system_question"
     | "tester_answer"
+    | "evidence_request"
+    | "evidence_response"
     | "intermediate"
     | "site_check"
     | "human_review";
@@ -75,6 +78,7 @@ export function ConversationSimulator() {
   );
   const [runs, setRuns] = useState<SimulatorRun[]>([]);
   const [raws, setRaws] = useState<RawCustomerAnswer["raw_value"][]>([]);
+  const [evidenceResponses,setEvidenceResponses]=useState<Array<{request_id:string;outcome:"provided"|"declined"|"skipped"}>>([]);
   const [currentInteraction, setCurrentInteraction] =
     useState<RenderedCustomerInteraction | null>(
       () => context.interpretation_inputs.rendered_interaction,
@@ -97,6 +101,7 @@ export function ConversationSimulator() {
     setCurrentInteraction(start.interpretation_inputs.rendered_interaction);
     setRuns([]);
     setRaws([]);
+    setEvidenceResponses([]);
     setMessages([
       interactionMessage(start.interpretation_inputs.rendered_interaction, 0),
     ]);
@@ -230,6 +235,15 @@ export function ConversationSimulator() {
       lock.current = false;
     }
   };
+  const respondToEvidence=(outcome:"provided"|"declined"|"skipped")=>{
+    if(!last?.success||last.cycle_status!=="evidence_request_selected"||!last.selected_evidence_request)return;
+    const request=last.selected_evidence_request;const cycle=runs.length+1;
+    const execution=executeSimulatorEvidenceResponse(context,last,{kind:"evidence_response",request_id:request.request_id,outcome},cycle);
+    if(!execution.next){setError("Die Fotoantwort konnte nicht kontrolliert verarbeitet werden.");return;}
+    setEvidenceResponses(items=>[...items,{request_id:request.request_id,outcome}]);setRuns(items=>[...items,execution.result]);setContext(execution.next);
+    const label=outcome==="provided"?"Foto vorhanden – noch nicht ausgewertet":outcome==="declined"?"Kann ich nicht liefern":"Übersprungen";
+    setMessages(items=>[...items,{message_id:`evidence-response-${cycle}`,kind:"evidence_response",primary_text:label,cycle_index:cycle}]);setNotice("Evidence Response verarbeitet; offene Fachinformation bleibt unverändert.");
+  };
   const replay = () => {
     let replayContext = createSimulatorStart(scenario);
     const replayRuns: SimulatorRun[] = [];
@@ -242,6 +256,11 @@ export function ConversationSimulator() {
       if (!execution.result) break;
       replayRuns.push(execution.result);
       if (execution.next) replayContext = execution.next;
+    }
+    for(const [index,response] of evidenceResponses.entries()){
+      const previous=replayRuns.at(-1);if(!previous?.success)break;
+      const execution=executeSimulatorEvidenceResponse(replayContext,previous,{kind:"evidence_response",...response},raws.length+index+1);
+      if(!execution.next)break;replayRuns.push(execution.result);replayContext=execution.next;
     }
     setNotice(
       JSON.stringify(replayRuns) === JSON.stringify(runs)
@@ -377,7 +396,7 @@ export function ConversationSimulator() {
           </button>
           <button
             className="rounded border px-4 py-2"
-            disabled={!raws.length}
+            disabled={!raws.length&&!evidenceResponses.length}
             onClick={replay}
             type="button"
           >
@@ -408,6 +427,10 @@ export function ConversationSimulator() {
               <p className="text-xs font-bold uppercase">
                 {message.kind === "tester_answer"
                   ? "Testerantwort"
+                  : message.kind === "evidence_request"
+                    ? "Fotoanforderung"
+                    : message.kind === "evidence_response"
+                      ? "Synthetische Fotoantwort"
                   : message.kind === "system_question"
                     ? "Systemfrage"
                     : "Status"}
@@ -440,6 +463,17 @@ export function ConversationSimulator() {
                 </p>
               ) : null}
               <div className="mt-4">{renderInput()}</div>
+            </article>
+          ) : last?.success&&last.cycle_status==="evidence_request_selected"&&last.rendered_evidence_request&&last.selected_evidence_request ? (
+            <article className={`${box} border-amber-500`}>
+              <p className="text-xs font-bold uppercase text-amber-800">Foto benötigt</p>
+              <p className="mt-2">{last.rendered_evidence_request.text}</p>
+              <p className="mt-2 text-sm">Erwartete Fotos: {last.selected_evidence_request.minimum_count}–{last.selected_evidence_request.maximum_count}</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button className="rounded bg-teal-800 px-4 py-2 text-white" onClick={()=>respondToEvidence("provided")} type="button">Foto als vorhanden simulieren</button>
+                <button className="rounded border px-4 py-2" onClick={()=>respondToEvidence("declined")} type="button">Kann ich nicht liefern</button>
+                <button className="rounded border px-4 py-2" onClick={()=>respondToEvidence("skipped")} type="button">Überspringen</button>
+              </div>
             </article>
           ) : (
             <article className={box} role="status">
@@ -573,6 +607,10 @@ export function ConversationSimulator() {
                 Widerspruch: {contradictions.length}
               </p>
             ) : null}
+          </details>
+          <details className={box}>
+            <summary className="cursor-pointer font-bold">Evidence Requests</summary>
+            {last?.success&&last.evidence_request_state.requests.length?<ul className="mt-3 space-y-2 text-sm">{last.evidence_request_state.requests.map(request=><li key={request.request_id}><strong>{request.target_key}</strong> · {request.status}<br/>Unterstützt: {request.requested_for_information_keys.map(key=>propertyLabels[key]??key).join(", ")}<br/>{last.evidence_availability.some(item=>item.request_id===request.request_id&&item.status==="available_unanalysed")?"Foto vorhanden – noch nicht ausgewertet":"Noch keine Evidence vorhanden"} · Versuche: {request.attempts}{debug?<code className="block">{request.request_id}</code>:null}</li>)}</ul>:<p className="mt-3 text-sm">Keine Evidence Requests.</p>}
           </details>
           <details className={box}>
             <summary className="cursor-pointer font-bold">Readiness</summary>
@@ -716,6 +754,8 @@ export function ConversationSimulator() {
               "Recalculation",
               "Planner",
               "Rendering",
+              "Evidence Request Planning",
+              "Evidence Response / Replanning",
             ].map((step) => (
               <details className="mt-2 rounded border p-2" key={step}>
                 <summary>{step}</summary>
@@ -790,6 +830,7 @@ function cycleStatusMessage(
   result: Extract<SimulatorRun, { success: true }>,
   cycle: number,
 ): Message {
+  if(result.cycle_status==="evidence_request_selected"&&result.rendered_evidence_request)return{message_id:`evidence-request-${cycle}-${result.selected_evidence_request?.request_id}`,kind:"evidence_request",primary_text:result.rendered_evidence_request.text,supporting_text:"Foto benötigt",cycle_index:cycle};
   if (result.rendered_interaction)
     return statusMessage(
       cycle,
