@@ -509,3 +509,65 @@ Es wurde exakt eine neue Auditdatei geplant; keine Anwendungsdatei wird geänder
 **WHATSAPP MEDIA COLLECTION — NOT IMPLEMENTED**
 
 **OVERALL PRODUCT — NOT PRODUCTION READY**
+
+## AP-15-04-01-12-01 Descriptive Knowledge Contracts Result
+
+### Finalisierte Ownerentscheidungen
+
+Das konservative Hybridmodell ist als reiner Domainvertrag umgesetzt. Descriptive Technical Knowledge nutzt die bestehende Claim-, Evidence-, Contradiction- und Supersession-Architektur; es gibt weder einen zweiten Knowledge State noch Persistenz oder Laufzeitanwendung aus Observations. Bestehende Technical Properties behalten ihre Bedeutung.
+
+### Strength Ladder und Property Classes
+
+Die geschlossene Strength-Ladder lautet `observed`, `descriptive_fact`, `technical_hypothesis`, `technical_assessment`, `reviewer_approved`, `site_verified`. `observed` bleibt primär die Observation-Ebene; neue descriptive Claims benötigen ausdrücklich `descriptive_fact`. Die geschlossenen Property Classes sind `descriptive`, `technical`, `safety_critical` und `site_check_only`.
+
+### Property Strength Registry
+
+Eine statische, tief unveränderliche Registry bindet jeden vorhandenen Property Key an Entity, Value Type, Property Class, minimale und maximale Strength, Epistemic Status, Actor Classes, Technical-Readiness-Effekt, Planner-Kontext-Effekt, Human Review und Site-Check-Grenze. Die pure Validierung weist zu niedrige oder zu hohe Strength, falsche Actors und unzulässige Epistemik fail closed ab. Die Registry ist keine Runtime- oder Datenbankkonfiguration.
+
+### Kleine descriptive Allowlist
+
+Freigegeben sind ausschließlich fünf boolesche Kontextfacts: `room_overview_context_observed`, `indoor_installation_area_observed`, `outdoor_installation_area_observed`, `line_route_context_observed` und `wall_penetration_context_observed`. Ihr einziger positiver Wert `true` bedeutet, dass der eng benannte visuelle Kontext erfasst wurde. Alle besitzen Minimum und Maximum `descriptive_fact`, Epistemik `observed`, Technical-Readiness-Effekt `none` und initiale Human-Review-Pflicht. Der Penetration-Fact bleibt ausdrücklich bloßer Review-Kontext; er bestätigt keine Bohrsicherheit.
+
+### Bewusst Observation-only verbleibende Werte
+
+`window_visible`, `door_visible`, `measurement_reference_visible`, `electrical_connection_visible`, `room_overview_visible`, Bad-Evidence-Befunde und weitere rohe sichtbare Merkmale bleiben Observations. Insbesondere wurden keine Properties für Elektro-Eignung, Bohrsicherheit, finale Montagefreigabe, Schallfreigabe oder Statikfreigabe geschaffen.
+
+### Actor Boundary
+
+AI, Admin und Reviewer dürfen vertragsseitig descriptive Facts vorschlagen, können das Property-Maximum aber nicht überschreiten. Customer und System sind dafür nicht freigegeben. Reviewer/Admin können weder Maximum noch eine Site-Check-Grenze umgehen. Dieses Paket implementiert keine Proposal Rule und kein Apply.
+
+### Readiness-, Missing-Information-, Planner- und Information-Gain-Grenze
+
+Descriptive Facts verändern weder Technical Readiness noch Readiness Dimensions oder Levels und entfernen keinen Technical Missing Blocker. Die Registry darf ausschließlich `evidence_context_satisfied` beziehungsweise `human_review_context` als späteren Planner-Kontext ausdrücken. Dadurch wird noch keine Planner Progression und keine Information-Gain-Logik verändert; ein Evidence-Kontext darf später einen Erhebungsweg deduplizieren, aber niemals einen Technical Need erfüllen.
+
+### Photo Lifecycle Boundary
+
+Es wurde bewusst kein neuer Lifecycle-Statuscontract implementiert: Fristen, Löschautomatik, Persistenz und Project-Media-Bindung gehören in ein späteres Medien-/Datenschutzpaket. Die Retention-Invariante bleibt bestehen: Original Customer Media soll mindestens durch Collection, Interpretation, Review und Angebotserstellung projektgebunden referenzierbar bleiben. Eine konkrete Retentiondauer ist nicht finalisiert.
+
+### Tests und Remaining Limits
+
+Fokussierte Tests decken geschlossene/strikte Strengths, Registry-Vollständigkeit, Eindeutigkeit und tiefe Immutability, Entity-/Value-Bindung, die kleine Allowlist, Unsafe-Key-Ausschlüsse, Actor-/Strength-Grenzen, unveränderte Readiness und Missing Information sowie die weiterhin leere `auto_proposable`-Teilmenge ab. Nicht implementiert bleiben Observation→descriptive Mapping, Claim Application, Knowledge-State-Mutation aus Observations, Planner-/Information-Gain-Laufzeitlogik, Customer Media, Persistenz, Vision und externe Kanäle.
+
+`DESCRIPTIVE KNOWLEDGE CONTRACTS — IMPLEMENTED`
+
+`KNOWLEDGE STRENGTH MODEL — IMPLEMENTED`
+
+`PROPERTY STRENGTH REGISTRY — IMPLEMENTED`
+
+`SMALL DESCRIPTIVE PROPERTY ALLOWLIST — IMPLEMENTED`
+
+`DESCRIPTIVE FACT TECHNICAL READINESS EFFECT — NONE`
+
+`OBSERVATION TO DESCRIPTIVE CLAIM MAPPING — NOT IMPLEMENTED`
+
+`DESCRIPTIVE CLAIM APPLICATION — NOT IMPLEMENTED`
+
+`CUSTOMER PHOTO PROJECT BINDING — NOT IMPLEMENTED`
+
+`CUSTOMER PHOTO RETENTION POLICY — NOT FINALIZED`
+
+`VISION — NOT IMPLEMENTED`
+
+`WHATSAPP — NOT IMPLEMENTED`
+
+`OVERALL PRODUCT — NOT PRODUCTION READY`

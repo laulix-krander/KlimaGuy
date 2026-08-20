@@ -1,5 +1,6 @@
 export * from "./types";
 export * from "./schemas";
+export * from "./property-strength-registry";
 export * from "./knowledge-state";
 export * from "./information-collection";
 export * from "./information-gain";

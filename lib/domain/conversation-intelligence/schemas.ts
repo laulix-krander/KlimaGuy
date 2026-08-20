@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { ACTOR_CLASSES, ALLOWED_OUTPUTS, ALL_PROPERTY_KEYS, DIAGNOSTIC_CODES, ENTITY_TYPES, EPISTEMIC_STATUSES, EVIDENCE_SOURCE_TYPES, EVIDENCE_STATUSES, EVENT_TYPES, MISSING_REASON_CODES, PROHIBITED_OUTPUTS, PROPERTY_KEYS, READINESS_DIMENSIONS, READINESS_LEVELS, UNCERTAINTY_CLASSES } from "./types";
+import { ACTOR_CLASSES, ALLOWED_OUTPUTS, ALL_PROPERTY_KEYS, DIAGNOSTIC_CODES, ENTITY_TYPES, EPISTEMIC_STATUSES, EVIDENCE_SOURCE_TYPES, EVIDENCE_STATUSES, EVENT_TYPES, KNOWLEDGE_STRENGTHS, MISSING_REASON_CODES, PROHIBITED_OUTPUTS, PROPERTY_KEYS, READINESS_DIMENSIONS, READINESS_LEVELS, UNCERTAINTY_CLASSES } from "./types";
+import { DESCRIPTIVE_PROPERTY_KEYS, getPropertyStrengthContract, validateClaimStrengthForProperty } from "./property-strength-registry";
 
 const uuid = z.string().uuid();
 const timestamp = z.string().datetime({ offset: true });
@@ -19,12 +20,13 @@ export const evidenceReferenceSchema = z.object({
 const unknownStatuses = ["unknown", "not_applicable", "requires_site_check"] as const;
 const stringKeys = ["building_type", "ownership_status", "desired_installation_scope", "room_type", "usage_type", "sun_exposure"] as const;
 const numberKeys = ["requested_room_count", "room_area_sqm", "room_height_m", "floor_level", "estimated_line_length_m", "core_drilling_count"] as const;
-const booleanKeys = ["roof_floor", "indoor_unit_position_known", "outdoor_unit_position_known", "line_route_known", "condensate_route_known", "electrical_supply_known", "accessibility_known"] as const;
+const booleanKeys = ["roof_floor", "indoor_unit_position_known", "outdoor_unit_position_known", "line_route_known", "condensate_route_known", "electrical_supply_known", "accessibility_known", ...DESCRIPTIVE_PROPERTY_KEYS] as const;
 const knownStatus = epistemicStatusSchema.exclude(unknownStatuses);
 const claimBase = {
   claim_id: uuid, project_id: uuid, entity_type: z.enum(ENTITY_TYPES), entity_id: uuid,
   property_key: z.enum(ALL_PROPERTY_KEYS), evidence: z.array(evidenceReferenceSchema).min(1).readonly(),
   created_at: timestamp, state_version: z.number().int().positive(), supersedes_claim_id: uuid.optional(),
+  knowledge_strength: z.enum(KNOWLEDGE_STRENGTHS).optional(),
 };
 const valuePart = z.discriminatedUnion("value_type", [
   z.object({ ...claimBase, value_type: z.literal("string"), value: z.string().trim().min(1).max(120), epistemic_status: knownStatus }).strict(),
@@ -37,6 +39,14 @@ export const knowledgeClaimSchema = valuePart.superRefine((claim, context) => {
   const allowed = claim.value_type === "string" ? stringKeys : claim.value_type === "number" ? numberKeys : claim.value_type === "boolean" ? booleanKeys : ALL_PROPERTY_KEYS;
   if (!(allowed as readonly string[]).includes(claim.property_key)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["value"], message: "property_value_mismatch" });
   if ((claim.property_key === "requested_room_count" || claim.property_key === "floor_level" || claim.property_key === "core_drilling_count") && claim.value_type === "number" && !Number.isInteger(claim.value)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["value"], message: "integer_required" });
+  const contract = getPropertyStrengthContract(claim.property_key);
+  if (claim.value_type !== "unknown" && claim.value_type !== contract.value_type) context.addIssue({ code: "custom", path: ["value_type"], message: "property_value_mismatch" });
+  if (contract.property_class === "descriptive" && !claim.knowledge_strength) context.addIssue({ code: "custom", path: ["knowledge_strength"], message: "knowledge_strength_required" });
+  if (contract.property_class === "descriptive" && claim.value !== true) context.addIssue({ code: "custom", path: ["value"], message: "descriptive_fact_must_record_observed_context" });
+  if (claim.knowledge_strength) for (const evidence of claim.evidence) {
+    const validation = validateClaimStrengthForProperty({ property_key: claim.property_key, strength: claim.knowledge_strength, epistemic_status: claim.epistemic_status, actor_class: evidence.actor_class });
+    if (!validation.success) context.addIssue({ code: "custom", path: ["knowledge_strength"], message: validation.reason });
+  }
 });
 export type KnowledgeClaim = z.infer<typeof knowledgeClaimSchema>;
 

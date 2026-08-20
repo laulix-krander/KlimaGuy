@@ -4,11 +4,13 @@ export const EVIDENCE_SOURCE_TYPES = ["customer_message", "internal_note", "proj
 export const EVIDENCE_STATUSES = ["active", "superseded", "invalidated", "manually_confirmed", "manually_corrected"] as const;
 export const EPISTEMIC_STATUSES = ["confirmed", "reported", "observed", "estimated", "assumed", "unknown", "not_applicable", "contradicted", "requires_site_check"] as const;
 export const ENTITY_TYPES = ["project", "room", "installation"] as const;
+export const KNOWLEDGE_STRENGTHS = ["observed", "descriptive_fact", "technical_hypothesis", "technical_assessment", "reviewer_approved", "site_verified"] as const;
+export const PROPERTY_CLASSES = ["descriptive", "technical", "safety_critical", "site_check_only"] as const;
 
 export const PROPERTY_KEYS = {
   project: ["building_type", "ownership_status", "requested_room_count", "desired_installation_scope"],
-  room: ["room_type", "room_area_sqm", "room_height_m", "floor_level", "roof_floor", "usage_type", "sun_exposure", "indoor_unit_position_known"],
-  installation: ["outdoor_unit_position_known", "line_route_known", "estimated_line_length_m", "core_drilling_count", "condensate_route_known", "electrical_supply_known", "accessibility_known"],
+  room: ["room_type", "room_area_sqm", "room_height_m", "floor_level", "roof_floor", "usage_type", "sun_exposure", "indoor_unit_position_known", "room_overview_context_observed", "indoor_installation_area_observed"],
+  installation: ["outdoor_unit_position_known", "line_route_known", "estimated_line_length_m", "core_drilling_count", "condensate_route_known", "electrical_supply_known", "accessibility_known", "outdoor_installation_area_observed", "line_route_context_observed", "wall_penetration_context_observed"],
 } as const;
 export const ALL_PROPERTY_KEYS = [...PROPERTY_KEYS.project, ...PROPERTY_KEYS.room, ...PROPERTY_KEYS.installation] as const;
 export const UNCERTAINTY_CLASSES = ["confirmed", "sufficient_with_assumption", "uncertain", "blocked", "requires_site_check"] as const;
@@ -24,6 +26,8 @@ export type ActorClass = typeof ACTOR_CLASSES[number];
 export type EntityType = typeof ENTITY_TYPES[number];
 export type PropertyKey = typeof ALL_PROPERTY_KEYS[number];
 export type EpistemicStatus = typeof EPISTEMIC_STATUSES[number];
+export type KnowledgeStrength = typeof KNOWLEDGE_STRENGTHS[number];
+export type PropertyClass = typeof PROPERTY_CLASSES[number];
 export type ReadinessLevel = typeof READINESS_LEVELS[number];
 export type UncertaintyClass = typeof UNCERTAINTY_CLASSES[number];
 export type DomainErrorCode = typeof ERROR_CODES[number];
