@@ -1,4 +1,5 @@
 import { findContradictions, getEffectiveClaims } from "./knowledge-state";
+import { getPropertyStrengthContract } from "./property-strength-registry";
 import type { KnowledgeClaim, KnowledgeState } from "./schemas";
 import { ALL_PROPERTY_KEYS, PROPERTY_KEYS, READINESS_DIMENSIONS, type PropertyKey, type ReadinessLevel, type UncertaintyClass } from "./types";
 
@@ -23,7 +24,7 @@ export function deriveMissingInformation(state: KnowledgeState) {
     const claim = current.get(key);
     if (usable(claim) && !contradictions.has(key)) return [];
     const entity_type = (Object.entries(PROPERTY_KEYS).find(([, keys]) => (keys as readonly string[]).includes(key))?.[0] ?? "project") as "project" | "room" | "installation";
-    const entity_id = getEffectiveClaims(state).find((item) => item.entity_type === entity_type)?.entity_id ?? state.project_id;
+    const entity_id = getEffectiveClaims(state).find((item) => item.entity_type === entity_type && getPropertyStrengthContract(item.property_key).property_class !== "descriptive")?.entity_id ?? state.project_id;
     const rule = requirements[key];
     return [{ information_key: key, entity_type, entity_id, importance: rule.importance, reason_code: contradictions.has(key) ? "contradictory_evidence" as const : rule.reason, blocks_level: rule.level, can_use_assumption: rule.assumption, can_require_site_check: rule.site }];
   });
