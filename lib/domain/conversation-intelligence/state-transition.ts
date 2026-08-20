@@ -28,7 +28,7 @@ function invalidInput(input: unknown): StateTransitionApplyFailure {
 }
 
 const sameEvidence = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
-const toClaim = (proposal: StateTransitionProposal["claim_proposals"][number], createdAt: string): KnowledgeClaim => ({ claim_id: proposal.claim_id, project_id: proposal.project_id, entity_type: proposal.entity_type, entity_id: proposal.entity_id, property_key: proposal.property_key, value: proposal.value, value_type: proposal.value_type, epistemic_status: proposal.epistemic_status, evidence: proposal.evidence.map((item) => ({ ...item })), created_at: createdAt, state_version: proposal.proposed_state_version, ...(proposal.supersedes_claim_id ? { supersedes_claim_id: proposal.supersedes_claim_id } : {}) } as KnowledgeClaim);
+const toClaim = (proposal: StateTransitionProposal["claim_proposals"][number], createdAt: string): KnowledgeClaim => ({ claim_id: proposal.claim_id, project_id: proposal.project_id, entity_type: proposal.entity_type, entity_id: proposal.entity_id, property_key: proposal.property_key, value: proposal.value, value_type: proposal.value_type, epistemic_status: proposal.epistemic_status, evidence: proposal.evidence.map((item) => ({ ...item })), created_at: createdAt, state_version: proposal.proposed_state_version, ...(proposal.knowledge_strength ? { knowledge_strength: proposal.knowledge_strength } : {}), ...(proposal.supersedes_claim_id ? { supersedes_claim_id: proposal.supersedes_claim_id } : {}) } as KnowledgeClaim);
 
 export function applyStateTransitionProposal(input: unknown): StateTransitionApplyResult {
   const parsed = stateTransitionApplyContextSchema.safeParse(input);
