@@ -75,10 +75,10 @@ describe("Descriptive Knowledge Contracts", () => {
     expect(deriveMissingInformation(after).some((item) => item.information_key === "outdoor_unit_position_known")).toBe(true);
   });
 
-  it("erlaubt nur Planner-Evidence-Kontext und aktiviert noch keine Mapping Rule", () => {
+  it("erlaubt nur Planner-Evidence-Kontext und exakt fünf descriptive Mapping Rules", () => {
     const descriptive = PROPERTY_STRENGTH_REGISTRY.filter((item) => item.property_class === "descriptive");
     expect(descriptive.every((item) => ["evidence_context_satisfied", "human_review_context"].includes(item.planner_context_effect))).toBe(true);
     expect(descriptive.every((item) => item.technical_readiness_effect === "none")).toBe(true);
-    expect(OBSERVATION_CLAIM_MAPPING_REGISTRY.filter((item) => item.review_class === "auto_proposable")).toEqual([]);
+    expect(OBSERVATION_CLAIM_MAPPING_REGISTRY.filter((item) => item.review_class === "auto_proposable").map((item) => item.property_key).sort()).toEqual([...DESCRIPTIVE_PROPERTY_KEYS].sort());
   });
 });

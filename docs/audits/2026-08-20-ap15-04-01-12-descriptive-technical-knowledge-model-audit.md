@@ -571,3 +571,59 @@ Fokussierte Tests decken geschlossene/strikte Strengths, Registry-Vollständigke
 `WHATSAPP — NOT IMPLEMENTED`
 
 `OVERALL PRODUCT — NOT PRODUCTION READY`
+
+## AP-15-04-01-12-02 Observation to Descriptive Claim Proposals Result
+
+### Freigegebene Mapping Rules und Properties
+
+Die bestehende statische `OBSERVATION_CLAIM_MAPPING_REGISTRY` enthält nun genau fünf `auto_proposable`-Regeln: `room_overview_visible` → `room_overview_context_observed`, `indoor_area_visible` → `indoor_installation_area_observed`, `outdoor_area_visible` → `outdoor_installation_area_observed`, `line_route_context_visible` → `line_route_context_observed` und `wall_penetration_context_visible` → `wall_penetration_context_observed`. Jede Regel ist versioniert, target-, value- und entity-gebunden, tief immutable und erzeugt ausschließlich Boolean `true`, Strength `descriptive_fact` und Epistemik `observed`.
+
+### Quality Gate, Actor Boundary und Strength Validation
+
+Nur `sufficient_for_observation` ist proposal-fähig. Partial, insufficient, wrong target, obstructed, ambiguous und invalid bleiben fail closed; eine Confidence-Schwelle existiert nicht. `admin`, `reviewer` und `ai` sind für diese schwachen Proposals zulässig; Customer und System werden abgewiesen. Vor jeder Erzeugung wird die zentrale Grenze `validateClaimStrengthForProperty` verwendet. AI kann lediglich ein Proposal erzeugen und weder anwenden noch zu einer technischen Aussage eskalieren.
+
+### Claim- und Evidence Proposal
+
+Das Ergebnis verwendet den bestehenden `KnowledgeClaimProposal`-/`EvidenceProposal`-Vertrag mit injizierten IDs und Zeitpunkten. Die Proposal-Struktur trägt die explizite `knowledge_strength`; Evidence bleibt opaque und enthält nur kontrollierte UUIDs, Source Actor, Source Type, Observed-at und Status. Admin-Media, AI-Analyse und Reviewer-Korrektur verwenden die vorhandenen Source Types `project_media`, `ai_analysis` und `reviewer_correction`. URLs, Storagepfade, Dateinamen, Providerpayloads, Kundentext, Bildbeschreibung und Confidence werden nicht aufgenommen.
+
+### Duplicate Handling, Conflicts und Reviewer Protection
+
+Ein aktiver äquivalenter deskriptiver Claim führt deterministisch zu `duplicate_no_change` ohne neues Proposal. Ein bestehender abweichender effektiver Claim wird nicht superseded, sondern verlangt Human Review. Reviewer- bzw. manuell korrigierte Evidence bleibt geschützt und führt zu `reviewer_protected_claim`. Der Mapper setzt nie `supersedes_claim_id` und führt keine State Transition aus.
+
+### Safety Boundaries
+
+Fenster, Tür, Messreferenz und Accessibility bleiben Observation-only. Mögliche Innen-/Außenmontageflächen bleiben fachliche Prüfung und erzeugen keine Positionsbestätigung. Elektro bleibt Site-check-only. Der schwache Wanddurchführungskontext ist nun deskriptiv proposal-fähig, während Kernbohrungssicherheit, verdeckte Leitungen, Statik und finale Freigabe unverändert Vor-Ort-Grenzen bleiben. Leitungswegkontext bestätigt keine Machbarkeit; kein Proposal erfüllt `line_route_known`. Sichere Zugänglichkeit wird nicht behauptet.
+
+### Simulator und Pipeline Inspector
+
+Der Simulator zeigt für positive Regeln „Deskriptiver Claim-Vorschlag möglich“, fachliches Label, „Kontext wurde beobachtet“, „Deskriptiver Fakt“, „Beobachtet“ sowie prominent „Noch nicht in den Knowledge State übernommen.“ Wandkontext weist getrennt auf die Vor-Ort-Prüfung der Bohrsicherheit hin. Observation-only und Site-check-Anzeigen bleiben bestehen. Die read-only Pipeline endet bei `Evidence Observation → Observation-to-Claim Mapping → Descriptive Claim Proposal` und zeigt danach `State Transition: noch nicht ausgeführt`. Es gibt keinen Apply-, Bestätigen-, Speichern- oder Knowledge-Aktualisieren-Button.
+
+### Knowledge-, Readiness- und Missing-Information-Grenzen
+
+Der Mapper liest den Knowledge State ausschließlich für Equivalent-/Conflict-Erkennung. Er ruft weder `addClaim`, `supersedeClaim` noch `applyStateTransitionProposal` auf. Proposal-Erzeugung verändert Knowledge State, Readiness und Missing Information nicht. Auch ein bereits vorhandener deskriptiver Claim hat gemäß Property-Strength Registry keinen Technical-Readiness-Effekt, erfüllt keine technische Positions-, Routen-, Elektro-, Bohr- oder Accessibility-Property und entfernt keinen technischen Missing-Information-Eintrag. Die produktive Information-Gain-/Planner-Policy wurde nicht verändert.
+
+### Tests und Remaining Limits
+
+Fokussierte Tests decken die exakt fünf Regeln, Immutability/Eindeutigkeit, fünf positive Mappings, Strength/Epistemik/Boolean, Quality, Actors, Observation-only, Placement-, Elektro-, Kernbohrungs-, Route- und Accessibility-Safety, Duplicate Handling sowie unveränderten State, Readiness und Missing Information ab. Simulator-Tests sichern die drei Darstellungsarten, Pipeline-Grenze und fehlende Apply-Aktion.
+
+Nicht implementiert bleiben Claim Apply, Observation-getriebene Knowledge-State-Mutation, automatische Supersession, technische Freigabe, Readiness-/Missing-/Planner-Kopplung, echte Dateien, Upload, Project-Media-Bindung, Storage, Datenbank/Supabase, Vision/OCR/AI-API, WhatsApp, Knowledge Base und Metrics.
+
+**OBSERVATION TO DESCRIPTIVE CLAIM PROPOSALS — IMPLEMENTED**
+
+**SAFE AUTO-PROPOSABLE DESCRIPTIVE RULES — IMPLEMENTED**
+
+**DESCRIPTIVE PROPOSAL STRENGTH — DESCRIPTIVE_FACT ONLY**
+
+**AUTOMATIC CLAIM APPLY — NOT IMPLEMENTED**
+
+**KNOWLEDGE STATE MUTATION FROM OBSERVATION — NOT IMPLEMENTED**
+
+**TECHNICAL READINESS EFFECT — NONE**
+
+**CUSTOMER PHOTO PROJECT BINDING — NOT IMPLEMENTED**
+
+**VISION — NOT IMPLEMENTED**
+
+**WHATSAPP — NOT IMPLEMENTED**
+
+**OVERALL PRODUCT — NOT PRODUCTION READY**
