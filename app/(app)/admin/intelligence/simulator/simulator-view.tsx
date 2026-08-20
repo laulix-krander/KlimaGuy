@@ -10,10 +10,12 @@ import {
   createEvidenceObservationState,
   EVIDENCE_OBSERVATION_DEFINITIONS,
   observationOptionsForTarget,
+  proposeKnowledgeClaimFromObservation,
   recordEvidenceObservation,
   SIMULATOR_SCENARIOS,
   type SimulatorScenarioId,
   type EvidenceObservationType,
+  type ObservationClaimMappingResult,
 } from "@/lib/domain/conversation-intelligence";
 import type { RenderedCustomerInteraction } from "@/lib/domain/conversation-intelligence/question-template-types";
 
@@ -86,6 +88,7 @@ export function ConversationSimulator() {
   const [evidenceResponses,setEvidenceResponses]=useState<Array<{request_id:string;outcome:"provided"|"declined"|"skipped"}>>([]);
   const [observationState,setObservationState]=useState(()=>createEvidenceObservationState(context.project_id,context.conversation_id));
   const [selectedObservations,setSelectedObservations]=useState<readonly EvidenceObservationType[]>([]);
+  const [mappingResult,setMappingResult]=useState<ObservationClaimMappingResult>();
   const [currentInteraction, setCurrentInteraction] =
     useState<RenderedCustomerInteraction | null>(
       () => context.interpretation_inputs.rendered_interaction,
@@ -111,6 +114,7 @@ export function ConversationSimulator() {
     setEvidenceResponses([]);
     setObservationState(createEvidenceObservationState(start.project_id,start.conversation_id));
     setSelectedObservations([]);
+    setMappingResult(undefined);
     setMessages([
       interactionMessage(start.interpretation_inputs.rendered_interaction, 0),
     ]);
@@ -267,6 +271,13 @@ export function ConversationSimulator() {
       if(!result.success){setError(`Beobachtung abgelehnt: ${result.code}`);return;}next=result.state;
     }
     setObservationState(next);setSelectedObservations([]);setNotice("Beobachtung gespeichert. Noch keine technische Bewertung; offene Fachinformation bleibt unverändert.");
+    setMappingResult(undefined);
+  };
+  const inspectTechnicalDerivation=()=>{
+    const observation=observationState.observations.at(-1);if(!observation)return;
+    const knowledgeState=last?.success?last.knowledge_state:context.knowledge_state;
+    const entityType=observation.target_key==="room_overview"||observation.target_key==="indoor_area_overview"?"room":"installation";
+    setMappingResult(proposeKnowledgeClaimFromObservation({observations:[observation],project_id:context.project_id,conversation_id:context.conversation_id,entity_type:entityType,entity_id:context.project_id,knowledge_state:knowledgeState,proposal_ids:{claim_id:"97000000-0000-4000-8000-000000000001",evidence_id:"97000000-0000-4000-8000-000000000002"},occurred_at:context.occurred_at}));
   };
   const replay = () => {
     let replayContext = createSimulatorStart(scenario);
@@ -531,7 +542,7 @@ export function ConversationSimulator() {
             <p className="text-xs font-bold uppercase text-teal-800">Foto vorhanden – Beobachtung simulieren</p>
             <fieldset className="mt-3 space-y-2"><legend className="font-semibold">Kontrollierte Beobachtungen</legend>{observationOptionsForTarget(last.evidence_availability.find(item=>item.status==="available_unanalysed")!.target_key).map(type=><label className="block" key={type}><input checked={selectedObservations.includes(type)} className="mr-2" onChange={event=>setSelectedObservations(current=>event.target.checked?[...current,type]:current.filter(item=>item!==type))} type="checkbox"/>{EVIDENCE_OBSERVATION_DEFINITIONS[type].label}</label>)}</fieldset>
             <button className="mt-4 rounded bg-teal-800 px-4 py-2 text-white disabled:opacity-50" disabled={!selectedObservations.length} onClick={saveObservations} type="button">Beobachtung speichern</button>
-            {observationState.observations.length?<><p className="mt-4 font-semibold">Foto vorhanden – ausgewertet</p><ul className="list-disc pl-5 text-sm">{observationState.observations.map(item=><li key={item.observation_id}>{EVIDENCE_OBSERVATION_DEFINITIONS[item.observation_type].label}</li>)}</ul><p className="mt-2 font-semibold text-amber-800">Noch keine technische Bewertung.</p></>:null}
+            {observationState.observations.length?<><p className="mt-4 font-semibold">Foto vorhanden – ausgewertet</p><ul className="list-disc pl-5 text-sm">{observationState.observations.map(item=><li key={item.observation_id}>{EVIDENCE_OBSERVATION_DEFINITIONS[item.observation_type].label}</li>)}</ul><button className="mt-4 rounded border border-teal-800 px-4 py-2 font-semibold text-teal-900" onClick={inspectTechnicalDerivation} type="button">Technische Ableitung prüfen</button>{mappingResult?<div className="mt-4 rounded border border-amber-300 bg-amber-50 p-3" role="status"><p className="font-bold">{mappingResult.kind==="claim_proposal"?"Claim-Vorschlag möglich":mappingResult.kind==="site_check_required"?"Vor Ort prüfen":mappingResult.kind==="human_review_required"||mappingResult.kind==="conflicting_observations"?"Fachliche Prüfung erforderlich":"Nur Beobachtung"}</p>{mappingResult.kind==="claim_proposal"?<><dl className="mt-2 text-sm"><dt>Property</dt><dd>{propertyLabels[mappingResult.claim_proposal.property_key]??mappingResult.claim_proposal.property_key}</dd><dt>Vorgeschlagener Wert</dt><dd>{String(mappingResult.claim_proposal.value)}</dd><dt>Epistemischer Status</dt><dd>{statusLabels[mappingResult.claim_proposal.epistemic_status]??mappingResult.claim_proposal.epistemic_status}</dd><dt>Review Class</dt><dd>{mappingResult.review_class}</dd></dl><p className="mt-2 font-bold text-amber-900">Noch nicht in den Knowledge State übernommen.</p></>:mappingResult.kind==="observation_only"||mappingResult.kind==="insufficient_evidence"||mappingResult.kind==="unsupported_mapping"||mappingResult.kind==="invalid_context"?<p className="mt-2 text-sm">Aus dieser Beobachtung wird keine technische Aussage abgeleitet.</p>:null}</div>:<p className="mt-2 font-semibold text-amber-800">Noch keine technische Bewertung.</p>}</>:null}
           </article>:null}
         </section>
         <aside className="space-y-3" aria-label="Intelligence Inspector">
@@ -787,6 +798,8 @@ export function ConversationSimulator() {
               "Evidence Request Planning",
               "Evidence Response / Replanning",
               "Evidence Observation",
+              "Observation-to-Claim Mapping",
+              "Claim Proposal / Observation Only / Review / Site Check",
             ].map((step) => (
               <details className="mt-2 rounded border p-2" key={step}>
                 <summary>{step}</summary>
@@ -795,7 +808,7 @@ export function ConversationSimulator() {
                 </p>
               </details>
             ))}
-            <p className="mt-3 text-sm font-semibold">Observation-to-Claim Mapping: noch nicht implementiert</p>
+            <p className="mt-3 text-sm font-semibold">State Transition: noch nicht ausgeführt.</p>
           </details>
           {debug ? (
             <details className={box} open>
