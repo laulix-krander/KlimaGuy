@@ -83,4 +83,13 @@ describe("Internal Conversation Simulator", () => {
     expect(lineRouteResult.missing_information.some((need) => typeof need === "object" && need !== null && "information_key" in need && need.information_key === "line_route_known")).toBe(true);
     expect(lineRouteResult.planner_result.kind).toMatch(/selected_action|stop_result/u);
   });
+
+  it("zeigt ausschließlich kontrollierte synthetische Observation Controls ohne Medien- oder Claim-Aktion",()=>{
+    render(createElement(ConversationSimulator));
+    const source=String(ConversationSimulator);
+    expect(source).not.toMatch(/type=["']file|FileReader|mediaDevices|Vision|Claim erzeugen|Montage freigeben/u);
+    expect(source).toContain("Beobachtung speichern");
+    expect(source).toContain("Observation-to-Claim Mapping: noch nicht implementiert");
+    expect(source).toContain("Noch keine technische Bewertung");
+  });
 });

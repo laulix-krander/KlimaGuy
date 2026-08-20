@@ -7,8 +7,13 @@ import {
   executeSimulatorAnswer,
   executeSimulatorContinuation,
   executeSimulatorEvidenceResponse,
+  createEvidenceObservationState,
+  EVIDENCE_OBSERVATION_DEFINITIONS,
+  observationOptionsForTarget,
+  recordEvidenceObservation,
   SIMULATOR_SCENARIOS,
   type SimulatorScenarioId,
+  type EvidenceObservationType,
 } from "@/lib/domain/conversation-intelligence";
 import type { RenderedCustomerInteraction } from "@/lib/domain/conversation-intelligence/question-template-types";
 
@@ -79,6 +84,8 @@ export function ConversationSimulator() {
   const [runs, setRuns] = useState<SimulatorRun[]>([]);
   const [raws, setRaws] = useState<RawCustomerAnswer["raw_value"][]>([]);
   const [evidenceResponses,setEvidenceResponses]=useState<Array<{request_id:string;outcome:"provided"|"declined"|"skipped"}>>([]);
+  const [observationState,setObservationState]=useState(()=>createEvidenceObservationState(context.project_id,context.conversation_id));
+  const [selectedObservations,setSelectedObservations]=useState<readonly EvidenceObservationType[]>([]);
   const [currentInteraction, setCurrentInteraction] =
     useState<RenderedCustomerInteraction | null>(
       () => context.interpretation_inputs.rendered_interaction,
@@ -102,6 +109,8 @@ export function ConversationSimulator() {
     setRuns([]);
     setRaws([]);
     setEvidenceResponses([]);
+    setObservationState(createEvidenceObservationState(start.project_id,start.conversation_id));
+    setSelectedObservations([]);
     setMessages([
       interactionMessage(start.interpretation_inputs.rendered_interaction, 0),
     ]);
@@ -243,6 +252,21 @@ export function ConversationSimulator() {
     setEvidenceResponses(items=>[...items,{request_id:request.request_id,outcome}]);setRuns(items=>[...items,execution.result]);setContext(execution.next);
     const label=outcome==="provided"?"Foto vorhanden – noch nicht ausgewertet":outcome==="declined"?"Kann ich nicht liefern":"Übersprungen";
     setMessages(items=>[...items,{message_id:`evidence-response-${cycle}`,kind:"evidence_response",primary_text:label,cycle_index:cycle}]);setNotice("Evidence Response verarbeitet; offene Fachinformation bleibt unverändert.");
+  };
+  const saveObservations=()=>{
+    const available=last?.success?last.evidence_availability.find(item=>item.status==="available_unanalysed"&&item.evidence_id&&item.request_id):undefined;
+    if(!available||!selectedObservations.length)return;
+    let next=observationState;
+    for(const [index,type] of selectedObservations.entries()){
+      const bad=type.startsWith("image_");
+      const quality=type==="image_insufficient"?"insufficient":type==="image_obstructed"?"obstructed":type==="image_wrong_area"?"wrong_target":"sufficient_for_observation";
+      const status=type==="image_insufficient"?"insufficient":type==="image_obstructed"?"requires_review":type==="image_wrong_area"?"rejected":"observed";
+      const reason=type==="image_insufficient"?"insufficient_view":type==="image_obstructed"?"view_obstructed":type==="image_wrong_area"?"wrong_target_shown":"visible_feature_recorded";
+      const suffix=String(next.revision+index+1).padStart(12,"0");
+      const result=recordEvidenceObservation({state:next,availability:available,observation:{observation_id:`96000000-0000-4000-8000-${suffix}`,contract_version:1,evidence_id:available.evidence_id!,project_id:context.project_id,conversation_id:context.conversation_id,target_key:available.target_key,observation_category:"observation",observation_type:type,observation_value:bad?{kind:"evidence_condition",value:null}:{kind:"visibility",value:"visible"},source_actor_class:"admin",observed_at:context.occurred_at,evidence_quality:quality,interpretation_status:status,scope:{request_id:available.request_id!,scope_key:"requested_target"},reason_codes:[reason]}});
+      if(!result.success){setError(`Beobachtung abgelehnt: ${result.code}`);return;}next=result.state;
+    }
+    setObservationState(next);setSelectedObservations([]);setNotice("Beobachtung gespeichert. Noch keine technische Bewertung; offene Fachinformation bleibt unverändert.");
   };
   const replay = () => {
     let replayContext = createSimulatorStart(scenario);
@@ -503,6 +527,12 @@ export function ConversationSimulator() {
               ) : null}
             </article>
           )}
+          {last?.success&&last.evidence_availability.some(item=>item.status==="available_unanalysed") ? <article className={`${box} border-teal-500`}>
+            <p className="text-xs font-bold uppercase text-teal-800">Foto vorhanden – Beobachtung simulieren</p>
+            <fieldset className="mt-3 space-y-2"><legend className="font-semibold">Kontrollierte Beobachtungen</legend>{observationOptionsForTarget(last.evidence_availability.find(item=>item.status==="available_unanalysed")!.target_key).map(type=><label className="block" key={type}><input checked={selectedObservations.includes(type)} className="mr-2" onChange={event=>setSelectedObservations(current=>event.target.checked?[...current,type]:current.filter(item=>item!==type))} type="checkbox"/>{EVIDENCE_OBSERVATION_DEFINITIONS[type].label}</label>)}</fieldset>
+            <button className="mt-4 rounded bg-teal-800 px-4 py-2 text-white disabled:opacity-50" disabled={!selectedObservations.length} onClick={saveObservations} type="button">Beobachtung speichern</button>
+            {observationState.observations.length?<><p className="mt-4 font-semibold">Foto vorhanden – ausgewertet</p><ul className="list-disc pl-5 text-sm">{observationState.observations.map(item=><li key={item.observation_id}>{EVIDENCE_OBSERVATION_DEFINITIONS[item.observation_type].label}</li>)}</ul><p className="mt-2 font-semibold text-amber-800">Noch keine technische Bewertung.</p></>:null}
+          </article>:null}
         </section>
         <aside className="space-y-3" aria-label="Intelligence Inspector">
           <div className="flex items-center justify-between">
@@ -610,7 +640,7 @@ export function ConversationSimulator() {
           </details>
           <details className={box}>
             <summary className="cursor-pointer font-bold">Evidence Requests</summary>
-            {last?.success&&last.evidence_request_state.requests.length?<ul className="mt-3 space-y-2 text-sm">{last.evidence_request_state.requests.map(request=><li key={request.request_id}><strong>{request.target_key}</strong> · {request.status}<br/>Unterstützt: {request.requested_for_information_keys.map(key=>propertyLabels[key]??key).join(", ")}<br/>{last.evidence_availability.some(item=>item.request_id===request.request_id&&item.status==="available_unanalysed")?"Foto vorhanden – noch nicht ausgewertet":"Noch keine Evidence vorhanden"} · Versuche: {request.attempts}{debug?<code className="block">{request.request_id}</code>:null}</li>)}</ul>:<p className="mt-3 text-sm">Keine Evidence Requests.</p>}
+            {last?.success&&last.evidence_request_state.requests.length?<ul className="mt-3 space-y-2 text-sm">{last.evidence_request_state.requests.map(request=><li key={request.request_id}><strong>{request.target_key}</strong> · {request.status}<br/>Unterstützt: {request.requested_for_information_keys.map(key=>propertyLabels[key]??key).join(", ")}<br/>{observationState.observations.some(item=>item.scope.request_id===request.request_id)?"Foto vorhanden – ausgewertet":last.evidence_availability.some(item=>item.request_id===request.request_id&&item.status==="available_unanalysed")?"Foto vorhanden – noch nicht ausgewertet":"Noch keine Evidence vorhanden"} · Versuche: {request.attempts}{debug?<code className="block">{request.request_id}</code>:null}</li>)}</ul>:<p className="mt-3 text-sm">Keine Evidence Requests.</p>}
           </details>
           <details className={box}>
             <summary className="cursor-pointer font-bold">Readiness</summary>
@@ -756,6 +786,7 @@ export function ConversationSimulator() {
               "Rendering",
               "Evidence Request Planning",
               "Evidence Response / Replanning",
+              "Evidence Observation",
             ].map((step) => (
               <details className="mt-2 rounded border p-2" key={step}>
                 <summary>{step}</summary>
@@ -764,6 +795,7 @@ export function ConversationSimulator() {
                 </p>
               </details>
             ))}
+            <p className="mt-3 text-sm font-semibold">Observation-to-Claim Mapping: noch nicht implementiert</p>
           </details>
           {debug ? (
             <details className={box} open>

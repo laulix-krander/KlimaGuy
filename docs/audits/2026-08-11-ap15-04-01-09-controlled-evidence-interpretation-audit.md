@@ -533,3 +533,73 @@ Ausdrückliche Bestätigung für dieses Paket:
 **WHATSAPP MEDIA COLLECTION — NOT IMPLEMENTED**
 
 **OVERALL PRODUCT — NOT PRODUCTION READY**
+
+## AP-15-04-01-10 Synthetic Evidence Interpretation and Observation Domain Result
+
+### Finalisierte Ownerentscheidungen und Architektur
+
+Für dieses Paket sind Observation-first, die sechs bereits aktiven Evidence Targets, ausschließlich synthetische Admin-Observations und die vollständige Claim-/State-/Readiness-Grenze finalisiert. Der implementierte Pfad endet bewusst bei `Evidence Asset (opaque identity) → EvidenceObservation`. Observation Sets, Conflict-Automation, Supersession, Vision Adapter und Observation-to-Claim Mapping bleiben außerhalb des Pakets.
+
+### Observation Contract und Typen
+
+Der Contract ist strict, readonly und versioniert. Er bindet UUIDs für Observation, Evidence, Projekt und Conversation, Target, die feste Kategorie `observation`, typgebundenen Value, bestehenden Actor, Offset-Timestamp, qualitative Evidence Quality, Interpretation Status, schmalen Request-Scope und geschlossene Reason Codes. URLs, Storagepfade, Dateinamen, PII, Providerantworten und freie Payloads sind nicht vorgesehen und zusätzliche Felder werden abgelehnt.
+
+Die Allowlist umfasst `room_overview_visible`, `wall_area_visible`, `window_visible`, `door_visible`, `indoor_area_visible`, `outdoor_area_visible`, `possible_indoor_mounting_area_visible`, `possible_outdoor_mounting_area_visible`, `line_route_context_visible`, `wall_penetration_context_visible`, `electrical_connection_visible`, `accessibility_context_visible`, `measurement_reference_visible`, `image_insufficient`, `image_obstructed` und `image_wrong_area`. „Possible mounting area“ bleibt trotz sichtbarkeitsbezogener Benennung ausschließlich Observation und erzeugt keine Hypothese oder technische Bewertung.
+
+### Quality, Target Binding und Safety
+
+Quality ist ausschließlich `sufficient_for_observation`, `partially_sufficient`, `insufficient`, `wrong_target`, `obstructed`, `ambiguous` oder `invalid`; es gibt keine Confidence oder Modellwahrscheinlichkeit. Eine tief immutable Registry bindet die Allowlist an `room_overview`, `indoor_area_overview`, `outdoor_area_overview`, `line_route_context`, `electrical_area` und `accessibility_context`.
+
+Die Safety-Invarianten sind explizit: `electrical_connection_visible` ist keine elektrische Eignung, `wall_area_visible` keine Kernbohrungssicherheit, eine mögliche Außenfläche keine Positionsfreigabe, sichtbarer Leitungsweg-Kontext keine Machbarkeit und Zugänglichkeitskontext keine sichere Zugangsmethode. Technische Freigabe-Typen sind nicht im Contract enthalten.
+
+### State, Creation, Multiple Observations und Bad Evidence
+
+`EvidenceObservationState` enthält nur Projekt, Conversation, Revision und immutable Observations. `recordEvidenceObservation` ist pure und prüft strict Schema, Bindungen, opaque Evidence-ID, `available_unanalysed`, Target-Kompatibilität, Actor, Quality, Timestamp, doppelte ID und doppelte Semantik. Mehrere kompatible Observations mit eigenen IDs dürfen dasselbe Evidence Asset referenzieren. Availability bleibt für die atomare Erfassung des vollständigen Observation-Sets `available_unanalysed`; „ausgewertet“ ist im Simulator eine Darstellung der vorhandenen Observation, keine technische Bestätigung.
+
+`image_insufficient`, `image_obstructed` und `image_wrong_area` verwenden ausschließlich einen `null`-Evidence-Condition-Value und dürfen keinen positiven sichtbaren Befund vortäuschen. Sie erzeugen weder Claims noch Readiness-Fortschritt.
+
+### Replay und Actor-Schutz
+
+Eine identische Submission mit derselben Observation-ID liefert deterministisch `observation_replayed`, fügt nichts hinzu und erhöht die Revision nicht. Eine gleiche ID mit anderem Inhalt sowie doppelte Observation-Semantik werden fail closed abgelehnt. `admin` und `reviewer` bleiben als Ursprung erhalten; `ai` ist contractfähig, wird vom Simulator aber nicht verwendet. Dieses Paket implementiert absichtlich keine AI-Supersession.
+
+### Simulator und Pipeline
+
+Nach synthetisch bereitgestellter Evidence zeigt der Admin-Simulator „Foto vorhanden – Beobachtung simulieren“, ausschließlich Registry-basierte Checkboxen und „Beobachtung speichern“. Danach zeigt er die kontrollierten Labels, „Foto vorhanden – ausgewertet“ und „Noch keine technische Bewertung.“ Die read-only Pipeline endet bei Evidence Observation und kennzeichnet `Observation-to-Claim Mapping: noch nicht implementiert`. Es gibt kein File Input, keine Kamera, Vision, freie Interpretation oder Claim-/Freigabeaktion.
+
+### Knowledge-, Readiness- und Missing-Information-Grenzen
+
+Observation Creation nimmt weder Knowledge State noch Readiness oder Missing Information entgegen und gibt diese auch nicht zurück. Sie importiert keine Claim Proposal-, State Transition-, Knowledge-State- oder Readiness-Anwendung. Damit bleiben Knowledge State, Readiness und Technical Missing Information strukturell unverändert; vorhandene Evidence verhindert weiterhin eine identische neue Photo Request, löst aber den technischen Need nicht.
+
+### Events und Tests
+
+Der bestehende Eventvertrag wurde nicht erweitert: Für die lokale synthetische Observation ist kein Conversation Event erforderlich, und dadurch entsteht kein Risiko eines freien oder medienbezogenen Payloads. Fokussierte Vitest-Tests decken strict Schema, UUID/Timestamp/Actor, Registry-Immutability, Target Binding, Safety-Begriffe, Elektro-/Kernbohrungsgrenze, immutable State, Multiple Observations, Bad Evidence, Replay, Availability und Actor-Ursprung ab. Simulator-Tests sichern kontrollierte Controls und die Abwesenheit von File-, Kamera-, Vision- und Claim-Aktionen.
+
+### Verbleibende Grenzen
+
+Nicht implementiert bleiben Observation-to-Claim Mapping, technische Claims aus Fotos, Observation Sets über mehrere Assets, Conflict Detection, Korrektur-/Supersessionworkflow, echte Project-Media-Bindung, Vision/OCR/AI, Expert Review Workflow, Persistenz, Supabase und WhatsApp. Diese Grenzen benötigen jeweils spätere getrennte Pakete und Sicherheitsentscheidungen.
+
+**EVIDENCE OBSERVATION DOMAIN — IMPLEMENTED**
+
+**SYNTHETIC EVIDENCE INTERPRETATION — IMPLEMENTED**
+
+**TARGET-SPECIFIC OBSERVATION REGISTRY — IMPLEMENTED**
+
+**EVIDENCE QUALITY CONTRACT — IMPLEMENTED**
+
+**OBSERVATION SAFETY BOUNDARY — IMPLEMENTED**
+
+**OBSERVATION REPLAY / IDEMPOTENCY — IMPLEMENTED**
+
+**OBSERVATION TO CLAIM MAPPING — NOT IMPLEMENTED**
+
+**TECHNICAL CLAIM FROM PHOTO — NOT IMPLEMENTED**
+
+**REAL PROJECT MEDIA BINDING — NOT IMPLEMENTED**
+
+**VISION ANALYSIS — NOT IMPLEMENTED**
+
+**EXPERT EVIDENCE REVIEW WORKFLOW — NOT IMPLEMENTED**
+
+**WHATSAPP MEDIA COLLECTION — NOT IMPLEMENTED**
+
+**OVERALL PRODUCT — NOT PRODUCTION READY**
