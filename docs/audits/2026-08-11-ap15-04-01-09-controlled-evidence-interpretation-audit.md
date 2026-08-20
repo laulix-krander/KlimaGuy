@@ -603,3 +603,59 @@ Nicht implementiert bleiben Observation-to-Claim Mapping, technische Claims aus 
 **WHATSAPP MEDIA COLLECTION — NOT IMPLEMENTED**
 
 **OVERALL PRODUCT — NOT PRODUCTION READY**
+
+## AP-15-04-01-11 Observation to Claim Proposal Mapping Result
+
+### Mapping Architecture
+
+Der implementierte pure Pfad lautet `EvidenceObservation` → statische `OBSERVATION_CLAIM_MAPPING_REGISTRY` → `assessObservationClaimSufficiency` → kontrolliertes Mapping-Ergebnis → **STOP**. `proposeKnowledgeClaimFromObservation` validiert Kontext, Binding, Observation, Target, Quality, Actor, Rule und Konflikte. Das Resultat ist eine strikte discriminated union aus `claim_proposal`, `observation_only`, `human_review_required`, `site_check_required`, `insufficient_evidence`, `unsupported_mapping`, `conflicting_observations` und `invalid_context`. Alle Resultate tragen ausschließlich geschlossene Reason Codes sowie `causes_state_change: false` und `application_status: not_applied`.
+
+### Review Classes und Static Registry
+
+Die geschlossenen Klassen sind `auto_observable`, `auto_proposable`, `human_review_required` und `site_check_only`. `auto_proposable` erlaubt ausschließlich einen noch nicht angewendeten `KnowledgeClaimProposal`. Die tief eingefrorene, versionierte Build-time-Registry wird über Target, Observation Type, optionalen Value, Entity Type und Property Key eindeutig. Jede Rule enthält Actor-Allowlist, Mindestqualität, Review Class, permitted Property/Epistemik, Reason Codes, optionales Observation Set und die Site-Check-Grenze. Runtime-, DB- und LLM-Regeln existieren nicht.
+
+Das aktuelle Knowledge Model besitzt keinen deskriptiven Property Key, der Fenster, Tür, Wandbereich, Raumübersicht oder Messreferenz verlustfrei ausdrückt. Deshalb ist die `auto_proposable`-Teilmenge im konservativen MVP bewusst leer. Die wiederverwendeten `KnowledgeClaimProposal`-/`EvidenceProposal`-Schemas und die Proposal-Union sind vorbereitet; es wird aber kein künstlicher Property Key und kein semantisch stärkerer Boolean erzeugt.
+
+### Sufficiency, Evidence Quality und Actor Boundary
+
+Nur `sufficient_for_observation` passiert das normale Quality Gate. `partially_sufficient`, `ambiguous`, `obstructed`, `insufficient`, `wrong_target` und `invalid` erzeugen keinen positiven Proposal. Observation Sets zählen nur bei ausdrücklicher Rule. `admin`, `reviewer` und `ai` sind pro Rule zugelassen; AI ist kein Reviewer und kein Actor umgeht Safety-Grenzen.
+
+### Claim Values und fachliche Grenzen
+
+Ein später zulässiger Claim darf nur einen statisch erlaubten, verlustfreien Wert, die Rule-Epistemik und opaque UUID-Referenzen verwenden. URLs, Pfade, Dateinamen, Providerdaten, Prompts und Confidence sind ausgeschlossen.
+
+- **Electrical Boundary:** `electrical_connection_visible` bleibt `site_check_required`; weder `electrical_supply_known` noch Eignung oder Normkonformität werden erzeugt.
+- **Core Drilling Boundary:** `wall_penetration_context_visible` bleibt `site_check_required`; keine Bohrsicherheit und keine Aussage über verdeckte Leitungen.
+- **Placement Boundary:** mögliche Innen-/Außenmontagebereiche verlangen fachliche Prüfung und setzen keine Position auf bekannt oder freigegeben.
+- **Line Route Boundary:** `line_route_context_visible` bleibt Observation; weder `line_route_known` noch Machbarkeit folgt daraus.
+- **Accessibility Boundary:** sichtbarer Zugänglichkeitskontext bleibt Observation; sichere Arbeitsmethode oder `accessibility_known` folgt nicht.
+- **Site Check:** verdeckte Leitungen, Statik, rechtsverbindliche Schallbewertung und finale Montagefreigabe bleiben statische Vor-Ort-Grenzen.
+
+### Conflicts, Reviewer Protection und Human Review
+
+Inkompatible Values desselben Observation Types ergeben `conflicting_observations`; es gibt keine Quality-Hierarchie. Kundenclaim und Foto besitzen keine Wahrheitshierarchie. Weil die aktuelle Registry keinen positiven Observation-Claim erzeugt, kann sie weder Kundenclaims noch reviewer-/manual-corrected Claims superseden. Bei späteren Rules bleibt die vorhandene Contradiction-/Supersession-Architektur autoritativ. Safety-sensitive Hypothesen und echte Claimkonflikte verlangen kontrolliertes Review; normale deskriptive Observations dürfen `observation_only` bleiben. Review hebt keine Site-Check-Grenze auf.
+
+### Claim Proposal, Knowledge, Readiness und Missing Information Boundary
+
+Der vorhandene Evidence-/Claim-Proposal-Vertrag unterstützt nun auch die bereits vorhandenen opaque Sources `project_media`, `ai_analysis` und `reviewer_correction` mit ihren Actors. IDs und `occurred_at` werden von außen injiziert; es gibt weder Zufall noch globale Uhr. Das Paket ruft weder `addClaim`, `supersedeClaim` noch `applyStateTransitionProposal` auf. Knowledge State wird nur gelesen, nie mutiert. Mapping verändert weder State-Version/Claims noch Readiness oder Missing Information.
+
+### Simulator und Pipeline Inspector
+
+Der Admin-Simulator bietet nach gespeicherter synthetischer Observation den manuellen Button „Technische Ableitung prüfen“ und zeigt kontrolliert „Nur Beobachtung“, „Claim-Vorschlag möglich“, „Vor Ort prüfen“ oder „Fachliche Prüfung erforderlich“. Eine Proposal-Darstellung enthält Property, Wert, epistemischen Status und Review Class sowie „Noch nicht in den Knowledge State übernommen.“ Es gibt keinen Apply-/Bestätigen-/Speichern-Button. Der Inspector endet bei `Observation-to-Claim Mapping` → `Claim Proposal / Observation Only / Review / Site Check`; `State Transition: noch nicht ausgeführt` bleibt sichtbar.
+
+### Tests und Remaining Limits
+
+Fokussierte Vitest-Tests decken strikte Schemas, Extra Fields, Registry-Immutabilität/Eindeutigkeit, Actors, Qualität, konservative Reference Cases, Safety-Grenzen, Bad Evidence, Observation-Konflikte, Determinismus und unveränderten Knowledge State, Readiness und Missing Information ab. Simulator-Tests sichern Button, kontrollierte Anzeigen, Pipeline-Grenze und das Fehlen einer Apply-Aktion. Positive Observation-Claims bleiben aus, bis ein verlustfreier bestehender Property Key auditiert ist. Ebenfalls nicht implementiert sind Anwendung, reale Medienbindung, Vision/AI, Expert Review und WhatsApp.
+
+**OBSERVATION TO CLAIM MAPPING — IMPLEMENTED**
+**STATIC SUFFICIENCY / REVIEW REGISTRY — IMPLEMENTED**
+**CONTROLLED CLAIM PROPOSALS FROM OBSERVATIONS — IMPLEMENTED**
+**AUTOMATIC TECHNICAL ELECTRICAL CLAIMS — FORBIDDEN**
+**AUTOMATIC CORE-DRILLING SAFETY CLAIMS — FORBIDDEN**
+**OBSERVATION CLAIM APPLICATION — NOT IMPLEMENTED**
+**KNOWLEDGE STATE MUTATION FROM OBSERVATION — NOT IMPLEMENTED**
+**REAL PROJECT MEDIA BINDING — NOT IMPLEMENTED**
+**VISION ANALYSIS — NOT IMPLEMENTED**
+**EXPERT EVIDENCE REVIEW WORKFLOW — NOT IMPLEMENTED**
+**WHATSAPP MEDIA COLLECTION — NOT IMPLEMENTED**
+**OVERALL PRODUCT — NOT PRODUCTION READY**

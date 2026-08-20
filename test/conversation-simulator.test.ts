@@ -89,7 +89,13 @@ describe("Internal Conversation Simulator", () => {
     const source=String(ConversationSimulator);
     expect(source).not.toMatch(/type=["']file|FileReader|mediaDevices|Vision|Claim erzeugen|Montage freigeben/u);
     expect(source).toContain("Beobachtung speichern");
-    expect(source).toContain("Observation-to-Claim Mapping: noch nicht implementiert");
+    expect(source).toContain("Technische Ableitung prüfen");
+    expect(source).toContain("Claim-Vorschlag möglich");
+    expect(source).toContain("Nur Beobachtung");
+    expect(source).toContain("Vor Ort prüfen");
+    expect(source).toContain("Noch nicht in den Knowledge State übernommen");
+    expect(source).toContain("State Transition: noch nicht ausgeführt");
+    expect(source).not.toMatch(/>Übernehmen<|>Bestätigen<|Claim speichern|Knowledge aktualisieren/u);
     expect(source).toContain("Noch keine technische Bewertung");
   });
 });
