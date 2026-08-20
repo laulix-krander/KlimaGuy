@@ -24,6 +24,8 @@ function continuationInput() {
     information_collection_state: result.information_collection_state,
     retry_state: { ...result.retry_state, items: [{ information_key: "room_area_sqm" as const, entity_type: "room" as const, entity_id: result.knowledge_state.claims.find((claim) => claim.entity_type === "room")!.entity_id, attempts: 1, last_outcome: "unknown" as const, last_attempt_at: "2026-08-07T10:04:00.000Z" }] },
     customer_effort_state: { ...result.customer_effort_state, unanswered_questions: 3, repeated_questions: 2 },
+    evidence_request_state: result.evidence_request_state,
+    evidence_availability: result.evidence_availability,
     previous_planner_result: result.planner_result,
     expected_state_version: result.current_state_version,
     assessment_id: "93000000-0000-4000-8000-000000000001",
