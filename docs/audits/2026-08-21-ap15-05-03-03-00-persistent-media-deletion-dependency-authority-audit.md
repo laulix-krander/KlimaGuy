@@ -459,3 +459,51 @@ Es wurde ausschließlich diese Auditdatei erstellt. Keine Implementierung, Migra
 `VISION — NOT IMPLEMENTED`
 
 `OVERALL PRODUCT — NOT PRODUCTION READY`
+
+# AP-15-05-03-03-01 — Persistent Evidence Interpretation and Observation Baseline Result
+
+## Ergebnis und Migration
+
+Die additive Migration `202608210004_persistent_evidence_interpretations.sql` führt getrennte, locatorfreie Autoritäten für Interpretation Runs und typed Observations ein. Runs besitzen geschlossene Status-/Result-Code-Checks, `synthetic_observation_v1`, Revision und Zeitpunkte. Observations speichern die bestehende Observation-Type-, Value-, Quality-, Actor- und Interpretation-Status-Semantik verlustfrei in kontrollierten Spalten; Rawpayloads existieren nicht.
+
+## Integrität, Gates und Idempotenz
+
+Zusammengesetzte FKs erzwingen Project→Evidence und Project/Evidence→Run→Observation in derselben Projektdomäne. Start und Recording sperren Evidence, Media und Lifecycle. Nur aktive `bound` Evidence auf `ready`, physisch `present`, logisch aktiv und Lifecycle `idle` ist zulässig; Tombstone, Delete Claim, `absent` und fehlendes Original werden fail closed als `source_media_unavailable` abgewiesen. Ein partieller Unique Index erlaubt pro Evidence/Interpretationsversion nur einen aktiven Run und Start-Replay liefert diesen Run. Ein partieller semantischer Observation-Index verhindert aktive Duplikate.
+
+Target Binding verwendet im TypeScript-Contract die bestehende `TARGET_OBSERVATION_REGISTRY`; die RPC besitzt dieselbe geschlossene Defense-in-depth-Prüfung. Quality bleibt exakt `sufficient_for_observation|partially_sufficient|insufficient|wrong_target|obstructed|ambiguous|invalid`, ohne Confidence. Der Contract ist für `admin|reviewer|ai` vorbereitet, produktive RPC-Ausführung rekonstruiert aber ausschließlich den angemeldeten Admin. Mehrere Observations pro Run sind zulässig. Revision 1 ist die CAS-Baseline; Invalidation/Supersession sind schemafähig, ohne Correction Workflow oder automatische „neueste gewinnt“-Regel.
+
+## Completion, Dependency und Race
+
+`pending|in_progress` ist eine offene Interpretation-Dependency. Explizite Completion validiert Observation-Anzahl; `completed`, `insufficient_evidence` und `invalidated` schließen nur diese Interpretation-Dependency. Fachliches `insufficient_evidence` ohne Observation bleibt strikt von technischem `failed` getrennt. Eine persistente Observation bleibt wegen noch fehlender Proposal-/Review-/Correction-Autoritäten für Media Delete fail closed. Es gibt noch keine `project_media_dependencies`-Projektion und keine Freigabe Evidence-gebundener Löschung. Gegenseitige Row Locks mit Lifecycle/Media verhindern Start nach Delete Claim; ein aktiver Run ist deterministisch als zukünftiger Delete-Blocker ableitbar.
+
+## RLS, Grants, Audit, DTO und Read Service
+
+Beide Tabellen haben RLS. Authenticated erhält nur `SELECT`; Admin-Lesen ist projekt-/aktivitätsgebunden. Mutation erfolgt ausschließlich über `SECURITY DEFINER` RPCs mit festem `search_path`, `auth.uid()` und intern bestimmter Rolle. Es gibt weder allgemeines `ALL` noch direktes Update/Delete. Auditaktionen `interpretation_started`, `observation_recorded`, `interpretation_completed`, `interpretation_insufficient` und `interpretation_failed` enthalten nur opaque IDs, Result, Revision und Timestamp. Strikte schmale DTOs und ein project-scoped Read Service laden Runs und Observations in zwei mengenbasierten Queries ohne Media-ID oder Locator.
+
+## Tests und verbleibende Grenzen
+
+Vitest prüft geschlossene Contracts, Version, Quality, canonical Target Binding, Tabellen/FKs/Indizes, Active-Run- und Duplicate-Schutz, Locks, Physical-/Tombstone-Gates, RLS/Grants, fixed search path, Auditaktionen und Architekturausschlüsse. Bestehende Observation-, Mapping-, Evidence-, Lifecycle-, Tombstone-, Ready-Delete- und Planner-Regressionen bleiben unverändert. Nicht enthalten sind Vision/KI, Storage-Lesen, Signed URLs, Claim-Proposal-, Review-, Apply- oder Correction-Persistenz, Planner-/Readiness-Änderungen, WhatsApp und die authoritative Dependency Projection.
+
+**PERSISTENT EVIDENCE INTERPRETATION AUTHORITY — IMPLEMENTED**
+
+**PERSISTENT OBSERVATION AUTHORITY — IMPLEMENTED**
+
+**REAL MEDIA OBSERVATION RECORDING — IMPLEMENTED**
+
+**AUTOMATIC VISION INTERPRETATION — NOT IMPLEMENTED**
+
+**PERSISTENT CLAIM PROPOSAL AUTHORITY — NOT IMPLEMENTED**
+
+**PERSISTENT HUMAN REVIEW AUTHORITY — NOT IMPLEMENTED**
+
+**PERSISTENT CORRECTION AUTHORITY — NOT IMPLEMENTED**
+
+**AUTHORITATIVE MEDIA DEPENDENCY PROJECTION — NOT IMPLEMENTED**
+
+**EVIDENCE-BOUND DELETE — STILL FAIL-CLOSED BEYOND INTERPRETATION**
+
+**WHATSAPP — NOT IMPLEMENTED**
+
+**VISION — NOT IMPLEMENTED**
+
+**OVERALL PRODUCT — NOT PRODUCTION READY**
