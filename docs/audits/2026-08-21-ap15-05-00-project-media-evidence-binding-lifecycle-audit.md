@@ -393,3 +393,61 @@ Ausdrücklich ausschließlich Audit und diese eine Dokumentationsdatei. Keine ec
 `POSITIVE-ONLY DESCRIPTIVE CONFLICT SEMANTICS — DEFERRED TO CORRECTION/INVALIDATION AUDIT`
 
 `OVERALL PRODUCT — NOT PRODUCTION READY`
+
+## AP-15-05-01 Project Media ↔ Evidence Persistence Baseline Result
+
+### Implementierte Baseline
+
+Die additive Migration `202608210001_project_evidence_persistence.sql` ergänzt `public.project_evidence`. `public.project_media` bleibt unverändert die einzige Medien- und Storage-Autorität. Jede klassifizierte semantische Bindung besitzt eine von `project_media_id` getrennte, DB-generierbare UUID `id` (im Contract `evidence_id`). Conversation-, Source-Message- und Evidence-Request-Spalten wurden bewusst nicht angelegt: Die zugehörigen Entitäten sind weiterhin in-memory und wären keine belastbare FK-Autorität.
+
+Die einzelne Baseline-Tabelle repräsentiert eine klassifizierte Evidence-Usage-Identity aus Media, Target und Purpose. Ein Medium kann deshalb über weitere Zeilen andere zulässige Target-/Purpose-Verwendungen erhalten, ohne das Original zu duplizieren. Eine normalisierte Asset-plus-Usage-Aufteilung wird erst mit persistenter Conversation-/Request-Provenienz nötig; dieses Paket führt keine semantisch falsche freie Purpose-Liste ein.
+
+### Integrität und Vertrauensgrenzen
+
+- Die zusammengesetzte FK `(project_id, project_media_id) → project_media(project_id, id) ON DELETE RESTRICT` verbietet Cross-Project-Bindings in der Datenbank und verhindert stilles Löschen gebundener Medien. Die bereits vorhandene Unique-Grenze von `project_media(project_id,id)` wird wiederverwendet.
+- Target und Purpose verwenden exakt die geschlossenen Conversation-Intelligence-Keys. DB-Checks sichern beide Allowlists; das strict Zod-Schema prüft zusätzlich die bestehende Target-/Purpose-Kompatibilität aus dem Registry-Contract.
+- `source_channel` ist in diesem Paket ausschließlich `internal_upload`, `source_actor_class` ausschließlich `admin`. Beides wird serverseitig gesetzt. Keine Providerfelder oder zukünftigen, noch nicht integrierten Channels werden vorgetäuscht.
+- Die fachliche Statusallowlist lautet `bound | unclassified | binding_ambiguous | invalidated`; die aktuelle Insert-Grenze gestattet absichtlich nur explizit klassifiziertes `bound`. Retention- oder Projektlifecycle wurde nicht in diese Achse aufgenommen.
+- Eine Unique Constraint auf `(project_id, project_media_id, evidence_target, purpose)` und Vorab-/Konflikt-Re-Read liefern das idempotente Ergebnis `already_bound`. Andere gültige Target-/Purpose-Kombinationen bleiben möglich.
+- RLS ist aktiviert und fail closed. Ausschließlich authentifizierte Admins mit gültigem Profil und aktivem Projekt dürfen lesen/einfügen; Reviewer erhalten in diesem MVP keine Binding- oder Evidence-Lesepolicy. Es gibt keine anon/customer Policy.
+- Grants sind explizit auf `SELECT, INSERT` für `authenticated` begrenzt; `public`, `anon` und `authenticated` werden vorher vollständig revoked. Es gibt weder UPDATE- noch DELETE-Grant und keine Service Role.
+
+### Servergrenze, Eligibility und Contract
+
+Die schmale Server Action und ihr testbarer Service authentifizieren den User, validieren Profil und zentrale Capability `canBindProjectMediaAsEvidence`, prüfen aktives Projekt, Media-Existenz, Projektgleichheit sowie Eligibility. Ausschließlich aktive, nicht soft-gelöschte `ready`-Bilder werden gebunden; `pending`, `failed`, gelöschte Medien und PDFs/Dokumente werden abgewiesen. Input ist strict und enthält nur `project_id`, `project_media_id`, `evidence_target`, `purpose`; ID, Actor, Channel und Status bleiben serverbestimmt. DB/RLS wiederholen die wesentlichen Projekt- und Media-Gates.
+
+Das schmale DTO enthält ausschließlich `evidence_id`, Projekt-/Media-ID, Target, Purpose, Channel, Actor-Klasse, Binding-Status und Erstellzeit. Storage-Pfad, Bucket, Signed URL, Uploadtoken, Dateiname, Providerdaten, Metadaten und PII sind strukturell ausgeschlossen. Der kontrollierte Intelligence-Adapter gibt nur opaque `evidence_id`, Target, Purpose und `available_unanalysed` weiter. Dieser Availability-Wert bedeutet ausschließlich: ein validiertes, vorhandenes `ready`-Bild wurde explizit klassifiziert. Er löst keine Analyse aus.
+
+### Knowledge-/Audit-Grenze
+
+Binding erzeugt keine Observation, Claim Proposal, Claim, Missing-Resolution, Knowledge-State-Mutation oder Readinesssteigerung. Es gibt keine automatische Interpretation. Ein atomarer Audit-Log plus Evidence-Insert würde eine zusätzliche RPC erfordern; um das Paket nicht zu verbreitern und keinen irreführend nicht-atomaren Audit zu schreiben, bleibt fachliches Audit Logging einem separaten RPC-/Workflow-Paket vorbehalten. Die stabile Evidence-ID und serverseitige Actor-Klasse schaffen dafür die spätere Basis, ersetzen aber kein Audit Event.
+
+### Tests und verbleibende Grenzen
+
+Migration-/Architekturtests prüfen Tabelle, UUID-PK, zusammengesetzte Cross-Project-FK, `RESTRICT`, Checks, Indizes, Unique Binding, RLS, Policies, Grants und das Fehlen von Storage-/Signed-URL-Feldern. Schema-, Capability-, Service-, DTO- und Adaptertests prüfen strict Input, Target-/Purpose-Kompatibilität, Injection-Abwehr, Admin-only, Projekt-/Media-Fehler, Cross-Project-Rejection, Eligibility, Idempotenz, neutrale DB-Fehler, exakte DTO Keys, `available_unanalysed` und das Ausbleiben von Knowledge-/Readiness-Mutationen und verbotenen Integrationen.
+
+Weiterhin nicht vorhanden sind persistente Conversation-/Message-/Request-Bindings, unclassified Ingestion, Customer Channels, Audit-RPC, Retention, Tombstone, Ready-Media-Purge, Observation-/Claim-Persistenz, WhatsApp und Vision. Das nächste kleinste Paket ist AP-15-05-02 für die kontrollierte interne Binding-UX bzw. deren expliziten Workflow, ohne automatische Interpretation.
+
+### Status
+
+`PROJECT MEDIA ↔ EVIDENCE PERSISTENCE — IMPLEMENTED`
+
+`PERSISTENT EVIDENCE IDENTITY — IMPLEMENTED`
+
+`CROSS-PROJECT EVIDENCE BINDING — PROHIBITED`
+
+`SIGNED URL IN EVIDENCE DOMAIN — PROHIBITED`
+
+`REAL MEDIA OBSERVATION — NOT IMPLEMENTED`
+
+`CUSTOMER SOURCE MESSAGE BINDING — NOT IMPLEMENTED`
+
+`EVIDENCE REQUEST PERSISTENT BINDING — NOT IMPLEMENTED`
+
+`CUSTOMER PHOTO RETENTION — NOT IMPLEMENTED`
+
+`WHATSAPP INGESTION — NOT IMPLEMENTED`
+
+`VISION — NOT IMPLEMENTED`
+
+`OVERALL PRODUCT — NOT PRODUCTION READY`
