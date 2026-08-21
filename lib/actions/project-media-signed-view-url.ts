@@ -20,7 +20,7 @@ export async function createProjectMediaSignedViewUrlAction(input: unknown): Pro
       }>,
     getReadyProjectMedia: async (mediaId, projectId) => supabase.from("project_media")
       .select("id,project_id,storage_bucket,storage_path,mime_type,media_type,upload_status,deleted_at")
-      .eq("id", mediaId).eq("project_id", projectId).eq("upload_status", "ready").is("deleted_at", null)
+      .eq("id", mediaId).eq("project_id", projectId).eq("upload_status", "ready").eq("physical_state", "present").is("deleted_at", null)
       .maybeSingle() as unknown as Promise<{ data: ReadyProjectMediaForSignedViewUrl | null; error: unknown }>,
     createSignedUrl: async (bucket, path, expiresIn) => supabase.storage.from(bucket)
       .createSignedUrl(path, expiresIn) as unknown as Promise<{

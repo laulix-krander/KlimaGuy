@@ -435,3 +435,64 @@ Keine persistente Offer-Entity, Execution-Autorität oder produktiven Observatio
 `VISION — NOT IMPLEMENTED`
 
 `OVERALL PRODUCT — NOT PRODUCTION READY`
+## AP-15-05-03-02 — Evidence Tombstone and Recoverable Ready-Media Deletion Result
+
+### Ergebnis und Grenze
+
+Migration `202608210003_ready_media_deletion_tombstones.sql` ergänzt die von AP-15-05-03-01 bereitgestellte Eligibility um eine getrennte Execution-/Physical-State-Achse. Der Workflow ist ausdrücklich **keine atomare DB+Storage-Transaktion**, sondern `transactional intent + eventual-consistent side effect + transactional completion + reconciliation`. Er wird nur durch eine explizite Admin-Ausführung gestartet; es gibt weder UI noch Scheduler, Queue oder automatische Retentionentscheidung.
+
+### Attempt, Claim, CAS und Revalidation
+
+`project_media_deletion_attempts` hält opaque Attempt-/Claim-UUID, Projekt-/Media-Bindung, erwartete Lifecycle-Revision, geschlossenen Status und Reason, Attemptnummer, DB-Zeitpunkte, fünfminütige DB-Lease, Actor, Policyversion sowie ausschließlich sanitisierte Failure-/Storage-Kategorien. Die Claim-RPC sperrt Project, Media, Lifecycle und einen aktiven Attempt. Sie validiert unmittelbar vor Intent Cross-Project-Bindung, Revision, `deletion_eligible + eligible`, Policy, `hold=none`, aktives `closed` Project, Ready-/Present-Media und den persistent autoritativen Evidence-Gate erneut. Weil weiterhin weder Offer-Entity noch persistente Observation/Proposal/Review/Correction-Autorität existiert, bleibt gebundene Evidence fail-closed. Ein unverfallener Claim ist idempotent; abgelaufene Leases werden kontrolliert als recoverable markiert und neu geclaimt. Ein aktiver Execution-State blockiert normale Evidence-Bindings; CAS und Execution-State verhindern stilles Überschreiben.
+
+### Storage Boundary und Service Role
+
+Nur die Claim-RPC gibt den kanonischen privaten Locator an die server-only Ready-Media-Capability. Der Action-Input enthält ausschließlich Project-ID, Media-ID, erwartete Revision und freigegebenen Reason; weder Token, Actor, Bucket noch Pfad. Der enge Adapter bindet Bucket und kanonischen Pfad nochmals an die geclaimten Projekt-/Media-UUIDs und besitzt nur `remove([path])`. Er teilt ausschließlich den bestehenden server-only Remove-Client, nicht Orphan-Auswahl, Queue oder Purge-Service. Der Service-Role-Key bleibt in dieser bestehenden Serverdatei und wird weder exportiert noch an einen Browser übergeben. Bereits fehlende Objekte sind im Storage-/Completion-Vertrag als idempotenter Erfolg vorgesehen.
+
+### Completion, Tombstone und Media Row
+
+Die Completion-RPC sperrt und validiert Attempt, Claimtoken, Projekt/Media und Lifecycle-Execution-State atomar. Nach bestätigtem `deleted | already_missing` erzeugt sie per set-basierter Auswahl für **jede** vorhandene Evidence-Identity einen locator- und inhaltsfreien `project_evidence_tombstones`-Datensatz. Der eindeutige Evidence-Key und `ON CONFLICT DO NOTHING` verhindern Duplikate. Danach setzt sie Media `physical_state=absent`, `storage_deleted_at` und `deleted_at`, Lifecycle `physically_deleted`, erhöht dessen Revision genau einmal, schließt Attempt und schreibt Audit in derselben DB-Transaktion. Ein Completion-Replay liefert no-change `already_completed` und erzeugt weder zweiten Tombstone noch zweites Audit. Die `project_media`- und `project_evidence`-Zeilen bleiben erhalten; sämtliche FKs bleiben `ON DELETE RESTRICT`, es gibt weder Hard Delete, `SET NULL` noch Cascade.
+
+Galerie und Single-Signed-View selektieren zusätzlich ausschließlich `physical_state=present`; neue Signed URLs sind damit ab Claim nicht mehr möglich. Der Binding-Serverread und die DB-Insert-Policy verlangen ebenfalls `present` plus Lifecycle `idle`. Der interne Locator bleibt nur in der Media-Zeile für Recovery/Reconciliation; kein Tombstone enthält Bucket, Pfad, Dateiname, URL, EXIF, Hash, Caption, Provider-ID oder PII.
+
+### Failure Recovery, Reconciliation und Audit
+
+Storagefehler werden geschlossen in retryable/permanent klassifiziert und durch eine eigene Failure-RPC als `retryable_failed` oder `terminal_failed` persistiert; Media/Lifecycle zeigen `deletion_failed`. Die Domain klassifiziert jeden öffentlichen Failure Code als `retryable`, `requires_recheck`, `terminal` oder `human_review_required`. Completionfehler nach entferntem Storage bleiben durch Attemptstatus/Physical-State als reconciliationsbedürftig erkennbar. Die schmale Admin-Reconciliation-RPC listet `claimed_storage_unknown`, `storage_deleted_completion_pending`, `retryable_failed` und `stale_attempt`; sie startet keine Arbeit automatisch.
+
+Claim-, Storage-confirmation-, Completion- und Failure-DB-Transitions schreiben jeweils sanitisierte Audit-Events `ready_media_deletion_claimed`, `ready_media_storage_deleted`, `ready_media_deletion_completed` und `ready_media_deletion_failed`. Payloads enthalten nur Actor-/Project-/Media-/Attempt-UUID, Revisionen, Reason, Result und DB-Zeit. Storage selbst kann nicht gemeinsam mit PostgreSQL atomar auditiert werden; die Storage-confirmation wird deshalb unmittelbar danach in einer eigenen Markierungs-Transaktion persistiert, sodass ein nachfolgender Completionfehler eindeutig reconciliierbar bleibt.
+
+### RLS, Grants, Tests und verbleibende Limits
+
+Attempt und Tombstone haben RLS. `PUBLIC`, `anon` und `authenticated` verlieren zunächst alle Tabellenrechte; `authenticated` erhält nur Admin-gefiltertes Select. Mutation erfolgt ausschließlich über Security-Definer-RPCs mit festem `search_path`, internem `auth.uid()`/Admincheck und expliziten Execute-Grants. Es existieren keine breiten Insert/Update/Delete-Grants. Der bestehende Orphan-Purge bleibt eine vollständig getrennte Uploadhygiene-Pipeline für `pending | failed`.
+
+Vitest deckt Input/Permission, Claim-/Locator-Weitergabe, Storage success/retryable/permanent, Completion, Failuredispositionen sowie statisch Attempt/Tombstone/FKs/Cross-Project/RLS/Grants/Locks/CAS/Hold/Project/Evidence/Lease/Idempotenz/Audit und Hard-Delete-/Locator-Ausschlüsse ab. Bestehende Lifecycle-, Evidence-, Galerie-, Signed-URL-, Upload- und Orphanregressionen bleiben Bestandteil der Vollsuite.
+
+Verbleibend sind eine echte Offer-Autorität und persistente Observation-/Proposal-/Review-/Correction-Dependencies, eine fachlich/legal freigegebene Retentiondauer, automatische Eligibility/Retention, Maintenance-Scheduler sowie ein eigener Customer-Deletion-Request-Workflow. `customer_request` ist nur migrationsseitig contract-ready und bewusst kein normaler Action-Reason.
+
+### Status
+
+`DELETION ELIGIBILITY — IMPLEMENTED`
+
+`RECOVERABLE READY MEDIA DELETION — IMPLEMENTED`
+
+`READY MEDIA STORAGE DELETE — IMPLEMENTED`
+
+`PROJECT MEDIA DB HARD DELETE — NOT IMPLEMENTED`
+
+`EVIDENCE TOMBSTONES — IMPLEMENTED`
+
+`CROSS-PROJECT DELETE — PROHIBITED`
+
+`OPEN/UNKNOWN DEPENDENCY DELETE — PROHIBITED`
+
+`AUTOMATIC RETENTION SCHEDULER — NOT IMPLEMENTED`
+
+`RETENTION DURATION — NOT CONFIGURED`
+
+`CUSTOMER DELETION REQUEST WORKFLOW — NOT IMPLEMENTED`
+
+`WHATSAPP MEDIA INGESTION — NOT IMPLEMENTED`
+
+`VISION — NOT IMPLEMENTED`
+
+`OVERALL PRODUCT — NOT PRODUCTION READY`
