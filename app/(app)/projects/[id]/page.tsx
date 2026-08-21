@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, Badge } from "@/components/ui";
 import { humanReviewDisplay, optionalFieldDisplay, projectClassDisplay, projectSummaryDisplay } from "@/lib/domain/display";
-import { canChangeProjectClass, canChangeProjectStatus, canCreateProjectNote, canEditAnyProjectNote, canEditOwnProjectNote, canEditProjectCoreFields, canEditProjectSummary, canChangeHumanReview, canReserveProjectMediaUpload, canSoftDeleteAnyProjectNote, canSoftDeleteOwnProjectNote } from "@/lib/domain/permissions";
+import { canBindProjectMediaAsEvidence, canChangeProjectClass, canChangeProjectStatus, canCreateProjectNote, canEditAnyProjectNote, canEditOwnProjectNote, canEditProjectCoreFields, canEditProjectSummary, canChangeHumanReview, canReserveProjectMediaUpload, canSoftDeleteAnyProjectNote, canSoftDeleteOwnProjectNote } from "@/lib/domain/permissions";
 import { projectIdSchema, roleSchema } from "@/lib/domain/schemas";
 import { statusToLabel } from "@/lib/domain/mappers";
 import type { ProjectClass, ProjectStatus } from "@/lib/domain/types";
@@ -18,6 +18,8 @@ import { ProjectSuccessMessage, type ProjectSuccessSearchParams } from "./projec
 import { ProjectMediaUploadForm } from "./project-media-upload-form";
 import { getProjectMediaGallery } from "@/lib/actions/project-media-gallery";
 import { ProjectMediaGallery } from "./project-media-gallery";
+import { getProjectEvidence } from "@/lib/actions/project-evidence-read";
+import { bindProjectMediaEvidenceForProjectAction } from "@/lib/actions/project-evidence-binding";
 
 
 function formatDate(value: string): string {
@@ -71,7 +73,10 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
   const mayEditHumanReview = parsedRole.success && canChangeHumanReview(parsedRole.data);
   const mayCreateProjectNote = parsedRole.success && canCreateProjectNote(parsedRole.data);
   const mayUploadProjectMedia = parsedRole.success && canReserveProjectMediaUpload(parsedRole.data);
+  const mayBindEvidence = parsedRole.success && canBindProjectMediaAsEvidence(parsedRole.data);
   const mediaGallery = parsedRole.success ? await getProjectMediaGallery(project.id) : null;
+  const evidence = mayBindEvidence ? await getProjectEvidence(project.id) : null;
+  const bindEvidence = bindProjectMediaEvidenceForProjectAction.bind(null, project.id);
 
   const { data: notesData } = await supabase
     .from("project_notes")
@@ -131,7 +136,7 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
           <ProjectMediaUploadForm projectId={project.id} />
         </Card>
       ) : null}
-      {mediaGallery ? <ProjectMediaGallery isAdmin={parsedRole.success && parsedRole.data === "admin"} result={mediaGallery} /> : null}
+      {mediaGallery ? <ProjectMediaGallery bindEvidence={bindEvidence} evidenceByMediaId={evidence?.success ? evidence.data.by_media_id : {}} isAdmin={parsedRole.success && parsedRole.data === "admin"} mayBindEvidence={mayBindEvidence && evidence?.success === true} result={mediaGallery} /> : null}
       <Card>
         <div className="mb-4">
           <h2 className="text-xl font-semibold">Interne Notizen</h2>

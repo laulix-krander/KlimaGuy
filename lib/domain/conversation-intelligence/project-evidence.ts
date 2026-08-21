@@ -8,15 +8,21 @@ export const EVIDENCE_BINDING_STATUSES = ["bound", "unclassified", "binding_ambi
 const uuid = z.string().uuid();
 const timestamp = z.string().datetime({ offset: true });
 
-export const bindProjectMediaEvidenceInputSchema = z.object({
+const bindProjectMediaEvidenceFields = {
   project_id: uuid,
   project_media_id: uuid,
   evidence_target: evidenceTargetKeySchema,
   purpose: evidencePurposeCodeSchema,
-}).strict().superRefine((value, context) => {
+} as const;
+
+function validatePurpose(value: { evidence_target: z.infer<typeof evidenceTargetKeySchema>; purpose: z.infer<typeof evidencePurposeCodeSchema> }, context: z.RefinementCtx) {
   const target = EVIDENCE_TARGET_REGISTRY.find((entry) => entry.target_key === value.evidence_target);
   if (!target?.purpose_codes.includes(value.purpose)) context.addIssue({ code: "custom", path: ["purpose"], message: "purpose_target_mismatch" });
-});
+}
+
+export const bindProjectMediaEvidenceInputSchema = z.object(bindProjectMediaEvidenceFields).strict().superRefine(validatePurpose);
+
+export const bindProjectMediaEvidenceClientInputSchema = z.object({ project_media_id: bindProjectMediaEvidenceFields.project_media_id, evidence_target: bindProjectMediaEvidenceFields.evidence_target, purpose: bindProjectMediaEvidenceFields.purpose }).strict().superRefine(validatePurpose);
 
 export const projectEvidenceDtoSchema = z.object({
   evidence_id: uuid,
@@ -38,6 +44,7 @@ export const conversationEvidenceAssetSchema = z.object({
 }).strict();
 
 export type BindProjectMediaEvidenceInput = z.infer<typeof bindProjectMediaEvidenceInputSchema>;
+export type BindProjectMediaEvidenceClientInput = z.infer<typeof bindProjectMediaEvidenceClientInputSchema>;
 export type ProjectEvidenceDto = z.infer<typeof projectEvidenceDtoSchema>;
 export type ConversationEvidenceAsset = z.infer<typeof conversationEvidenceAssetSchema>;
 
