@@ -52,6 +52,11 @@ export function canViewProjectMedia(role: Role): boolean {
   return role === "admin" || role === "reviewer";
 }
 
+/** AP-15-05-01 keeps classification of real media at the admin boundary. */
+export function canBindProjectMediaAsEvidence(role: Role | null): boolean {
+  return role === "admin";
+}
+
 export function canViewProjectMediaOrphanInventory(role: Role): boolean {
   return role === "admin";
 }
