@@ -42,3 +42,4 @@ export * from "./conversation-cycle";
 export * from "./conversation-cycle-fixtures";
 export * from "./conversation-continuation";
 export * from "./simulator";
+export * from "./synthetic-review-e2e-fixtures";

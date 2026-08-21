@@ -21,6 +21,8 @@ describe("Internal Conversation Simulator", () => {
     expect(SIMULATOR_SCENARIOS.map(([id]) => id)).toEqual([
       "minimal_room", "unknown_room_area", "contradictory_room_area", "assumption_required",
       "human_review_required", "retry_limit", "level_3_reached", "empty_synthetic_project",
+      "review_approval_e2e", "review_reject_e2e", "review_insufficient_e2e", "review_conflict_e2e",
+      "review_stale_e2e",
     ]);
     for (const [id] of SIMULATOR_SCENARIOS) {
       const start = createSimulatorStart(id);

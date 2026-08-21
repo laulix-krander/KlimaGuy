@@ -49,3 +49,45 @@ Der bestehende Evidence Inspector zeigt vorhandene Kontexte separat und prominen
 ## Tests und verbleibende Grenzen
 
 Contract, fünf Mappings, positive und negative Deduplizierung, technische Invarianten, Information Gain, Determinismus und inaktive Evidence werden durch Vitest regressiert. Der bestehende Human-Review-Test deckt Approval, Reject, Insufficient, stale und Replay ab. Es gibt weiterhin keine echten Medien, Uploads, Storage-/Datenbankbindung, Vision/OCR/KI, Auto-Apply, automatische Supersession oder technische Freigabe. Das kleinste Folgepaket ist eine rein synthetische, entity-spezifische End-to-End-Simulator-Fixture für alle fünf Review-Ausgänge ohne Erweiterung der Produktionskopplung.
+
+## AP-15-04-01-12-03-03 Synthetic Review End-to-End Regression Result
+
+Die Scenario Registry enthält `review_approval_e2e`, `review_reject_e2e`, `review_insufficient_e2e`, `review_conflict_e2e` und `review_stale_e2e`. Die Fixture nutzt feste UUIDs/Zeitpunkte und ausschließlich die öffentlichen Grenzen Planner → Request → Provided → Availability → Observation → Mapping → Human Review → State Transition Apply → Evidence Context → Information Gain → Planner.
+
+Approval ist für alle fünf descriptive Properties verifiziert. Reject, Evidence Insufficient und Stale mutieren Knowledge, Readiness oder Technical Missing nicht. Replay ergibt `already_applied`, äquivalente Claims ergeben `no_change`. Request History bleibt vom Knowledge-derived Context getrennt. Outdoor Context blockiert nur `outdoor_area_overview`; Accessibility, Line Route und Electrical bleiben targetübergreifend offen. `outdoor_unit_position_known` bleibt ebenfalls offen.
+
+### Entdeckter Contract-Blocker
+
+Ein **valider** Conflict-E2E-Fall ist derzeit nicht konstruierbar: Das Knowledge-Claim-Schema erlaubt für jede descriptive Property ausschließlich `true`, `descriptive_fact` und `observed`. Jeder gültige aktive Claim derselben Entity/Property ist damit äquivalent und führt korrekt zu `no_change`; `false` wird vor dem vorhandenen `conflict_detected`-Reviewzweig vom Schema abgewiesen. Der Regressionstest dokumentiert dieses Fail-closed-Verhalten. Weder wurde ein ungültiger State eingeschleust noch die positive-only Property-Semantik erweitert. Die gültige Konfliktsemantik benötigt eine separate Produktentscheidung.
+
+Der vorhandene Simulator stellt Reviewaktionen, deutsche Ergebnisnachrichten und strukturierte Inspectorwerte bereit; die Szenarioauswahl wurde minimal ergänzt. Echte Medien, Persistenz, Vision und WhatsApp bleiben außerhalb des Pakets.
+
+`SYNTHETIC REVIEW END-TO-END REGRESSION — PARTIALLY IMPLEMENTED / CONFLICT CONTRACT BLOCKED`
+
+`APPROVAL END-TO-END — VERIFIED`
+
+`REJECT END-TO-END — VERIFIED`
+
+`EVIDENCE INSUFFICIENT END-TO-END — VERIFIED`
+
+`CONFLICT END-TO-END — BLOCKED BY POSITIVE-ONLY DESCRIPTIVE CLAIM CONTRACT`
+
+`STALE REVIEW END-TO-END — VERIFIED`
+
+`DESCRIPTIVE FACT → EVIDENCE CONTEXT — VERIFIED`
+
+`DESCRIPTIVE FACT → TECHNICAL KNOWLEDGE — PROHIBITED`
+
+`DESCRIPTIVE FACT → TECHNICAL READINESS — PROHIBITED`
+
+`DESCRIPTIVE FACT → TECHNICAL MISSING RESOLUTION — PROHIBITED`
+
+`REAL MEDIA — NOT IMPLEMENTED`
+
+`PERSISTENCE — NOT IMPLEMENTED`
+
+`VISION — NOT IMPLEMENTED`
+
+`WHATSAPP — NOT IMPLEMENTED`
+
+`OVERALL PRODUCT — NOT PRODUCTION READY`

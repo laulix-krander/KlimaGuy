@@ -15,6 +15,9 @@ export const SIMULATOR_SCENARIOS = [
   ["contradictory_room_area", "Widersprüchliche Raumgröße"], ["assumption_required", "Annahme erforderlich"],
   ["human_review_required", "Human Review"], ["retry_limit", "Retry-Limit"],
   ["level_3_reached", "Level 3 erreicht"], ["empty_synthetic_project", "Leeres Testprojekt"],
+  ["review_approval_e2e", "Review E2E: Approval"], ["review_reject_e2e", "Review E2E: Reject"],
+  ["review_insufficient_e2e", "Review E2E: Evidence unzureichend"], ["review_conflict_e2e", "Review E2E: Konflikt"],
+  ["review_stale_e2e", "Review E2E: veralteter Wissensstand"],
 ] as const;
 export type SimulatorScenarioId = typeof SIMULATOR_SCENARIOS[number][0];
 
@@ -22,6 +25,8 @@ const outcomes: Record<SimulatorScenarioId, Parameters<typeof createSyntheticInt
   minimal_room: "exact", unknown_room_area: "unknown", contradictory_room_area: "exact",
   assumption_required: "assumption_confirmed", human_review_required: "exact", retry_limit: "unknown",
   level_3_reached: "exact", empty_synthetic_project: "exact",
+  review_approval_e2e: "exact", review_reject_e2e: "exact", review_insufficient_e2e: "exact",
+  review_conflict_e2e: "exact", review_stale_e2e: "exact",
 };
 
 export function createSimulatorStart(scenario: SimulatorScenarioId): ConversationCycleContext {
