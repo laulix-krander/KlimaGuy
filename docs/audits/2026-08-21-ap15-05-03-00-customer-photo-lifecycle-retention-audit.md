@@ -373,3 +373,65 @@ Ausdrücklich ausschließlich Audit und diese exakt eine neue Dokumentationsdate
 `VISION — NOT IMPLEMENTED`
 
 `OVERALL PRODUCT — NOT PRODUCTION READY`
+
+# AP-15-05-03-01 — Media Lifecycle and Deletion Eligibility Baseline Result
+
+## Migration und Lifecycle Contract
+
+`202608210002_project_media_lifecycle_eligibility.sql` führt `public.project_media_lifecycle` als getrennte, locatorfreie Entscheidungsautorität ein. Media bleibt in `project_media`, Evidence in `project_evidence`. UUID, `project_id`, eindeutige `project_media_id`, zusammengesetzter Project/Media-FK `RESTRICT`, Revision, Zustände, Policyversion und Zeitstempel bilden die Identity. Cross-Project-Binding und Duplikate scheitern in der DB.
+
+Retention ist geschlossen: `protected | retention_pending | deletion_eligible | deletion_blocked`. Eligibility ist geschlossen: `eligible | blocked | policy_not_configured | dependency_state_unknown | media_not_ready | media_already_logically_deleted | project_state_blocks | offer_state_blocks | evidence_dependency_blocks | lifecycle_state_blocks`. Hold ist `none | operational_hold | legal_hold`; jeder Hold blockiert. Policy ist nur `customer_photo_retention_v1` oder nicht gesetzt und bezeichnet keine Dauer. Ohne Policy gilt `retention_policy_missing`.
+
+Geschlossene Reasons: `media_not_ready`, `media_failed`, `media_pending`, `media_soft_deleted`, `lifecycle_missing`, `retention_policy_missing`, `retention_not_completed`, `project_active`, `offer_state_unknown`, `offer_open`, `offer_preparation_open`, `evidence_dependency_open`, `observation_dependency_unknown`, `proposal_dependency_unknown`, `review_dependency_unknown`, `correction_dependency_unknown`, `legal_or_operational_hold`, `cross_project_mismatch`, `unsupported_media_state`.
+
+## Revision/CAS, Transitionen und Audit
+
+Initialisierung ist per Unique Constraint und `ON CONFLICT DO NOTHING` idempotent. Konfiguration und Evaluation verlangen `expected_revision`; echte Änderungen erhöhen `N → N+1`, identische Aufrufe bleiben `N → N`. Die Admin-RPC erlaubt nur die vier Baseline-Retentionstates und drei Holdstates. Sie kennt kein `deletion_pending`, `deleted` oder `tombstoned`. Geänderte Konfiguration und Evaluation schreiben atomar strukturierte Events in `audit_log`; physischer DB/Storage-Audit bleibt AP-15-05-03-02 vorbehalten.
+
+## Eligibility, Unbound Media und Evidence-bound Media
+
+`evaluateProjectMediaDeletionEligibility` ist pure und deterministisch: keine Mutation, Uhr, Zufall, DB, Fetch oder Environment. Sie bewertet Cross-Project-Integrität, Uploadstatus, Soft Delete, Lifecycle/Policy/Hold, Project-/Offerzustand, Evidence und Dependencies und löscht nichts.
+
+Ungebundenes aktives `ready`-Media erbt keine synthetischen Intelligence-Dependencies. Es benötigt dennoch `closed`, explizite Policy, Hold `none`, `deletion_eligible` und erfolgreiche Evaluation. Es startet keinen Timer.
+
+Für gebundene Evidence fehlen produktive Observation-/Proposal-/Review-/Correction-Autoritäten und eine eigenständige Offer-Entity. Deshalb liefert die persistente Evaluation fail-closed `dependency_state_unknown` samt `offer_state_unknown` und Unknown-Dependency-Reasons. Ein offenes Angebot blockiert im puren Contract mit `offer_open`; `quote_draft`, `quote_sent` und `accepted` blockieren zusätzlich als nicht-`closed` mit `project_active`. `closed` ersetzt für Evidence weder Offer-/Execution-Nachweis noch Retentionentscheidung. Es wurden keine Fake-Dependency-Tabellen ergänzt.
+
+## Permission, RLS, Grants, Read Service und DTO
+
+Read und Mutation sind Admin-only; Reviewer erhalten keine Lifecycle-Capability. RLS verlangt authentifizierten Admin und aktives Projekt. Direkte Tabellenrechte werden vollständig widerrufen und nur SELECT an `authenticated` erteilt; kein INSERT/UPDATE/DELETE-Grant, keine anon/public-Mutation, keine neue Rolle und kein Service-Role-Client. Mutationen laufen nur über eng validierte Admin-RPCs.
+
+Der Server-Read prüft Auth, Rolle und Project Scope. Sein strict DTO enthält nur `project_media_id`, Retention-/Eligibility-/Reason-/Hold-Zustand, Policyversion, Revision und `updated_at`: keine Storagepfade, Signed URLs, Tokens, Providerdaten oder PII.
+
+## Bestehendes Soft Delete, Orphan Boundary und Tests
+
+Die bestehende Ready-Media-Soft-Delete-RPC wurde aus Safety-Gründen minimal gehärtet: `deleted_at` kann nur bei passender Lifecycle-Zeile mit `deletion_eligible`/`eligible`, Policy und ohne Hold gesetzt werden. Es gibt keine neue Produkt-UI und keine physische Löschung. `pending`/`failed` Orphan Cleanup und dessen bestehender enger Purge bleiben unverändert und unabhängig.
+
+Fokussierte Tests prüfen Registry/Schema/DTO, UUID/FK/Unique/RLS/Grants, Permission, Idempotenz/CAS, Soft-Delete-Härtung, Eligibility-Gates, Unknown Fail-Closed, Purity/Determinismus und verbotene Capabilities. Relevante Evidence-, Gallery-, Finalization-, Orphan-, Purge-, Signed-URL- und Conversation-Regressionen wurden ausgeführt.
+
+## Remaining Limits
+
+Keine persistente Offer-Entity, Execution-Autorität oder produktiven Observation-/Proposal-/Review-/Correction-Dependencies: Evidence-bound Media kann deshalb noch nicht grün werden. Keine Retentiondauer, Scheduler, Queue, Deletion Intent/Worker, Storage-Reconciliation, Tombstones oder Customer-Request-Ausführung. Nächstes kleinstes, erst nach Merge separat freizugebendes Paket ist AP-15-05-03-02 für einen kontrollierten CAS-basierten Deletion-Workflow.
+
+`MEDIA LIFECYCLE PERSISTENCE — IMPLEMENTED`
+
+`DELETION ELIGIBILITY — IMPLEMENTED`
+
+`FAIL-CLOSED UNKNOWN DEPENDENCY GATE — IMPLEMENTED`
+
+`RETENTION POLICY DURATION — NOT CONFIGURED`
+
+`OPEN REVIEW DELETE GATE — MODELED FAIL-CLOSED WHERE PERSISTENCE IS UNAVAILABLE`
+
+`READY MEDIA PHYSICAL DELETE — NOT IMPLEMENTED`
+
+`EVIDENCE TOMBSTONES — NOT IMPLEMENTED`
+
+`READY MEDIA PURGE WORKER — NOT IMPLEMENTED`
+
+`CUSTOMER DELETION REQUEST WORKFLOW — NOT IMPLEMENTED`
+
+`WHATSAPP MEDIA INGESTION — NOT IMPLEMENTED`
+
+`VISION — NOT IMPLEMENTED`
+
+`OVERALL PRODUCT — NOT PRODUCTION READY`
