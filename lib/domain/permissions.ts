@@ -77,6 +77,13 @@ export function canApplyReviewedEvidenceClaim(role: Role | null): boolean {
   return role === "admin";
 }
 
+/** Independent correction capabilities; an admin role is never an implicit reviewer override. */
+export function canInvalidateProjectEvidence(role: Role | null): boolean { return role === "admin"; }
+export function canCorrectEvidenceObservation(role: Role | null): boolean { return role === "admin"; }
+export function canCorrectProjectKnowledgeClaim(role: Role | null): boolean { return role === "admin"; }
+/** Intentionally closed until a separately audited stronger capability exists. */
+export function canOverrideReviewerProtectedKnowledgeClaim(_role: Role | null): boolean { return false; }
+
 export function canViewProjectMediaOrphanInventory(role: Role): boolean {
   return role === "admin";
 }

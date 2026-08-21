@@ -50,9 +50,11 @@ export const knowledgeClaimSchema = valuePart.superRefine((claim, context) => {
 });
 export type KnowledgeClaim = z.infer<typeof knowledgeClaimSchema>;
 
-export const knowledgeStateSchema = z.object({ project_id: uuid, conversation_id: uuid, state_version: z.number().int().positive(), claims: z.array(knowledgeClaimSchema).readonly(), updated_at: timestamp }).strict().superRefine((state, context) => {
+export const knowledgeStateSchema = z.object({ project_id: uuid, conversation_id: uuid, state_version: z.number().int().positive(), claims: z.array(knowledgeClaimSchema).readonly(), retracted_claim_ids: z.array(uuid).readonly().optional(), updated_at: timestamp }).strict().superRefine((state, context) => {
   if (state.claims.some((claim) => claim.project_id !== state.project_id)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["claims"], message: "project_mismatch" });
   if (new Set(state.claims.map((claim) => claim.claim_id)).size !== state.claims.length) context.addIssue({ code: z.ZodIssueCode.custom, path: ["claims"], message: "duplicate_claim_id" });
+  if (state.retracted_claim_ids?.some((id) => !state.claims.some((claim) => claim.claim_id === id))) context.addIssue({ code: "custom", path: ["retracted_claim_ids"], message: "retracted_claim_not_found" });
+  if (new Set(state.retracted_claim_ids ?? []).size !== (state.retracted_claim_ids?.length ?? 0)) context.addIssue({ code: "custom", path: ["retracted_claim_ids"], message: "duplicate_retraction" });
 });
 export type KnowledgeState = z.infer<typeof knowledgeStateSchema>;
 

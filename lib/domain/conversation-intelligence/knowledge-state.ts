@@ -6,7 +6,19 @@ const isEvidenceActive = (claim: KnowledgeClaim) => claim.evidence.some((item) =
 
 export function getEffectiveClaims(state: KnowledgeState): readonly KnowledgeClaim[] {
   const supersededIds = new Set(state.claims.map((claim) => claim.supersedes_claim_id).filter((id): id is string => Boolean(id)));
-  return state.claims.filter((claim) => !supersededIds.has(claim.claim_id) && isEvidenceActive(claim));
+  const retractedIds = new Set(state.retracted_claim_ids ?? []);
+  return state.claims.filter((claim) => !supersededIds.has(claim.claim_id) && !retractedIds.has(claim.claim_id) && isEvidenceActive(claim));
+}
+
+/** Claim-less append-only transition used by the persistent correction authority. */
+export function retractClaim(stateInput: unknown, claimId: string, expectedVersion: number, updatedAt: string): DomainResult<KnowledgeState> {
+  const state = knowledgeStateSchema.safeParse(stateInput);
+  if (!state.success) return { success: false, code: "invalid_state_version" };
+  if (state.data.state_version !== expectedVersion) return { success: false, code: "invalid_state_version" };
+  if (!state.data.claims.some((claim) => claim.claim_id === claimId)) return { success: false, code: "claim_not_found" };
+  if (!getEffectiveClaims(state.data).some((claim) => claim.claim_id === claimId)) return { success: false, code: "claim_not_found" };
+  const next = knowledgeStateSchema.safeParse({ ...state.data, state_version: expectedVersion + 1, retracted_claim_ids: [...(state.data.retracted_claim_ids ?? []), claimId], updated_at: updatedAt });
+  return next.success ? { success: true, data: next.data } : { success: false, code: "invalid_state_version" };
 }
 
 export function getEffectiveClaim(state: KnowledgeState, entityId: string, propertyKey: PropertyKey): KnowledgeClaim | undefined {

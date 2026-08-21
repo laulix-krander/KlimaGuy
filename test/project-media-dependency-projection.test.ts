@@ -42,9 +42,9 @@ describe("deriveProjectMediaDependencies", () => {
     ] });
     expect(deriveProjectMediaDependencies(input).dependencies.filter((item) => item.dependency_type === "claim_apply").map((item) => [item.status, item.reason_codes])).toEqual([["resolved", []], ["open", ["claim_apply_retry_required"]]]);
   });
-  it("always exposes unavailable correction, offer and execution authorities", () => {
+  it("keeps only offer and execution as unavailable authorities", () => {
     const result = deriveProjectMediaDependencies(base());
-    expect(result).toMatchObject({ projection_version: MEDIA_DEPENDENCY_PROJECTION_VERSION, completeness: "complete", missing_authority_types: ["correction", "offer", "execution"], reason_codes: ["correction_authority_missing", "offer_authority_missing", "execution_authority_missing"] });
+    expect(result).toMatchObject({ projection_version: MEDIA_DEPENDENCY_PROJECTION_VERSION, completeness: "complete", missing_authority_types: ["offer", "execution"], reason_codes: ["offer_authority_missing", "execution_authority_missing"] });
   });
   it("is deterministic and does not mutate input", () => {
     const input = base({ interpretation_runs: [{ ...source, status: "pending", result_code: null }] });

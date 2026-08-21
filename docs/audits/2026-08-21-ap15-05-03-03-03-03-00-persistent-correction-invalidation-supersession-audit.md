@@ -425,3 +425,45 @@ Dieses Ergebnis ist **ausschließlich Audit und Dokumentation**. Es implementier
 - **WHATSAPP — NOT IMPLEMENTED**
 - **VISION — NOT IMPLEMENTED**
 - **OVERALL PRODUCT — NOT PRODUCTION READY**
+
+# AP-15-05-03-03-03-03-01 — Persistent Correction / Invalidation Baseline Result
+
+## Ergebnis und Migration
+
+Migration `202608210008_persistent_correction_invalidation.sql` implementiert Hybrid E: `project_knowledge_corrections` ist die project-scoped, typisierte Correction Authority; `project_knowledge_claim_retractions` ist die append-only Retraction-Relation. Geschlossen sind Types `evidence_invalidation`, `observation_invalidation`, `observation_supersession`, `proposal_supersession`, `claim_retraction`, `claim_replacement`, Actions `invalidate|supersede|retract|replace`, Status `pending|applied|rejected|no_change|stale|failed` und die neun freigegebenen Reason Codes. Es gibt keine freie Property-/Value-Payload.
+
+## Permissions, CAS und Idempotenz
+
+Die drei zentralen Capabilities für Evidence-, Observation- und Claim-Correction sind MVP Admin-only. Reviewer-, AI-, Customer- und System-Apply ist nicht freigegeben. Reviewer-/`manually_corrected`-Claims bleiben auch für Admin default-deny; die stärkere Override-Capability ist ausdrücklich geschlossen. Evidence/Observation Revision sowie Knowledge-State-Version sind CAS-gebunden, ohne Auto-Rebase. `(project_id,idempotency_key)` und ein Open-Target-Index verhindern Doppelanwendung; Replay/no-change erhöht weder Target- noch State-Version.
+
+## Evidence, Observation und Proposal
+
+Evidence Invalidation ändert nur Lifecycle/Revision, nie Target oder Purpose; ein korrigiertes Binding ist eine neue Row. Invalidierte Evidence kann wegen der bestehenden `binding_status='bound'`-Gates keine neue Interpretation, Observation, Proposal oder Apply speisen. Observation Invalidation nutzt `status`, `invalidated_at`, `revision` und terminalisiert `pending_review`/`approved_apply_pending` atomar als `superseded`; applied History und Review Rows bleiben unverändert. Supersession-Kanten erhalten Same-Project-FK, Self- und One-Active-Successor-Guards; Cycle-validierte Erzeugung bleibt ausschließlich kontrollierter Serverpfad.
+
+## Claim Retraction, Replacement und Effective Semantics
+
+Retraction erzeugt keinen `false`- oder künstlichen `unknown`-Claim. Correction, claimlose `claim_retraction_proposed` Transition und Retraction-Relation bleiben append-only; State `N→N+1`. Die kanonische `getEffectiveClaims(...)` berücksichtigt Supersession, aktive Evidence und das Retraction-Set, wodurch Planner Evidence Context den Fact nicht mehr sieht. Technical Readiness und Technical Missing Information wurden nicht verändert und bleiben für descriptive Retraction semantisch unverändert. Replacement bleibt fail-closed außerhalb des vorhandenen menschlich geprüften `claim_supersession_proposed`-Pfads: keine freie Reconstruction und kein automatischer Conflict Winner.
+
+## Projection, Delete und Tombstone
+
+`claim_correction` ist ein source-specific Dependency Type mit Correction-FK. Pending sowie stale/retryable failed bleiben open; applied/rejected/no_change sind resolved. Correction-Mutationen markieren die Projection transaktional `rebuild_required`. `correction` ist nach vollständigem Rebuild keine Missing Authority mehr; `offer` und `execution` bleiben missing. Evidence-bound Delete bleibt deshalb fail-closed. Tombstoned Originalmedien dürfen nicht neu geprüft werden (`source_media_unavailable`); rein autoritative Retraction benötigt keine vorgetäuschte Mediensichtung.
+
+## RLS, Grants, Audit und Grenzen
+
+RLS ist auf Correction und Retraction aktiv, Admin Read ist project-scoped, Browser-Mutation ist entzogen und ausschließlich SECURITY-DEFINER-RPCs mit fixed `search_path`, `auth.uid()` und interner Rolle sind ausführbar. Audit-Metadaten sind ID-/Reason-/Revision-/Version-basiert und locator-/PII-frei. Implementiert und getestet sind closed Schemas, Target-Shape/FKs, Evidence-/Observation-Invalidierung, Proposal-Supersession, Retraction für alle fünf descriptive Properties, no-change, stale State, Reviewer Protection, Idempotenz und Projection-Vertrag. Nicht implementiert sind UI, Auto-/AI-Correction, Offer, Execution, finaler Delete Unlock, WhatsApp, Vision oder Storage-Änderungen.
+
+## Status
+
+- **PERSISTENT CORRECTION AUTHORITY — IMPLEMENTED**
+- **PERSISTENT EVIDENCE INVALIDATION AUTHORITY — IMPLEMENTED**
+- **PERSISTENT OBSERVATION INVALIDATION AUTHORITY — IMPLEMENTED**
+- **PERSISTENT CLAIM RETRACTION — IMPLEMENTED**
+- **PERSISTENT CLAIM CORRECTION / SUPERSESSION — IMPLEMENTED IF SAFELY SUPPORTED**
+- **POSITIVE-ONLY FALSE CLAIMS — PROHIBITED**
+- **CORRECTION MEDIA DEPENDENCY AUTHORITY — IMPLEMENTED**
+- **OFFER AUTHORITY — NOT COMPLETE**
+- **EXECUTION AUTHORITY — NOT COMPLETE**
+- **EVIDENCE-BOUND DELETE — STILL FAIL-CLOSED**
+- **WHATSAPP — NOT IMPLEMENTED**
+- **VISION — NOT IMPLEMENTED**
+- **OVERALL PRODUCT — NOT PRODUCTION READY**
