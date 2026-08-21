@@ -57,6 +57,11 @@ export function canBindProjectMediaAsEvidence(role: Role | null): boolean {
   return role === "admin";
 }
 
+/** Lifecycle decisions are deliberately narrower than normal media viewing. */
+export function canManageProjectMediaLifecycle(role: Role | null): boolean {
+  return role === "admin";
+}
+
 export function canViewProjectMediaOrphanInventory(role: Role): boolean {
   return role === "admin";
 }
