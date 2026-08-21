@@ -2,6 +2,7 @@ export * from "./types";
 export * from "./schemas";
 export * from "./property-strength-registry";
 export * from "./knowledge-state";
+export * from "./planner-evidence-context";
 export * from "./information-collection";
 export * from "./information-gain";
 export * from "./evidence-request";

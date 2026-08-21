@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ALL_PROPERTY_KEYS, ENTITY_TYPES, type PropertyKey } from "./types";
+import { isEvidenceTargetCovered, plannerEvidenceContextSchema, type PlannerEvidenceContext } from "./planner-evidence-context";
 
 export const EVIDENCE_REQUEST_ACTION_TYPES = ["request_photo", "request_multiple_photos", "request_document", "no_evidence_request"] as const;
 export const EVIDENCE_TARGET_STATUSES = ["active", "deferred"] as const;
@@ -11,7 +12,7 @@ export const EVIDENCE_TARGET_KEYS = ["indoor_area_overview", "outdoor_area_overv
 export const EVIDENCE_BUNDLE_KEYS = ["indoor_context_bundle", "outdoor_context_bundle", "installation_route_bundle"] as const;
 export const EVIDENCE_TEMPLATE_KEYS = ["evidence_room_overview", "evidence_indoor_area_overview", "evidence_outdoor_area_overview", "evidence_line_route_context", "evidence_electrical_area", "evidence_accessibility_context", "evidence_indoor_context_bundle"] as const;
 export const EVIDENCE_REQUEST_REASON_CODES = ["open_information_need", "future_photo_path", "covers_multiple_needs", "controlled_bundle", "dependency_context_available"] as const;
-export const NO_EVIDENCE_REQUEST_REASONS = ["collection_path_not_eligible", "no_active_target", "dependency_not_satisfied", "duplicate_request", "evidence_already_available", "request_limit_reached", "human_review_required", "site_check_authoritative", "document_request_deferred"] as const;
+export const NO_EVIDENCE_REQUEST_REASONS = ["collection_path_not_eligible", "no_active_target", "dependency_not_satisfied", "duplicate_request", "existing_descriptive_evidence_context", "evidence_already_available", "request_limit_reached", "human_review_required", "site_check_authoritative", "document_request_deferred"] as const;
 
 const uuid=z.string().uuid(), timestamp=z.string().datetime({offset:true});
 export const evidenceTargetKeySchema=z.enum(EVIDENCE_TARGET_KEYS);
@@ -60,18 +61,20 @@ export const renderEvidenceRequest=(request:SelectedEvidenceRequest)=>Object.fre
 export const EVIDENCE_SIMULATOR_CONTROLS=Object.freeze(["Foto als vorhanden simulieren","Kann ich nicht liefern","Überspringen"] as const);
 
 export type EvidencePlanningNeed=Readonly<{information_key:PropertyKey;entity_type:typeof ENTITY_TYPES[number];entity_id:string;open:boolean;collection_path:"future_photo_request"|"future_document_request"|"customer_question"|"customer_clarification"|"existing_evidence"|"assumption"|"site_check"|"human_review"|"leave_open"}>;
-export type EvidencePlannerInput=Readonly<{project_id:string;conversation_id:string;request_id:string;needs:readonly EvidencePlanningNeed[];request_state:EvidenceRequestState;availability:readonly EvidenceAvailability[];available_dependency_keys:readonly PropertyKey[];human_review_required:boolean;site_check_authoritative:boolean;consecutive_evidence_requests:number;total_evidence_requests:number;explicit_revisit?:boolean}>;
+export type EvidencePlannerInput=Readonly<{project_id:string;conversation_id:string;request_id:string;needs:readonly EvidencePlanningNeed[];request_state:EvidenceRequestState;availability:readonly EvidenceAvailability[];evidence_context?:readonly PlannerEvidenceContext[];available_dependency_keys:readonly PropertyKey[];human_review_required:boolean;site_check_authoritative:boolean;consecutive_evidence_requests:number;total_evidence_requests:number;explicit_revisit?:boolean}>;
 export type EvidencePlannerResult=Readonly<{kind:"evidence_request_selected";request:SelectedEvidenceRequest;rendered:ReturnType<typeof renderEvidenceRequest>}|{kind:"no_evidence_request";reason:typeof NO_EVIDENCE_REQUEST_REASONS[number]}>;
 
 export function planEvidenceRequest(input:EvidencePlannerInput):EvidencePlannerResult{
  const parsed=evidenceRequestStateSchema.safeParse(input.request_state);if(!parsed.success||parsed.data.project_id!==input.project_id||parsed.data.conversation_id!==input.conversation_id)return{kind:"no_evidence_request",reason:"collection_path_not_eligible"};
+ const evidenceContext=plannerEvidenceContextSchema.parse(input.evidence_context??[]);
  if(input.human_review_required)return{kind:"no_evidence_request",reason:"human_review_required"};if(input.site_check_authoritative)return{kind:"no_evidence_request",reason:"site_check_authoritative"};
  const open=input.needs.filter(n=>n.open);if(open.some(n=>n.collection_path==="future_document_request"))return{kind:"no_evidence_request",reason:"document_request_deferred"};
  const photo=open.filter(n=>n.collection_path==="future_photo_request");if(!photo.length)return{kind:"no_evidence_request",reason:"collection_path_not_eligible"};
  if(input.consecutive_evidence_requests>=2||input.total_evidence_requests>=4)return{kind:"no_evidence_request",reason:"request_limit_reached"};
  const keys=new Set(photo.map(n=>n.information_key));const candidates=EVIDENCE_TARGET_REGISTRY.filter(t=>t.status==="active"&&t.supports_information_keys.some(k=>keys.has(k))&&t.dependency_keys.every(k=>input.available_dependency_keys.includes(k))).sort((a,b)=>b.supports_information_keys.filter(k=>keys.has(k)).length-a.supports_information_keys.filter(k=>keys.has(k)).length);
- const chosen=candidates.find(t=>!input.availability.some(a=>a.target_key===t.target_key&&["requested","available_unanalysed","analysed"].includes(a.status))&&!input.request_state.requests.some(r=>r.target_key===t.target_key&&(!input.explicit_revisit||["planned","requested","provided","declined","skipped"].includes(r.status))));
- if(!chosen)return{kind:"no_evidence_request",reason:candidates.length?"duplicate_request":"dependency_not_satisfied"};
+ const uncovered=candidates.filter(t=>!isEvidenceTargetCovered(evidenceContext,t.target_key));
+ const chosen=uncovered.find(t=>!input.availability.some(a=>a.target_key===t.target_key&&["requested","available_unanalysed","analysed"].includes(a.status))&&!input.request_state.requests.some(r=>r.target_key===t.target_key&&(!input.explicit_revisit||["planned","requested","provided","declined","skipped"].includes(r.status))));
+ if(!chosen){const semanticallyCovered=EVIDENCE_TARGET_REGISTRY.some(t=>t.supports_information_keys.some(k=>keys.has(k))&&isEvidenceTargetCovered(evidenceContext,t.target_key));return{kind:"no_evidence_request",reason:(candidates.length&&!uncovered.length)||(!candidates.length&&semanticallyCovered)?"existing_descriptive_evidence_context":candidates.length?"duplicate_request":"dependency_not_satisfied"};}
  const covered=photo.filter(n=>chosen.supports_information_keys.includes(n.information_key)).map(n=>n.information_key);const indoorBundle=keys.has("room_area_sqm")&&keys.has("indoor_unit_position_known")&&chosen.target_key==="room_overview";const request=selectedEvidenceRequestSchema.parse({request_id:input.request_id,action_type:indoorBundle?"request_multiple_photos":"request_photo",target_key:chosen.target_key,...(indoorBundle?{bundle_key:"indoor_context_bundle"}:{}),information_keys:covered,purpose_codes:chosen.purpose_codes.filter((_,i)=>i<Math.max(1,covered.length)),template_key:indoorBundle?"evidence_indoor_context_bundle":chosen.template_key,required_views:chosen.required_views,minimum_count:indoorBundle?2:chosen.minimum_count,maximum_count:indoorBundle?3:chosen.maximum_count,request_reason_codes:["open_information_need","future_photo_path",...(covered.length>1?["covers_multiple_needs" as const]:[]),...(indoorBundle?["controlled_bundle" as const]:[])]});
  return{kind:"evidence_request_selected",request,rendered:renderEvidenceRequest(request)};
 }
