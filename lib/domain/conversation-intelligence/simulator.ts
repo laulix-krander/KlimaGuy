@@ -8,7 +8,7 @@ import { createInterpretationIdempotencyKey } from "./answer-interpretation";
 import { continueConversationAfterIntermediateResult } from "./conversation-continuation";
 import { resolveSyntheticEvidenceRequest, type EvidenceResponseOutcome } from "./evidence-request";
 
-export type SimulatorInput=Readonly<{kind:"customer_answer";raw_value:RawCustomerAnswer["raw_value"]}|{kind:"evidence_response";request_id:string;outcome:EvidenceResponseOutcome}>;
+export type SimulatorInput=Readonly<{kind:"customer_answer";raw_value:RawCustomerAnswer["raw_value"]}|{kind:"evidence_response";request_id:string;outcome:EvidenceResponseOutcome}|{kind:"evidence_observation";observation_id:string}|{kind:"claim_review";proposal_id:string;expected_knowledge_state_version:number;review_action:"approve"|"reject"|"mark_evidence_insufficient"}>;
 
 export const SIMULATOR_SCENARIOS = [
   ["minimal_room", "Minimaler Ein-Raum-Fall"], ["unknown_room_area", "Raumgröße unbekannt"],
