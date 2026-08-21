@@ -19,6 +19,7 @@ import {
   createDescriptiveClaimReviewState,
   reviewDescriptiveClaimProposal,
   type DescriptiveClaimReviewAction,
+  derivePlannerEvidenceContext,
 } from "@/lib/domain/conversation-intelligence";
 import type { RenderedCustomerInteraction } from "@/lib/domain/conversation-intelligence/question-template-types";
 
@@ -78,7 +79,8 @@ const propertyLabels: Record<string, string> = {
   wall_penetration_context_observed: "Wanddurchführungskontext",
 };
 const collectionPathLabels: Record<string,string>={customer_question:"Kundenfrage",customer_clarification:"Kontrollierte Rückfrage",existing_evidence:"Vorhandene Evidence",future_photo_request:"Späteres Foto / zusätzliche Evidence",future_document_request:"Späteres Dokument",assumption:"Mögliche Annahme",site_check:"Vor-Ort-Prüfung",human_review:"Fachliche Prüfung",leave_open:"Offen lassen"};
-const gainReasonLabels:Record<string,string>={new_information_expected:"Neue Information zu erwarten",alternate_question_strategy:"Alternativer Frageweg",dependency_context_changed:"Dependency-Kontext verändert",same_context_as_previous_attempt:"Kontext unverändert",customer_path_exhausted:"Kundenpfad ausgeschöpft",additional_evidence_required:"Zusätzliche Evidence erforderlich",retry_limit_reached:"Versuchslimit erreicht",future_photo_path:"Späterer Fotopfad",site_check_path:"Vor-Ort-Pfad",no_available_collection_path:"Aktuell kein Erhebungsweg"};
+const gainReasonLabels:Record<string,string>={new_information_expected:"Neue Information zu erwarten",alternate_question_strategy:"Alternativer Frageweg",dependency_context_changed:"Dependency-Kontext verändert",same_context_as_previous_attempt:"Kontext unverändert",existing_descriptive_evidence_context:"Bereits durch bestätigten deskriptiven Evidence-Kontext abgedeckt",customer_path_exhausted:"Kundenpfad ausgeschöpft",additional_evidence_required:"Zusätzliche Evidence erforderlich",retry_limit_reached:"Versuchslimit erreicht",future_photo_path:"Späterer Fotopfad",site_check_path:"Vor-Ort-Pfad",no_available_collection_path:"Aktuell kein Erhebungsweg"};
+const evidenceContextLabels:Record<string,string>={room_overview:"Raumübersicht",indoor_installation_area:"Innenbereich",outdoor_installation_area:"Außenbereich",line_route:"Leitungswegkontext",wall_penetration:"Wanddurchführungskontext"};
 const box = "rounded-xl border bg-white p-4 shadow-sm";
 
 export function ConversationSimulator() {
@@ -356,6 +358,7 @@ export function ConversationSimulator() {
   const missing = last?.success
     ? (last.missing_information as Array<Record<string, unknown>>)
     : [];
+  const evidenceContext = derivePlannerEvidenceContext(last?.success ? last.knowledge_state : context.knowledge_state);
   const renderInput = () => {
     if (!interaction) return null;
     const contract = interaction.answer_contract;
@@ -686,6 +689,7 @@ export function ConversationSimulator() {
           </details>
           <details className={box}>
             <summary className="cursor-pointer font-bold">Evidence Requests</summary>
+            <div className="mt-3 rounded border border-teal-200 bg-teal-50 p-3 text-sm"><p className="font-bold">Evidence Context</p>{evidenceContext.length?<ul>{evidenceContext.map(item=><li key={`${item.context_key}-${item.entity_id}`}>{evidenceContextLabels[item.context_key]}: vorhanden</li>)}</ul>:<p>Kein bestätigter deskriptiver Evidence-Kontext.</p>}<p className="mt-2 font-bold text-amber-900">Keine technische Freigabe.</p></div>
             {last?.success&&last.evidence_request_state.requests.length?<ul className="mt-3 space-y-2 text-sm">{last.evidence_request_state.requests.map(request=><li key={request.request_id}><strong>{request.target_key}</strong> · {request.status}<br/>Unterstützt: {request.requested_for_information_keys.map(key=>propertyLabels[key]??key).join(", ")}<br/>{observationState.observations.some(item=>item.scope.request_id===request.request_id)?"Foto vorhanden – ausgewertet":last.evidence_availability.some(item=>item.request_id===request.request_id&&item.status==="available_unanalysed")?"Foto vorhanden – noch nicht ausgewertet":"Noch keine Evidence vorhanden"} · Versuche: {request.attempts}{debug?<code className="block">{request.request_id}</code>:null}</li>)}</ul>:<p className="mt-3 text-sm">Keine Evidence Requests.</p>}
           </details>
           <details className={box}>

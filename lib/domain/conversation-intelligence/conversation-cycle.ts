@@ -13,6 +13,7 @@ import { deriveMissingInformation, deriveReadiness } from "./readiness";
 import { applyStateTransitionProposal } from "./state-transition";
 import type { IntermediateAssessment } from "./schemas";
 import { appendPlannedEvidenceRequest, planEvidenceRequest } from "./evidence-request";
+import { derivePlannerEvidenceContext } from "./planner-evidence-context";
 import { getEffectiveClaims } from "./knowledge-state";
 import type { PropertyKey } from "./types";
 
@@ -43,7 +44,7 @@ export function runConversationCycle(input:unknown):ConversationCycleResult{
   if(!candidates.success)return failure("planner_failed");
   const needs=candidates.data.filter(candidate=>candidate.collection_path==="future_photo_request").map(candidate=>({information_key:candidate.information_key,entity_type:candidate.entity_type,entity_id:candidate.entity_id,open:true as const,collection_path:"future_photo_request" as const}));
   if(needs.length){const availableKeys=new Set<PropertyKey>();for(const claim of getEffectiveClaims(state))if(!["unknown","contradicted"].includes(claim.epistemic_status))availableKeys.add(claim.property_key);for(const item of collection.state.items)if(["answered","resolved"].includes(item.collection_status))availableKeys.add(item.information_key);
-   const evidence=planEvidenceRequest({project_id:ctx.project_id,conversation_id:ctx.conversation_id,request_id:ctx.next_evidence_request_id,needs,request_state:evidenceState,availability:ctx.evidence_availability,available_dependency_keys:[...availableKeys],human_review_required:false,site_check_authoritative:false,consecutive_evidence_requests:evidenceState.requests.slice(-2).length,total_evidence_requests:evidenceState.requests.length});
+   const evidence=planEvidenceRequest({project_id:ctx.project_id,conversation_id:ctx.conversation_id,request_id:ctx.next_evidence_request_id,needs,request_state:evidenceState,availability:ctx.evidence_availability,evidence_context:derivePlannerEvidenceContext(state),available_dependency_keys:[...availableKeys],human_review_required:false,site_check_authoritative:false,consecutive_evidence_requests:evidenceState.requests.slice(-2).length,total_evidence_requests:evidenceState.requests.length});
    if(evidence.kind==="evidence_request_selected"){selectedEvidence=evidence.request;renderedEvidence=evidence.rendered;evidenceState=appendPlannedEvidenceRequest(evidenceState,evidence.request,ctx.occurred_at);}
   }
  }
