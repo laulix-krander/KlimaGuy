@@ -18,6 +18,39 @@ export const PROJECT_MEDIA_DELETION_REASON_CODES = Object.freeze([
   "legal_or_operational_hold", "cross_project_mismatch", "unsupported_media_state",
 ] as const);
 export const PROJECT_MEDIA_RETENTION_POLICY_VERSIONS = Object.freeze(["customer_photo_retention_v1"] as const);
+export const PROJECT_MEDIA_DELETION_EXECUTION_STATES = Object.freeze([
+  "idle", "deletion_pending", "deletion_in_progress", "deletion_failed", "physically_deleted",
+] as const);
+export const PROJECT_MEDIA_PHYSICAL_STATES = Object.freeze(["present", "deletion_pending", "absent", "deletion_failed"] as const);
+export const READY_MEDIA_DELETION_REASONS = Object.freeze([
+  "retention_expired", "project_closed", "invalid_media", "wrong_project", "duplicate_transport", "admin_cleanup",
+] as const);
+export const READY_MEDIA_DELETION_ATTEMPT_STATUSES = Object.freeze([
+  "claimed", "storage_delete_pending", "storage_deleted", "completion_pending", "completed", "retryable_failed", "terminal_failed",
+] as const);
+export const READY_MEDIA_DELETION_FAILURE_CODES = Object.freeze([
+  "media_not_found", "lifecycle_not_found", "not_deletion_eligible", "stale_lifecycle_revision", "hold_active",
+  "project_state_changed", "offer_state_changed", "evidence_dependency_changed", "deletion_already_in_progress",
+  "deletion_already_completed", "invalid_claim_token", "storage_delete_failed", "completion_failed",
+  "persistence_failed", "cross_project_mismatch",
+] as const);
+
+export const readyMediaDeletionInputSchema = z.object({
+  project_id: z.string().uuid(),
+  project_media_id: z.string().uuid(),
+  expected_lifecycle_revision: z.number().int().positive(),
+  deletion_reason: z.enum(READY_MEDIA_DELETION_REASONS),
+}).strict();
+
+export type ReadyMediaDeletionFailureDisposition = "retryable" | "requires_recheck" | "terminal" | "human_review_required";
+export const READY_MEDIA_DELETION_FAILURE_DISPOSITIONS: Readonly<Record<(typeof READY_MEDIA_DELETION_FAILURE_CODES)[number], ReadyMediaDeletionFailureDisposition>> = Object.freeze({
+  media_not_found: "terminal", lifecycle_not_found: "requires_recheck", not_deletion_eligible: "requires_recheck",
+  stale_lifecycle_revision: "requires_recheck", hold_active: "human_review_required", project_state_changed: "requires_recheck",
+  offer_state_changed: "requires_recheck", evidence_dependency_changed: "human_review_required",
+  deletion_already_in_progress: "requires_recheck", deletion_already_completed: "terminal", invalid_claim_token: "terminal",
+  storage_delete_failed: "retryable", completion_failed: "retryable", persistence_failed: "retryable",
+  cross_project_mismatch: "terminal",
+});
 
 export const projectMediaLifecycleDtoSchema = z.object({
   project_media_id: z.string().uuid(),
