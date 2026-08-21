@@ -507,3 +507,75 @@ Vitest prüft geschlossene Contracts, Version, Quality, canonical Target Binding
 **VISION — NOT IMPLEMENTED**
 
 **OVERALL PRODUCT — NOT PRODUCTION READY**
+
+# AP-15-05-03-03-02 — Persistent Claim Proposal and Human Review Baseline Result
+
+## Migration, Proposal Authority und Contract
+
+Die additive Migration `202608210005_persistent_evidence_claim_review.sql` führt `evidence_claim_proposals` als aktuelle Workflowautorität und `evidence_claim_reviews` als getrennte append-only Entscheidungshistorie ein. Ein Proposal bindet Project, Evidence, Interpretation Run und konkrete Observation über einen zusammengesetzten FK. Es enthält nur Entity, eine der fünf bestehenden deskriptiven Properties, den typisierten Boolean-Wert `true`, `boolean`, `observed`, `descriptive_fact`, Mapping Rule Version 1, Status, Revision und Zeitpunkte. Raw Media, Locator, URL, Prompt, Providerdaten, Kundentext und PII werden nicht gespeichert.
+
+Die geschlossene langlebige Statusmenge lautet `pending_review | approved_apply_pending | applied | rejected | insufficient_evidence | conflict | stale | superseded`. Technische Resultcodes bleiben davon getrennt. Der semantische Unique Key aus Observation, Mappingversion, Entity und typisiertem Claim verhindert doppelte pending Proposals; Replay liefert die bestehende Row und verändert deren Revision nicht.
+
+## Proposal Creation, Mapping Reuse und Integrität
+
+Der serverseitige Service authentifiziert den Actor, prüft die zentrale getrennte Capability und ruft ausschließlich den bestehenden puren `proposeKnowledgeClaimFromObservation(...)` Mapper auf. Nur dessen `claim_proposal` darf die atomare RPC-Grenze erreichen. Observation-only, Human-Review-ohne-Claim, Site Check, bad evidence, falsches Target und unsupported Resultate erzeugen keine Proposal Row. Die RPC rekonstruiert Observation, Evidence, Target und Media selbst; ihre explizite Fünfer-Allowlist ist Defense in Depth und keine zweite frei aufrufbare Claim Engine. Clientinput ist ausschließlich `observation_id`; Property, Wert, Strength, Epistemik, Project, Evidence und Actor kommen nie vom Client.
+
+Observation muss `recorded`, passend zum Project/Evidence/Run, qualitativ `sufficient_for_observation`, fachlich `observed` und positiv sichtbar sein. Row Locks auf Observation, Evidence, Media und Lifecycle schließen Proposal-vs-Delete und Proposal-vs-Invalidation. Tombstone, logisch gelöschtes oder physisch abwesendes Medium sowie nicht-idle Delete Lifecycle enden fail closed als `source_media_unavailable`. Cross-Project-Bindungen werden über zusammengesetzte FKs auch in der Datenbank verhindert.
+
+## Review Authority, Actions, CAS und History
+
+Der schmale Reviewcommand enthält ausschließlich `proposal_id`, `expected_proposal_revision` und `approve | reject | mark_evidence_insufficient`. Die produktive Grenze rekonstruiert `auth.uid()` und erlaubt im MVP ausschließlich Admin; AI, Customer, System und Reviewer erhalten keine Review-/Apply-Capability. Review speichert Actor UUID und Actor Class, jedoch keine E-Mail oder freie Notiz und dupliziert keinen Claim Payload.
+
+Proposal Lock plus Expected Revision bildet die CAS-Grenze. Jede echte Statusänderung erhöht die Revision genau einmal; stale oder terminal wird nicht rebased. Der Unique Replay Key `(proposal, proposal_revision, action)` liefert für einen erkennbaren identischen Netzwerk-Replay dieselbe Review Row ohne zweite Entscheidung oder Revision. Review Rows sind durch Trigger sowie fehlende UPDATE-/DELETE-Grants append-only. Eine spätere freie Re-Review terminaler Proposals ist im MVP nicht erlaubt.
+
+`approve` bestätigt ausschließlich, dass der bestehende schwache deskriptive Proposal später kontrolliert angewendet werden darf. Es ändert weder Property/Wert noch `descriptive_fact` oder `observed`, und endet bei `approved_apply_pending`. `reject` setzt terminal `rejected`, ohne Observation, Evidence oder Knowledge zu mutieren und ohne die Observation als falsch zu bezeichnen. `mark_evidence_insufficient` setzt terminal `insufficient_evidence`, ohne Löschen, technischen Fortschritt oder automatische Fotoanforderung.
+
+## Apply Decision und Boundary
+
+**Variante B:** Im Repository existiert weiterhin nur der pure/in-memory `KnowledgeState`; es gibt keine produktive persistente Knowledge-State-Autorität. Deshalb wurde keine neue Knowledge-Datenbankarchitektur und keine direkte Claimmutation eingeführt. Approval endet kontrolliert bei `approved_apply_pending`; ein separates späteres Paket muss die bereits vorhandene `KnowledgeClaimProposal → StateTransitionProposal → applyStateTransitionProposal(...)` Engine an eine echte persistente State-Autorität anbinden. Auto-Apply ist ausdrücklich ausgeschlossen.
+
+## Dependency-, Delete- und Race-Semantik
+
+`pending_review` und `approved_apply_pending` sind offene persistente Proposal-/Review-Media-Dependencies. `rejected`, `insufficient_evidence` und künftig `applied` schließen nur diese Workflowstufe. Die bestehende pauschale Evidence-Sperre für Ready-Media-Delete bleibt unverändert und fail closed: Correction-, Offer-/Execution-Authority und authoritative Dependency Projection fehlen weiterhin. Es gibt absichtlich noch keinen finalen `NOT EXISTS dependencies` Gate und keine verfrühte Evidence-bound Deletefreigabe.
+
+Proposal Creation und Review sperren dieselben Media-/Lifecycle-Bindungen, prüfen Tombstones und verlieren gegen einen bereits gewonnenen Delete Claim. Review prüft zusätzlich die Observation erneut; eine nach Proposal-Erzeugung invalidierte Observation kann nicht approved werden. Concurrent Review wird durch Proposal Row Lock, CAS und Replay-Key serialisiert. Es erfolgt in diesen Pfaden keine Storage-Löschung.
+
+## RLS, Grants, Audit, DTOs und Read Service
+
+Beide Tabellen haben RLS. Authenticated besitzt ausschließlich projektbezogenes Admin-SELECT; INSERT/UPDATE/DELETE sind nicht direkt erteilt. Mutation erfolgt über `SECURITY DEFINER` RPCs mit festem `search_path`, internem Actor/Rollencheck und serverseitiger Rekonstruktion. Normaler DELETE ist nicht verfügbar.
+
+Atomare Proposal-/Review-RPCs schreiben Proposal beziehungsweise Review, Workflowstatus und sanitisiertes Audit gemeinsam. Aktionen sind `claim_proposal_created`, `claim_proposal_replayed`, `claim_review_approved`, `claim_review_rejected`, `claim_review_evidence_insufficient` und `claim_apply_pending`. Metadaten enthalten nur Actor-, Project-, Evidence-, Observation-, Proposal-/Review-UUID, Resultcode, Revision und Timestamp. `claim_applied` wird nicht vorgetäuscht.
+
+Strict Zod DTOs liefern Proposal-ID, Evidence-ID, Observation-ID, Property, typisierten Wert, Epistemik, Strength, Status, Revision und Zeitpunkte beziehungsweise Review-ID, Proposal-ID, Action, Result, Actor Class und Reviewed-at. Der project-scoped Read Service lädt Proposals und Reviews in zwei mengenbasierten parallelen Queries ohne N+1, Media-ID, Locator oder Authdetails.
+
+## Tests und verbleibende Grenzen
+
+Vitest deckt geschlossene Payloads/Statuses, alle fünf Properties, Strength-/Epistemic-Grenzen, getrennte Admin-Capabilities, Tabellen, zusammengesetzte FKs, Cross-Project-Schutz, semantische Proposal- und Review-Replay-Keys, Append-only Trigger, RLS, Grants, Indizes, Locks, CAS, Invalidation/Tombstone/Delete-Races, Auditaktionen und Architekturausschlüsse ab. Die bestehenden persistenten Interpretation-/Observation-, Mapping-, synthetischen Review-/Transition-, Evidence-, Lifecycle-, Ready-Delete-, Planner-Context- und Synthetic-E2E-Regressionen bleiben unverändert.
+
+Nicht implementiert bleiben Knowledge Apply, Correction/Observation Correction, automatische Supersession, Dependency Projection, finaler Evidence Delete Gate, Offer-/Execution Authority, Planner-/Readiness-/Missing-Änderungen, Retention, UI, Vision/KI, WhatsApp, Storage-/Signed-URL-Zugriffe und Auto-Apply. Das nächste kleinste sichere Paket ist ein gesondertes Audit der produktiven Knowledge-State-Persistenz und Apply-Transaktionsgrenze; nicht eine versteckte Erweiterung dieses Baselines.
+
+**PERSISTENT EVIDENCE INTERPRETATION AUTHORITY — IMPLEMENTED**
+
+**PERSISTENT OBSERVATION AUTHORITY — IMPLEMENTED**
+
+**PERSISTENT CLAIM PROPOSAL AUTHORITY — IMPLEMENTED**
+
+**PERSISTENT HUMAN REVIEW AUTHORITY — IMPLEMENTED**
+
+**AUTO-APPLY — NOT IMPLEMENTED**
+
+**PERSISTENT KNOWLEDGE APPLY — DEFERRED**
+
+**PERSISTENT CORRECTION AUTHORITY — NOT IMPLEMENTED**
+
+**AUTHORITATIVE MEDIA DEPENDENCY PROJECTION — NOT IMPLEMENTED**
+
+**OFFER / EXECUTION AUTHORITY — NOT COMPLETE**
+
+**EVIDENCE-BOUND DELETE — STILL FAIL-CLOSED**
+
+**VISION — NOT IMPLEMENTED**
+
+**WHATSAPP — NOT IMPLEMENTED**
+
+**OVERALL PRODUCT — NOT PRODUCTION READY**

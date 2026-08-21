@@ -67,6 +67,16 @@ export function canExecuteProjectMediaDeletion(role: Role | null): boolean {
   return role === "admin";
 }
 
+/** Persistent evidence claim review is deliberately independent from media capabilities. */
+export function canReviewEvidenceClaimProposal(role: Role | null): boolean {
+  return role === "admin";
+}
+
+/** Apply remains deferred, but its future boundary is explicitly admin-only. */
+export function canApplyReviewedEvidenceClaim(role: Role | null): boolean {
+  return role === "admin";
+}
+
 export function canViewProjectMediaOrphanInventory(role: Role): boolean {
   return role === "admin";
 }
