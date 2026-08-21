@@ -534,3 +534,87 @@ Es wurde ausschließlich diese Auditdatei erstellt. Keine Implementierung, Migra
 `VISION — NOT IMPLEMENTED`
 
 `OVERALL PRODUCT — NOT PRODUCTION READY`
+
+# AP-15-05-03-03-03-01 — Persistent Knowledge State and Descriptive Claim Apply Baseline Result
+
+## Resultat und Migration
+
+Die additive Migration `202608210006_persistent_knowledge_state_apply.sql` setzt Audit-Variante E um. Knowledge Authority ist das **Projekt**; es gibt weder einen Conversation-Scope noch eine persistierte synthetische Conversation-ID. Eine spätere Customer-Message-/WhatsApp-Provenienz benötigt eine additive, echte Conversation-/Message-Relation.
+
+Der Header `project_knowledge_states` ist je `project_id` eindeutig, trennt die positive fachliche `current_version` von `schema_version = 1` und enthält keinen Snapshot. Ein State wird ausschließlich im kontrollierten Apply-RPC lazy mit Version 1 initialisiert. Es gibt keinen Backfill und keine Initialize Action. Der erste ändernde Apply führt 1→2 aus; Replay initialisiert nicht erneut.
+
+`project_knowledge_claims` hält append-only History mit UUID, State-/Projectbindung, Entity/Property, Claim-State-Version, optionaler Supersession und Transitionquelle. String, Number und Boolean werden in getrennten typed Spalten persistiert; `unknown` bewahrt NULL und getrennte Epistemik. Strength bleibt für Legacy-/Technical-Fähigkeit nullable, während der aktuelle descriptive Check exakt `boolean=true`, `observed`, `descriptive_fact` erzwingt. UPDATE und DELETE werden per Trigger verhindert.
+
+`project_knowledge_claim_evidence` bindet Claims relational und projektgleich ausschließlich an echtes `project_evidence`. Die Relation bewahrt Actor, Status und `observed_at`, damit Effective-Claim- und Reviewer-Protection-Semantik rekonstruierbar bleiben. Sie enthält keine Bucket-, Path-, URL-, Dateinamen-, Provider-, Bildmetadaten- oder PII-Spalten.
+
+`project_knowledge_state_transitions` ist die von `audit_log` getrennte Application Authority. Sie bindet State, Projekt, Proposal, Approval Review, erwartete/resultierende Version, `claim_created`, Result `applied|no_change`, Actor und Zeit. Der ausschließlich serverseitig gebildete eindeutige Idempotency Key bindet Projekt, State-ID, Proposal-ID/-Revision, Review-ID und Expected Version; zusätzlich ist Proposal eindeutig. Timeout-Replay liest das vorhandene terminale Resultat vor dem Proposalstatus-Gate.
+
+## Apply, CAS und atomare Rekonstruktion
+
+Der öffentliche Input besteht exakt aus `proposal_id`, `expected_proposal_revision` und `expected_state_version`. Service und `SECURITY DEFINER` RPC ermitteln Actor über Auth, erzwingen Admin, und rekonstruieren Proposal, passende terminale Approval Review, Observation, Interpretation-/Evidencebindung, Media, Lifecycle/Tombstone, State und Claim History. Der TypeScript-Service materialisiert die bestehende `KnowledgeState` und ruft als einzige fachliche Mutationsgrenze `applyStateTransitionProposal(...)` auf; SQL übernimmt nur schmale Defense-in-depth-Shape-Prüfung und CAS-Persistenz, nicht eine zweite Claim Engine.
+
+Unter Locks gelten Proposalstatus `approved_apply_pending`, Revision, Approval `approve/apply_pending` mit Admin Actor, projektgleiche aktive Observation, weiterhin gültiges Mapping sowie gebundene Evidence. Media muss ready/present, nicht logisch gelöscht und Lifecycle idle sein; Tombstones schließen Apply aus. Damit kann ein reviewed-but-not-applied Proposal nach Tombstoning nicht angewendet werden. Der bestehende Evidence-bound Delete bleibt unabhängig davon fail-closed.
+
+Der State Header wird gelockt und `expected_state_version` muss exakt passen. Es gibt keinen Rebase und keinen automatischen Retry. Eine Transaktion umfasst Transition, optional Claim/Evidence, Header-CAS, Proposal `applied` samt Revision sowie sanitisiertes Audit. Jeder SQL-Fehler rollt diese Writes gemeinsam zurück. Zwei Proposals für N können daher nicht beide N→N+1 gewinnen; bei zwei Tabs gewinnt ein Proposal einmal und Replay liefert dessen Application Record.
+
+## Scope und Semantik
+
+Anwendbar sind ausschließlich:
+
+- `room_overview_context_observed`
+- `indoor_installation_area_observed`
+- `outdoor_installation_area_observed`
+- `line_route_context_observed`
+- `wall_penetration_context_observed`
+
+Alle fünf werden ohne Property-/Entity-/Value-/Epistemic-/Strength-Eskalation exakt positiv persistiert. Ein äquivalenter effektiver Claim führt zu `no_change`: kein Claim, N→N, genau ein Transition Record, Proposal terminal `applied` und genau ein Result-Audit. Ein abweichender effektiver Claim führt geschlossen zu Reviewer Protection; es gibt weder automatische Supersession noch Correction. Contradictions bleiben on-read abgeleitet.
+
+Der project-scoped Read Adapter lädt History, rekonstruiert Evidence Actor/Status, verwendet `getEffectiveClaims(...)` und liefert nur Headerdaten plus schmale effective Claim DTOs. Er gibt keine Provenienzrows, Conversation-ID, Storagedetails oder PII aus.
+
+Descriptive Claims verändern weder technische Readiness noch Technical Missing Information. Es wurde keine Readiness-/Missing-Tabelle und keine Regel ergänzt. Der bestehende Planner Evidence Context ist nach persistentem Read für alle fünf Properties ableitbar; insbesondere bleibt technische Positions-/Machbarkeitsinformation offen. Keine Plannerregel wurde geändert.
+
+## RLS, Grants und Audit
+
+Alle vier Tabellen besitzen RLS. Aktuell deckt die bestehende Rollen-/Projektberechtigung ausschließlich Admin Read und Admin Apply; Customer und Reviewer erhalten keine neue Authority. `authenticated` besitzt nur SELECT und den schmalen RPC-Execute-Grant, niemals direkte Claim-/Evidence-/Transition-INSERT/UPDATE/DELETE-Rechte. Der RPC besitzt festen `search_path`, verwendet `auth.uid()` und akzeptiert weder Claimpayload, Evidence, Actor, Review-ID noch Idempotency Key.
+
+Sanitisierte Auditaktionen sind `knowledge_state_initialized`, `knowledge_claim_applied`, `knowledge_claim_no_change` und `reviewed_claim_apply_failed`. Der Exception-Block rollt zunächst sämtliche Apply-Writes zurück und persistiert anschließend ausschließlich das sanitisierten Fehlerereignis; schlägt dessen Insert fehl, wird ebenfalls nichts committed. Transition/Application Record und Audit bleiben unterschiedliche Wahrheiten. Payloads enthalten nur Authority-UUIDs, Versionen, Result und Timestamp.
+
+## Tests
+
+Migrationstests prüfen Tabellen, Projectintegrität, positive/Schema-Versionen, Typed-Value-XOR, Supersessionvorbereitung, relationale Evidence-FKs, RLS, Grants, Append-only, Idempotency/CAS, Locks, Replay, fünf Properties, Media-/Tombstone-Gates sowie das Fehlen von Conversation-/Storage-/Netzwerk-/AI-Feldern. Domainregressionen prüfen schmalen Input, Materialisierung, Effective Claims und Planner Evidence Context für alle fünf Properties. Die bestehende Gesamtsuite deckt Knowledge State, State Transition, Observation Mapping, descriptive/persistent Review, Interpretation, Planner, Synthetic Review E2E, Lifecycle und Ready Deletion weiterhin ohne abgeschwächte Assertions ab.
+
+## Remaining Limits und Status
+
+Correction, technische Claim-Erweiterung, automatische Supersession, Auto-Apply, persistente Contradiction Authority, Conversation-/Message-Provenienz, authoritative Media Dependency Projection, finaler Delete Gate und Offer-/Execution Authority bleiben Folgepakete. Das kleinste nächste Paket ist die bereits auditierte authoritative Media Dependency Projection auf die neue Knowledge-Provenienz; Correction bleibt separat.
+
+`PERSISTENT KNOWLEDGE STATE AUTHORITY — IMPLEMENTED`
+
+`PERSISTENT DESCRIPTIVE CLAIM AUTHORITY — IMPLEMENTED`
+
+`PERSISTENT REVIEWED CLAIM APPLY — IMPLEMENTED`
+
+`APPROVED APPLY PENDING → APPLIED — IMPLEMENTED`
+
+`STATE CAS — IMPLEMENTED`
+
+`APPLY IDEMPOTENCY — IMPLEMENTED`
+
+`DESCRIPTIVE CLAIM READINESS EFFECT — NONE`
+
+`DESCRIPTIVE CLAIM TECHNICAL MISSING RESOLUTION — NONE`
+
+`AUTO-APPLY — NOT IMPLEMENTED`
+
+`PERSISTENT CORRECTION AUTHORITY — NOT IMPLEMENTED`
+
+`AUTHORITATIVE MEDIA DEPENDENCY PROJECTION — NOT IMPLEMENTED`
+
+`OFFER / EXECUTION AUTHORITY — NOT COMPLETE`
+
+`EVIDENCE-BOUND DELETE — STILL FAIL-CLOSED`
+
+`WHATSAPP — NOT IMPLEMENTED`
+
+`VISION — NOT IMPLEMENTED`
+
+`OVERALL PRODUCT — NOT PRODUCTION READY`
