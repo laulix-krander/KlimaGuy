@@ -451,3 +451,65 @@ Weiterhin nicht vorhanden sind persistente Conversation-/Message-/Request-Bindin
 `VISION — NOT IMPLEMENTED`
 
 `OVERALL PRODUCT — NOT PRODUCTION READY`
+
+## AP-15-05-02 Internal Real Media Evidence Binding Result
+
+### UI Placement
+
+Die bestehende Project-Media-Galerie wurde pro Bildkarte um eine kleine Inline-Evidence-Sektion unter den bestehenden Medienmetadaten erweitert. Bild-Lightbox und PDF-Open-Control bleiben unverändert; es gibt keine neue Seite und keine Observation-/Analyse-Aktion.
+
+### Permission und Eligibility
+
+Die Server Component leitet die Sichtbarkeit ausschließlich aus der zentralen Capability `canBindProjectMediaAsEvidence` ab. Damit sieht nur ein Admin die Action; Reviewer sehen sie nicht. Die Galerie liefert ausschließlich aktive `ready`-Medien, und die UI rendert den Flow zusätzlich nur für `media_type=image`/`display_kind=image`. Der wiederverwendete Binding Service prüft serverseitig erneut authentifizierten Actor, Profil, Capability, aktives Projekt, Media-Existenz, Projektgleichheit, `ready`, Bildtyp und fehlendes `deleted_at`. Pending/failed, PDFs, gelöschte Medien und Cross-Project-Manipulationen bleiben fail closed.
+
+### Read Boundary
+
+Eine schmale serverseitige Projekt-Read-Grenze lädt alle Evidence-Zeilen eines Projekts in genau einer Query, validiert jede externe Zeile mit dem vorhandenen DTO-Schema und gruppiert anschließend serverseitig nach `project_media_id`. Die Admin-only Read Policy der Persistence Baseline wird nicht erweitert; Reviewer erhalten im MVP weder Read noch Binding. An den Client gehen ausschließlich die schmalen Evidence DTOs. Storagefelder, PII, Dateinamen und Signed URLs sind kein Bestandteil dieses Contracts; es gibt keine N+1-Clientschleife.
+
+### Target/Purpose und Multiple Bindings
+
+Target-Optionen werden direkt aus den aktiven Einträgen der zentralen foto-fähigen `EVIDENCE_TARGET_REGISTRY` abgeleitet. Purpose-Optionen stammen aus deren jeweiliger geschlossener `purpose_codes`-Kompatibilität. Ein einzelner Purpose wird kontrolliert automatisch gesetzt; mehrere Purposes werden in einem geschlossenen Select angeboten. Bereits vorhandene identische Kombinationen werden nicht erneut angeboten, andere gültige Bindings desselben Bildes bleiben möglich. Alle vorhandenen Bindings erscheinen als getrennte kleine Evidence-Einträge mit deutschen Registry-Labels und ohne technische IDs.
+
+### Confirmation, Action und Payload
+
+Der Flow ist zweistufig: Auswahl und anschließend die explizite Bestätigung „Bild als Evidence verwenden?“. Sie wiederholt Target und Purpose sowie den Hinweis „Das Bild wird dadurch noch nicht technisch ausgewertet.“ und bietet Abbrechen beziehungsweise „Als Evidence binden“. Eine sehr schmale, an den vertrauenswürdigen Projektkontext der Server Component gebundene Action validiert den strict Client-Input und ergänzt `project_id` serverseitig, bevor sie ausschließlich die vorhandene AP-15-05-01-Binding-Grenze aufruft. Der Client sendet exakt `project_media_id`, `evidence_target` und `purpose`; Evidence-ID, Actor, Rolle, Channel, Status, Locator und Medientyp bleiben serverbestimmt.
+
+### Pending, Success, Already Bound und Errors
+
+Eine synchrone Ref-Sperre verhindert Doppelsubmits vor dem React-Render. Während des Requests sind Controls disabled und `aria-disabled`, der Container trägt `aria-busy`, und „Evidence wird gebunden …“ wird als Status angekündigt. Erfolg lautet „Bild wurde als Evidence gebunden. Noch nicht technisch ausgewertet.“; idempotentes Replay lautet neutral „Dieses Bild ist für diesen Zweck bereits als Evidence gebunden.“. Auth-, Profil-, Permission-, Input-, Not-found-, Eligibility-, Persistence- und Cross-Project-Ergebnisse werden auf geschlossene neutrale deutsche UI-Texte gemappt; Provider-/SQL-Details werden nicht dargestellt.
+
+### Availability, Accessibility und Mobile
+
+Jedes persistierte Binding wird als „Vorhanden – noch nicht ausgewertet“ (`available_unanalysed`) angezeigt. Die UI erklärt prominent: „Die Evidence-Bindung ist keine technische Bewertung oder Freigabe.“ Sichtbare Labels, native Selects und Buttons, Fokus-Ringe, Disabled-/ARIA-Zustände, `role=status`, `role=alert`, Fokus-Rückgabe nach Abbruch und fokussierbarer Erfolgsstatus bilden die Accessibility-Grenze. Controls stapeln mobil und besitzen mindestens 44 Pixel Touchhöhe; ab `sm` werden Aktionsbuttons platzsparend nebeneinander dargestellt.
+
+### Project Media Regression und Intelligence Boundary
+
+Galerie, sichere Preview-URLs, Bild-Lightbox, PDF-Open-Control, Upload/Finalize und bestehende Orphan-/Purge-Pfade wurden nicht fachlich verändert. Insbesondere existiert keine Storage-Mutation und keine Änderung des PDF-Controls. Das Binding erzeugt ausschließlich persistentes `project_evidence` und dessen `available_unanalysed`-Darstellung. Es erzeugt keine Observation, Interpretation, Claim, Knowledge-State-Mutation, Planneränderung oder Readinesssteigerung und startet weder Vision noch KI.
+
+### Tests
+
+Fokussierte UI-Tests decken Admin-/Reviewer-Sichtbarkeit, Bild/PDF-Grenze, aktive Target-Optionen, Purpose-Kompatibilität und automatische Einzelauswahl, Bestätigung, Abbruch/Fokus, exakten Payload, synchrone Pending-Sperre, Erfolg, Already-bound, geschlossene Fehler, mehrere Bindings und Availability-Label ab. Read-/Architekturtests decken Admin-only, Reviewer-Deny gemäß bestehender Read Policy, Projektscope, Single Read/Grouping, schmale DTO-Keys und das Fehlen von Storage-, PII-, Service-Role-, Signed-URL- und Fetch-Capabilities ab. Bestehende Persistence-Tests sichern Cross-Project, Eligibility, Idempotenz und Intelligence-/Knowledge-Grenzen; fokussierte Gallery-, Lightbox-, PDF-, Signed-URL-, Finalize- und Purge-Tests sichern Project-Media-Regressionen.
+
+### Remaining Limits
+
+Keine neue Migration wurde benötigt. Weiterhin nicht implementiert sind automatische Observation, Vision/OCR/AI, WhatsApp-/Customer-Ingestion, persistente Conversation-/Message-/Request-Provenienz, Retention, Tombstones, Evidence-aware Ready-Purge, Claims, Knowledge-Mutation und Readinesswirkung. Das nächste kleinste Paket bleibt die separat owner-/datenschutzabhängig zu entscheidende Customer-Photo-Lifecycle-/Retention-Grenze; vor deren Freigabe darf kein Scope vorgezogen werden.
+
+### Status
+
+`INTERNAL REAL MEDIA EVIDENCE BINDING UX — IMPLEMENTED`
+
+`ADMIN-ONLY REAL MEDIA BINDING — IMPLEMENTED`
+
+`REAL PROJECT MEDIA → PERSISTENT EVIDENCE — IMPLEMENTED`
+
+`REAL EVIDENCE AVAILABILITY — AVAILABLE_UNANALYSED`
+
+`AUTOMATIC OBSERVATION — NOT IMPLEMENTED`
+
+`VISION ANALYSIS — NOT IMPLEMENTED`
+
+`WHATSAPP INGESTION — NOT IMPLEMENTED`
+
+`CUSTOMER PHOTO RETENTION — NOT IMPLEMENTED`
+
+`OVERALL PRODUCT — NOT PRODUCTION READY`
