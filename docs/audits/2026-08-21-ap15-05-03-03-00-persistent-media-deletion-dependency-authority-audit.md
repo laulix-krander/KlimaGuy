@@ -579,3 +579,83 @@ Nicht implementiert bleiben Knowledge Apply, Correction/Observation Correction, 
 **WHATSAPP — NOT IMPLEMENTED**
 
 **OVERALL PRODUCT — NOT PRODUCTION READY**
+
+# AP-15-05-03-03-03-02 — Authoritative Media Dependency Projection Baseline Result
+
+## Migration und Projection Architecture
+
+Die additive Migration `202608210007_authoritative_media_dependency_projection.sql` implementiert Hybrid E: Interpretation Runs, Observations, Proposals, Reviews/Proposalstatus, Knowledge Claims und Transition Applications bleiben fachliche Source Authorities. `project_media_dependencies` ist ausschließlich eine locatorfreie, deterministisch ersetzbare Delete-Gate-Projektion. `project_media_dependency_projection_state` hält den separat validierbaren Completeness-Vertrag. Weder Tabelle dupliziert Lifecycle-Boolean-Wahrheiten.
+
+Die geschlossene Projektionsversion ist `media_dependency_projection_v1`. Unterstützte Dependencytypen sind `evidence_interpretation`, `observation_followup`, `claim_proposal_review` und `claim_apply`; Status sind `open`, `resolved`, `invalidated`. Die State-Status sind `complete`, `incomplete`, `drifted`, `rebuild_required`.
+
+## Completeness und Missing Authorities
+
+`complete` bedeutet ausschließlich, dass alle **unterstützten** Authorities rekonstruiert wurden. Die kontrollierte State-Allowlist führt immer `correction`, `offer`, `execution` als fehlende Authorityklassen. Keine fehlende Zeile wird als geschlossen interpretiert. Existing Evidence wird bei Deployment mit `rebuild_required` markiert, niemals mit Fake-Resolved-Rows. Damit bleiben Correction-, Offer- und Execution-Gap ausdrücklich bestehen und Evidence-bound Delete fail-closed.
+
+## Source-, Project-, Media- und Evidence-Integrität
+
+Die kleinste sichere Source-Variante sind nullable typed FK-Spalten (`interpretation_run_id`, `observation_id`, `claim_proposal_id`) plus XOR-Check, `source_record_kind` und identische `source_record_id`. Zusammengesetzte FKs binden jede Source an dasselbe Projekt und Evidence und Evidence wiederum an dasselbe Project Media. Eine arbitrary polymorphe UUID ist unmöglich. Media/Lifecycle werden beim Rebuild gesperrt; nur `present`, aktive Media bei Lifecycle `idle` sind rebuildfähig. History bleibt durch `ON DELETE RESTRICT` erhalten.
+
+## Interpretation-, Observation-, Proposal- und Apply-Mapping
+
+`pending`/`in_progress` Interpretation sind mit `interpretation_pending` offen. `failed` ist wegen der bestehenden `persistence_failed`-Retrysemantik mit `interpretation_retry_required` offen und wird nicht blind resolved. Completed/insufficient sind resolved, invalidated ist invalidated.
+
+Observation Follow-up nutzt die bestehende persistente Mappingform: aktive, sichtbare, ausreichend qualitative, `observed` Non-Image-Observation ohne Proposal bleibt offen. Nicht claimfähige/site-check-/image-condition Observations sind resolved; invalidated bleibt invalidated. Es wurde keine neue Claim-Mappingregel erfunden.
+
+Proposal `pending_review`, `conflict` und `stale` bleiben offen; `approved_apply_pending` bleibt sowohl im Reviewpfad als auch im Applypfad offen. `rejected`, `insufficient_evidence` und `applied` schließen den Reviewblocker; `superseded` invalidiert ihn. Claim Apply ist nur mit Proposal `applied` **und** persistenter Transition Application resolved; `no_change` besitzt ebenfalls diese Transition Authority. Fehlt die Transition, bleibt die Projektion offen/retry-required.
+
+## Pure Derivation, DTO und Read Boundary
+
+`deriveProjectMediaDependencies(...)` ist pure, uhrfreie, mutationsfreie TypeScript-Ableitung über schmale Source-Domainwerte. Sie sortiert deterministisch, liefert Dependency Records, Completeness, Missing Authorities und geschlossene Reason Codes. Der strict Inspector-DTO enthält nur Media-ID, Projectionstatus, Open Count, Missing Authorities, Reason Codes, Version und `updated_at`; keine Sourcepayloads oder Storageinformationen. Der Read Service erzwingt Auth, Admin-Projektberechtigung und DTO-Validation. Es wurde keine UI ergänzt.
+
+## Rebuild, Drift und Dirty Marker
+
+`rebuild_project_media_dependencies(project, media)` ist Admin-only, lädt Source Authorities selbst, sperrt Media und Lifecycle, ersetzt die Projektion vollständig und ist idempotent. Der Client liefert keine Sources. `detect_project_media_dependency_drift(...)` vergleicht Source-Status und Revision mindestens für Interpretation und setzt Abweichungen fail-closed auf `drifted`. Unbekannte/entfernte oder revisionsabweichende Sourcezustände können somit nicht als sicher gelten.
+
+Alle bestehenden Source-Mutationen markieren dieselbe Projection-State-Zeile transaktional `rebuild_required`; Knowledge Transition Applications ermitteln ihr Evidence über das Proposal. Eine Source-Mutation kann daher niemals committen und eine alte `complete`-Sicht zurücklassen. Bestehende Source-RPCs sperren Media/Lifecycle bereits und verbieten neue Verarbeitung während Delete Execution. Sicherheit wurde gegenüber cleverer inkrementeller Doppelpflege bevorzugt.
+
+## Delete Eligibility und Delete Claim
+
+Lifecycle und physischer Delete Claim wurden in diesem Baseline-Paket absichtlich **nicht gelockert**. Der bestehende produktive Claim lehnt Evidence-bound Media weiterhin unabhängig von der Projektion ab. Die neue validierte Sicht ist die Grundlage für ein späteres strukturiertes Gate; `rebuild_required`, `incomplete`, `drifted`, offene Dependencies und jede Missing Authority bleiben blockierend. Es gibt kein Evidence-bound Delete Unlock und keine Storageänderung.
+
+## RLS, Grants und Audit
+
+Beide Tabellen haben RLS. Nur Admins mit aktivem Projekt dürfen lesen. `authenticated` besitzt SELECT, aber keinerlei direktes INSERT/UPDATE/DELETE; Mutation erfolgt ausschließlich über schmale Admin-RPCs mit festem `search_path`. Normales DELETE ist nicht freigegeben. Rebuild und Drift schreiben sanitisiertes Audit mit Actor-, Projekt-, Media-UUID, Projektionsversion, Open Count, Result und Timestamp. Der transaktionale Dirty Marker ist selbst der persistente Incomplete-Nachweis; sein Statuswechsel ist ohne Sourcepayload/PII nachvollziehbar.
+
+## Tests und Remaining Limits
+
+Pure Tests decken pending/in-progress/failed/insufficient Interpretation, claimfähige und invalidierte Observation, pending/approved/applied/rejected/insufficient/superseded Proposal, retryable/no-change Apply, alle Missing Authorities, deterministische Ausgabe, Input-Immutability und fail-closed Inkonsistenz ab. Migrationstests prüfen Tabellen, Version/Allowlist, Completeness, typed FKs, Project-/Media-/Evidence-Integrität, Unique Identity, Rebuild, Dirty/Drift, RLS/Grants und Locatorfreiheit. Bestehende Interpretation-, Review-, Knowledge-Apply-, Lifecycle-, Ready-Deletion-, Planner-Context-, Mapping- und Synthetic-E2E-Regressionen bleiben maßgeblich.
+
+Correction Authority, vollständige Offer-/Execution Authority, vollständige Driftparität für jede zukünftige Sourceklasse und finaler Evidence-bound Delete bleiben Folgepakete. Das nächste kleinste Paket ist Correction Authority Baseline; danach sind Offer und Execution jeweils separat zu autorisieren, bevor ein finales Delete-Gate vertretbar ist.
+
+## Status
+
+`PERSISTENT INTERPRETATION AUTHORITY — IMPLEMENTED`
+
+`PERSISTENT OBSERVATION AUTHORITY — IMPLEMENTED`
+
+`PERSISTENT PROPOSAL AUTHORITY — IMPLEMENTED`
+
+`PERSISTENT REVIEW AUTHORITY — IMPLEMENTED`
+
+`PERSISTENT KNOWLEDGE AUTHORITY — IMPLEMENTED`
+
+`AUTHORITATIVE MEDIA DEPENDENCY PROJECTION — IMPLEMENTED`
+
+`PROJECTION COMPLETENESS CHECK — IMPLEMENTED`
+
+`PROJECTION DRIFT DETECTION — IMPLEMENTED`
+
+`CORRECTION AUTHORITY — NOT IMPLEMENTED`
+
+`OFFER AUTHORITY — NOT COMPLETE`
+
+`EXECUTION AUTHORITY — NOT COMPLETE`
+
+`EVIDENCE-BOUND DELETE — STILL FAIL-CLOSED`
+
+`WHATSAPP — NOT IMPLEMENTED`
+
+`VISION — NOT IMPLEMENTED`
+
+`OVERALL PRODUCT — NOT PRODUCTION READY`
