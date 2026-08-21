@@ -16,6 +16,9 @@ import {
   type SimulatorScenarioId,
   type EvidenceObservationType,
   type ObservationClaimMappingResult,
+  createDescriptiveClaimReviewState,
+  reviewDescriptiveClaimProposal,
+  type DescriptiveClaimReviewAction,
 } from "@/lib/domain/conversation-intelligence";
 import type { RenderedCustomerInteraction } from "@/lib/domain/conversation-intelligence/question-template-types";
 
@@ -94,6 +97,9 @@ export function ConversationSimulator() {
   const [observationState,setObservationState]=useState(()=>createEvidenceObservationState(context.project_id,context.conversation_id));
   const [selectedObservations,setSelectedObservations]=useState<readonly EvidenceObservationType[]>([]);
   const [mappingResult,setMappingResult]=useState<ObservationClaimMappingResult>();
+  const [reviewState,setReviewState]=useState(()=>createDescriptiveClaimReviewState(context.project_id,context.conversation_id));
+  const [reviewPending,setReviewPending]=useState(false);
+  const reviewLock=useRef(false);
   const [currentInteraction, setCurrentInteraction] =
     useState<RenderedCustomerInteraction | null>(
       () => context.interpretation_inputs.rendered_interaction,
@@ -120,6 +126,8 @@ export function ConversationSimulator() {
     setObservationState(createEvidenceObservationState(start.project_id,start.conversation_id));
     setSelectedObservations([]);
     setMappingResult(undefined);
+    setReviewState(createDescriptiveClaimReviewState(start.project_id,start.conversation_id));
+    setReviewPending(false);
     setMessages([
       interactionMessage(start.interpretation_inputs.rendered_interaction, 0),
     ]);
@@ -283,6 +291,23 @@ export function ConversationSimulator() {
     const knowledgeState=last?.success?last.knowledge_state:context.knowledge_state;
     const entityType=observation.target_key==="room_overview"||observation.target_key==="indoor_area_overview"?"room":"installation";
     setMappingResult(proposeKnowledgeClaimFromObservation({observations:[observation],project_id:context.project_id,conversation_id:context.conversation_id,entity_type:entityType,entity_id:context.project_id,knowledge_state:knowledgeState,proposal_ids:{claim_id:"97000000-0000-4000-8000-000000000001",evidence_id:"97000000-0000-4000-8000-000000000002"},occurred_at:context.occurred_at}));
+  };
+  const reviewClaim=(action:DescriptiveClaimReviewAction)=>{
+    if(reviewLock.current||mappingResult?.kind!=="claim_proposal")return;
+    reviewLock.current=true;setReviewPending(true);setError(undefined);
+    try{
+      const knowledgeState=last?.success?last.knowledge_state:context.knowledge_state;
+      const result=reviewDescriptiveClaimProposal({
+        command:{project_id:context.project_id,conversation_id:context.conversation_id,proposal_id:mappingResult.claim_proposal.claim_id,expected_knowledge_state_version:knowledgeState.state_version,review_action:action,review_actor_class:"admin",review_actor_id:"98000000-0000-4000-8000-000000000001",reviewed_at:context.occurred_at},
+        current_state:knowledgeState,review_state:reviewState,proposals:[mappingResult.claim_proposal],transition_id:"98000000-0000-4000-8000-000000000002",apply_id:"98000000-0000-4000-8000-000000000003",
+      });
+      setReviewState(result.review_state);
+      if(result.changed){
+        setContext(current=>({...current,knowledge_state:result.knowledge_state,expected_state_version:result.knowledge_state.state_version}));
+        setRuns(current=>current.map((run,index)=>index===current.length-1&&run.success?{...run,knowledge_state:result.knowledge_state,current_state_version:result.knowledge_state.state_version}:run));
+      }
+      setNotice(result.code==="approved"?"Deskriptiver Fakt übernommen.":result.code==="rejected"?"Claim-Vorschlag abgelehnt.":result.code==="insufficient_evidence"?"Evidence reicht für diesen deskriptiven Fakt nicht aus.":result.code==="conflict_detected"?"Der Claim-Vorschlag kann wegen eines bestehenden Widerspruchs nicht übernommen werden.":result.code==="stale_state"?"Der Wissensstand hat sich geändert. Bitte den Vorschlag erneut prüfen.":result.code==="already_applied"||result.code==="no_change"?"Der deskriptive Fakt war bereits vorhanden.":"Der Claim-Vorschlag konnte nicht übernommen werden.");
+    }finally{setReviewPending(false);reviewLock.current=false;}
   };
   const replay = () => {
     let replayContext = createSimulatorStart(scenario);
@@ -547,7 +572,7 @@ export function ConversationSimulator() {
             <p className="text-xs font-bold uppercase text-teal-800">Foto vorhanden – Beobachtung simulieren</p>
             <fieldset className="mt-3 space-y-2"><legend className="font-semibold">Kontrollierte Beobachtungen</legend>{observationOptionsForTarget(last.evidence_availability.find(item=>item.status==="available_unanalysed")!.target_key).map(type=><label className="block" key={type}><input checked={selectedObservations.includes(type)} className="mr-2" onChange={event=>setSelectedObservations(current=>event.target.checked?[...current,type]:current.filter(item=>item!==type))} type="checkbox"/>{EVIDENCE_OBSERVATION_DEFINITIONS[type].label}</label>)}</fieldset>
             <button className="mt-4 rounded bg-teal-800 px-4 py-2 text-white disabled:opacity-50" disabled={!selectedObservations.length} onClick={saveObservations} type="button">Beobachtung speichern</button>
-            {observationState.observations.length?<><p className="mt-4 font-semibold">Foto vorhanden – ausgewertet</p><ul className="list-disc pl-5 text-sm">{observationState.observations.map(item=><li key={item.observation_id}>{EVIDENCE_OBSERVATION_DEFINITIONS[item.observation_type].label}</li>)}</ul><button className="mt-4 rounded border border-teal-800 px-4 py-2 font-semibold text-teal-900" onClick={inspectTechnicalDerivation} type="button">Technische Ableitung prüfen</button>{mappingResult?<div className="mt-4 rounded border border-amber-300 bg-amber-50 p-3" role="status"><p className="font-bold">{mappingResult.kind==="claim_proposal"?"Deskriptiver Claim-Vorschlag möglich":mappingResult.kind==="site_check_required"?"Vor Ort prüfen":mappingResult.kind==="human_review_required"||mappingResult.kind==="conflicting_observations"?"Fachliche Prüfung erforderlich":"Nur Beobachtung"}</p>{mappingResult.kind==="claim_proposal"?<><dl className="mt-2 text-sm"><dt>Property</dt><dd>{propertyLabels[mappingResult.claim_proposal.property_key]??mappingResult.claim_proposal.property_key}</dd><dt>Wert</dt><dd>Kontext wurde beobachtet</dd><dt>Strength</dt><dd>Deskriptiver Fakt</dd><dt>Epistemischer Status</dt><dd>{statusLabels[mappingResult.claim_proposal.epistemic_status]??mappingResult.claim_proposal.epistemic_status}</dd><dt>Review Class</dt><dd>{mappingResult.review_class}</dd></dl>{mappingResult.claim_proposal.property_key==="wall_penetration_context_observed"?<p className="mt-2 text-sm font-semibold">Bohrsicherheit bleibt davon getrennt: Vor Ort prüfen.</p>:null}<p className="mt-2 font-bold text-amber-900">Noch nicht in den Knowledge State übernommen.</p></>:mappingResult.kind==="observation_only"||mappingResult.kind==="insufficient_evidence"||mappingResult.kind==="unsupported_mapping"||mappingResult.kind==="invalid_context"?<p className="mt-2 text-sm">Aus dieser Beobachtung wird keine technische Aussage abgeleitet.</p>:null}</div>:<p className="mt-2 font-semibold text-amber-800">Noch keine technische Bewertung.</p>}</>:null}
+            {observationState.observations.length?<><p className="mt-4 font-semibold">Foto vorhanden – ausgewertet</p><ul className="list-disc pl-5 text-sm">{observationState.observations.map(item=><li key={item.observation_id}>{EVIDENCE_OBSERVATION_DEFINITIONS[item.observation_type].label}</li>)}</ul><button className="mt-4 rounded border border-teal-800 px-4 py-2 font-semibold text-teal-900" onClick={inspectTechnicalDerivation} type="button">Technische Ableitung prüfen</button>{mappingResult?<div className="mt-4 rounded border border-amber-300 bg-amber-50 p-3" role="status" aria-busy={reviewPending}><p className="font-bold">{mappingResult.kind==="claim_proposal"?"Deskriptiver Claim-Vorschlag":mappingResult.kind==="site_check_required"?"Vor Ort prüfen":mappingResult.kind==="human_review_required"||mappingResult.kind==="conflicting_observations"?"Fachliche Prüfung erforderlich":"Nur Beobachtung"}</p>{mappingResult.kind==="claim_proposal"?<><dl className="mt-2 text-sm"><dt>Property</dt><dd>{propertyLabels[mappingResult.claim_proposal.property_key]??mappingResult.claim_proposal.property_key}</dd><dt>Wert</dt><dd>Kontext wurde beobachtet</dd><dt>Strength</dt><dd>Deskriptiver Fakt</dd><dt>Status</dt><dd>{reviewState.entries.some(entry=>entry.proposal_id===mappingResult.claim_proposal.claim_id&&entry.result_code==="approved")?"Übernommen":"Noch nicht übernommen"}</dd></dl>{mappingResult.claim_proposal.property_key==="wall_penetration_context_observed"?<p className="mt-2 text-sm font-semibold">Bohrsicherheit bleibt davon getrennt: Vor Ort prüfen.</p>:null}<p className="mt-2 font-bold text-amber-900">Keine technische Freigabe.</p><div className="mt-3 flex flex-wrap gap-2"><button aria-disabled={reviewPending} disabled={reviewPending} className="rounded bg-teal-800 px-3 py-2 text-white disabled:opacity-50" onClick={()=>reviewClaim("approve")} type="button">{reviewPending?"Wird übernommen …":"Übernehmen"}</button><button aria-disabled={reviewPending} disabled={reviewPending} className="rounded border px-3 py-2" onClick={()=>reviewClaim("reject")} type="button">Ablehnen</button><button aria-disabled={reviewPending} disabled={reviewPending} className="rounded border px-3 py-2" onClick={()=>reviewClaim("mark_evidence_insufficient")} type="button">Evidence nicht ausreichend</button></div></>:mappingResult.kind==="observation_only"||mappingResult.kind==="insufficient_evidence"||mappingResult.kind==="unsupported_mapping"||mappingResult.kind==="invalid_context"?<p className="mt-2 text-sm">Aus dieser Beobachtung wird keine technische Aussage abgeleitet.</p>:null}</div>:<p className="mt-2 font-semibold text-amber-800">Noch keine technische Bewertung.</p>}</>:null}
           </article>:null}
         </section>
         <aside className="space-y-3" aria-label="Intelligence Inspector">
@@ -627,6 +652,7 @@ export function ConversationSimulator() {
                       {statusLabels[claim.epistemic_status]} ·{" "}
                       {claim.evidence[0]?.source_type}
                     </span>
+                    {claim.knowledge_strength==="descriptive_fact"?<p className="mt-1"><span className="rounded bg-teal-50 px-2 py-1 text-xs font-semibold text-teal-900">Deskriptiver Fakt</span> <span className="rounded bg-slate-100 px-2 py-1 text-xs">Beobachtet</span></p>:null}
                     {debug ? (
                       <code className="mt-1 block text-xs">
                         {claim.property_key} · {claim.claim_id}
@@ -638,6 +664,10 @@ export function ConversationSimulator() {
             ) : (
               <p className="mt-3 text-sm">Noch keine Claims.</p>
             )}
+          </details>
+          <details className={box} open>
+            <summary className="cursor-pointer font-bold">Review History</summary>
+            {reviewState.entries.length?<ul className="mt-3 space-y-2 text-sm">{reviewState.entries.map((entry,index)=><li key={`${entry.proposal_id}-${index}`}><strong>{propertyLabels[entry.property_key]}</strong> · {entry.review_action} · {entry.result_code}<br/>{entry.review_actor_class} · <time>{entry.reviewed_at}</time>{debug?<code className="block text-xs">{entry.proposal_id}</code>:null}</li>)}</ul>:<p className="mt-3 text-sm">Noch keine Reviewentscheidung.</p>}
           </details>
           <details className={box} open>
             <summary className="cursor-pointer font-bold">State Diff</summary>
@@ -805,6 +835,8 @@ export function ConversationSimulator() {
               "Evidence Observation",
               "Observation-to-Claim Mapping",
               "Descriptive Claim Proposal",
+              "Human Review",
+              "Descriptive Claim Applied",
             ].map((step) => (
               <details className="mt-2 rounded border p-2" key={step}>
                 <summary>{step}</summary>
@@ -813,7 +845,7 @@ export function ConversationSimulator() {
                 </p>
               </details>
             ))}
-            <p className="mt-3 text-sm font-semibold">State Transition: noch nicht ausgeführt.</p>
+            <p className="mt-3 text-sm font-semibold">{reviewState.entries.some(entry=>entry.result_code==="approved")?"State Transition ausgeführt · Technical Readiness: unverändert":"State Transition: noch nicht ausgeführt."}</p>
           </details>
           {debug ? (
             <details className={box} open>

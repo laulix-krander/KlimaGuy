@@ -90,12 +90,15 @@ describe("Internal Conversation Simulator", () => {
     expect(source).not.toMatch(/type=["']file|FileReader|mediaDevices|Vision|Claim erzeugen|Montage freigeben/u);
     expect(source).toContain("Beobachtung speichern");
     expect(source).toContain("Technische Ableitung prüfen");
-    expect(source).toContain("Claim-Vorschlag möglich");
+    expect(source).toContain("Deskriptiver Claim-Vorschlag");
     expect(source).toContain("Nur Beobachtung");
     expect(source).toContain("Vor Ort prüfen");
-    expect(source).toContain("Noch nicht in den Knowledge State übernommen");
+    expect(source).toContain("Noch nicht übernommen");
     expect(source).toContain("State Transition: noch nicht ausgeführt");
-    expect(source).not.toMatch(/>Übernehmen<|>Bestätigen<|Claim speichern|Knowledge aktualisieren/u);
+    expect(source).toMatch(/Übernehmen|Ablehnen|Evidence nicht ausreichend/u);
+    expect(source).not.toMatch(/Montage freigeben|Technisch geeignet|Angebot freigeben|Strength ändern|Wert bearbeiten/u);
+    expect(source).toContain("Keine technische Freigabe");
+    expect(source).toContain("reviewLock.current");
     expect(source).toContain("Noch keine technische Bewertung");
   });
 });

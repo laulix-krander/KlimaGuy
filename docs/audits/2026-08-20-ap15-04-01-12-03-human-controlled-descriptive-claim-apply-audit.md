@@ -325,3 +325,67 @@ Ausdrücklich bestätigt: ausschließlich Audit; kein Claim Apply; keine Knowled
 **WHATSAPP — NOT IMPLEMENTED**
 
 **OVERALL PRODUCT — NOT PRODUCTION READY**
+
+## AP-15-04-01-12-03-01 Synthetic Human Review and Descriptive Claim Apply Result
+
+### Review Contract und Review State
+
+Der implementierte strict/readonly Review-Command bindet Projekt, Conversation, opaque Proposal-ID, erwartete Knowledge-Version, die geschlossene Action `approve | reject | mark_evidence_insufficient`, ausschließlich `admin`, eine injizierte synthetische Actor-UUID und einen Offset-Timestamp. Extra Fields, freie Actions, echte Userdaten und freie Fehlertexte werden nicht akzeptiert. Der lokale immutable `DescriptiveClaimReviewState` enthält nur Projekt-/Conversation-Bindung, Revision und sanitisierten Entry aus Proposal-Fingerprint, Property, Entscheidung, Actor Class/ID, Timestamp und geschlossenem Resultcode. Eine neue fachliche Entscheidung erhöht die Revision genau einmal; Replay erzeugt keine Fake-Revision.
+
+### Admin-only und Client Boundary
+
+Der Simulator injiziert eine konstante synthetische Admin-ID und lädt weder Auth- noch Supabase-Daten. Die UI übergibt nur Proposal-Referenz, Expected Version und Action. Der Domainadapter sucht das Proposal im injizierten lokalen Proposal-Repository und rekonstruiert/validiert Property, Boolean-Wert, Strength, Epistemik, Evidence, Entity, Projekt und Conversation. AI darf Proposal-Ursprung sein, kann aber nicht reviewen oder sich selbst freigeben. Reviewer-/Customer-Review ist in diesem Paket nicht freigeschaltet.
+
+### State Transition Reuse, CAS und Knowledge Mutation
+
+Approval erzeugt rein `KnowledgeClaimProposal → Human Review → StateTransitionProposal(transition_origin=descriptive_claim_review) → applyStateTransitionProposal(...)`. Es gibt keine neue Claim-Mutationsfunktion. Die allgemeine Transition besitzt hierfür einen nicht answer-spezifischen Origin und `descriptive_transition`; Dummy-Answer-/Retry-Felder werden nicht erzeugt. Echte Änderung ist exakt `N→N+1`; stale Expected-/Proposal-Version ergibt `stale_state` ohne Apply oder Rebase.
+
+### Proposal Validation, Idempotency, Duplicates und Konflikte
+
+Die Konvertierungsgrenze erlaubt exakt die fünf auditierten descriptive Properties und unverändert nur Boolean `true`, `descriptive_fact`, `observed`, aktive Evidence, gültige Entity-/Projekt-/Conversation-Bindung sowie Proposal-Version/Fingerprint. Gleicher Proposal-Fingerprint plus gleiche Action ist Replay; erfolgreiches Approval liefert `already_applied`, ohne Claim, State-Version oder Review-Revision zu duplizieren. Ein äquivalenter aktiver Claim ergibt `no_change`. Abweichende effektive Claims ergeben defensiv `conflict_detected`; es entsteht weder Supersession noch automatischer Retry. Reviewer-/manual-corrected Claims werden nicht überschrieben; im gültigen descriptive Contract ist ein äquivalenter Reviewer-Claim ein idempotentes `no_change`.
+
+### Reject und Evidence Insufficient
+
+`reject` und `mark_evidence_insufficient` schreiben genau einen lokalen Review Entry, ändern aber weder Knowledge State, Observation noch Evidence. Ablehnung erklärt die Observation nicht für falsch. Insufficient startet keine Fotoanforderung und lässt einen späteren besseren Evidence-Pfad offen.
+
+### Strength, Epistemik, Readiness und Missing Information
+
+Apply schreibt Strength und Epistemik nicht um: ausschließlich `descriptive_fact` und `observed` passieren die Grenze. Es gibt kein `confirmed` und keine stärkere Strength. Die vorhandene Property Registry trägt `technical_readiness_effect=none`; Tests vergleichen Readiness und Technical Missing Information vor/nach Apply strukturell auf exakte Gleichheit. Insbesondere erfüllt `outdoor_installation_area_observed=true` niemals `outdoor_unit_position_known` oder eine andere technische Property. Planner/Information Gain wurden nicht produktiv verändert.
+
+### Simulator UX, Pending Guard und History
+
+Die Reviewkarte zeigt Propertylabel, „Kontext wurde beobachtet“, „Deskriptiver Fakt“, den Übernahmestatus und prominent „Keine technische Freigabe.“ Exakt die Aktionen „Übernehmen“, „Ablehnen“ und „Evidence nicht ausreichend“ sind vorhanden. Ein synchroner Ref-Guard verhindert Doppelsubmit; während der Aktion sind Controls disabled/`aria-disabled`, die Karte ist `aria-busy`, und „Wird übernommen …“ wird angezeigt. Erfolgs-, Reject-, Insufficient-, Conflict- und Stale-Texte sind kontrolliert. Der Knowledge Inspector kennzeichnet descriptive Claims getrennt als „Deskriptiver Fakt“ und „Beobachtet“. Die History zeigt Property, Decision, Result, Actor Class und Timestamp; IDs nur im Debugmodus. Die Pipeline zeigt Human Review, State Transition/Apply und „Technical Readiness: unverändert“.
+
+### Replay, Tests und Remaining Limits
+
+Die Simulator-Input-Union kennt nun zusätzlich die geschlossenen Arten `evidence_observation` und `claim_review`; Review-Ausführung und injizierte IDs/Timestamps sind pure und deterministisch. Fokussierte Vitest-Tests decken strict Schema, Actions/Actor/UUID/Timestamp, Immutability/Revision, alle fünf Approvals, Reject, Insufficient, CAS, Replay, Duplicate, Reviewer-Schutz, Strength, Epistemik, Readiness, Missing Information und UI-Sicherheitsgrenzen ab. Es gibt keine Persistenz, DB, Migration, Supabase-/Storage-/Server-Action-, echte Medien-, Vision-/AI-API-, WhatsApp- oder Auto-Apply-Kopplung. Ein persistenter atomarer Reviewworkflow, Reviewer-Capability, echte Project-Media-Bindung und Correction/Supersession bleiben getrennte Folgepakete.
+
+**SYNTHETIC HUMAN DESCRIPTIVE CLAIM REVIEW — IMPLEMENTED**
+
+**ADMIN-ONLY SYNTHETIC REVIEW — IMPLEMENTED**
+
+**DESCRIPTIVE CLAIM APPLY VIA EXISTING STATE TRANSITION — IMPLEMENTED**
+
+**DESCRIPTIVE CLAIM REJECT — IMPLEMENTED**
+
+**EVIDENCE INSUFFICIENT REVIEW RESULT — IMPLEMENTED**
+
+**DESCRIPTIVE APPLY CAS / IDEMPOTENCY — IMPLEMENTED**
+
+**TECHNICAL READINESS EFFECT — NONE**
+
+**TECHNICAL MISSING INFORMATION EFFECT — NONE**
+
+**PERSISTENT REVIEW WORKFLOW — NOT IMPLEMENTED**
+
+**REVIEWER ROLE REVIEW WORKFLOW — NOT IMPLEMENTED**
+
+**AUTO-APPLY — NOT IMPLEMENTED**
+
+**REAL PROJECT MEDIA BINDING — NOT IMPLEMENTED**
+
+**VISION — NOT IMPLEMENTED**
+
+**WHATSAPP — NOT IMPLEMENTED**
+
+**OVERALL PRODUCT — NOT PRODUCTION READY**

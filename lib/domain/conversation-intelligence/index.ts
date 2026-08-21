@@ -7,6 +7,7 @@ export * from "./information-gain";
 export * from "./evidence-request";
 export * from "./evidence-observation";
 export * from "./observation-claim-mapping";
+export * from "./descriptive-claim-review";
 export * from "./readiness";
 export * from "./intermediate-assessment";
 export * from "./fixtures";
