@@ -507,3 +507,89 @@ Nicht implementiert sind echtes Offer Artifact/PDF, Provider Receipt, Customer A
 `VISION — NOT IMPLEMENTED`
 
 `OVERALL PRODUCT — NOT PRODUCTION READY`
+
+# AP-15-05-03-03-03-04-02 — Minimal Persistent Execution Authority Result
+
+## Migration und Execution Authority
+
+Die additive Migration `202608230002_minimal_persistent_execution_authority.sql` führt `public.project_executions` als kleine persistente Lifecycle-Authority ein. Der Record enthält UUID, Project- und Accepted-Offer-Bindung, positive monotone Revision, Actor, Creation-Command-Identität, Lifecycle-Zeitpunkte sowie `created_at`/`updated_at`. Termine, Kundendaten, Preise, Material, Mitarbeiter, Arbeitszeiten, Rechnungen, Freitext und Work-Order-Semantik sind ausdrücklich nicht modelliert. History wird nicht gelöscht.
+
+## Offer Binding, Statuses und Creation
+
+Ein zusammengesetzter FK erzwingt dasselbe Project; ein deferred Integrity Trigger akzeptiert ausschließlich die aktuelle persistente `project_offers`-Revision im Status `accepted`. `draft`, `created`, `sent`, `rejected` und `superseded` können keine Execution tragen. Pro accepted Offer ist durch Unique Constraint exakt eine Execution möglich. Die geschlossene Allowlist lautet exakt `not_started`, `active`, `completed`, `cancelled`; Timestamp-Checks schließen widersprüchliche Kombinationen aus.
+
+Die bestehende kontrollierte `sent -> accepted`-Transition erzeugt über einen transaktionalen Acceptance-Trigger genau eine `not_started` Execution. Offer, Project, Execution, Projection-dirty und Audit liegen damit in derselben RPC-Transaktion; ein Insert-/Consistency-Fehler rollt Acceptance vollständig zurück. Replay trifft die persistierte Offer-Command-Antwort und erzeugt weder zweite Execution noch Auditwirkung. Es gibt keine manuelle Creation-RPC und keinen Legacy-Backfill.
+
+## No-order Semantik
+
+`sent -> rejected` erzeugt keine Execution. Nur eine echte aktuelle rejected Offer Authority ohne Execution beweist `execution not applicable`; das allgemeine Fehlen einer Row beweist niemals Completion. Legacy `projects.status=accepted|rejected|closed` ohne Offer bleibt unknown, incomplete und fail-closed.
+
+## Start, Completion, Cancellation und Project Coordination
+
+Admin-only RPCs erlauben ausschließlich `not_started -> active`, `active -> completed` sowie `not_started|active -> cancelled`. Completion und Cancellation koordinieren Project `accepted -> closed` atomar. Ein Trigger und der allgemeine Projectstatus-Service sperren das freie `accepted -> closed`, damit `closed` Execution Completion nicht imitieren kann. Terminale Executions können weder gestartet noch zurückgesetzt werden; Reopen bleibt unsupported.
+
+## Consistency, CAS, Idempotency und Atomicity
+
+Jede Mutation sperrt Project, accepted Offer und Execution, validiert Offer-/Project-/Execution-Invarianten, verlangt `expected_revision` und erhöht bei genau einer echten Transition `N -> N+1`. Stale Revisionen, illegale Transitionen sowie widersprüchliche Project-/Offerzustände brechen fail-closed ab; es gibt kein Auto-Rebase. Project-scoped Command Keys machen Start, Complete und Cancel replay-safe: Replay liefert das vorhandene DTO ohne neue Revision oder Auditzeile. Creation besitzt zusätzlich eine deterministische Acceptance-Command-Bindung und Unique Constraints.
+
+## Actor Boundary und Capability
+
+Die zentrale Capability `canManageProjectExecution` ist ausschließlich für Admin wahr und semantisch unabhängig von Offer- und Delete-Capabilities. Jeder fixed-search-path SECURITY-DEFINER-Einstieg ermittelt Actor und Rolle intern über `auth.uid()`/`current_app_role()`. Reviewer hat nur project-scoped Read, Customer und AI erhalten keine Authority; es wurde keine neue Rolle eingeführt.
+
+## Projection Integration und Missing Authorities
+
+Projection V4 ergänzt `project_execution` als echten Source-Typ mit source-spezifischem `project_execution_id`-FK. `not_started|active` projizieren offen, `completed|cancelled` resolved. Accepted Offer plus passende konsistente Execution oder rejected Offer ohne Execution entfernen `execution` aus `missing_authority_types`. Dadurch kann ein vollständig autoritativer New Flow `missing_authority_types=[]` erreichen. Accepted Offer ohne Execution, Legacy ohne Offer, Statuswidersprüche, falsche Offerbindung und neue Evidence nach terminaler Execution bleiben incomplete/missing und fail-closed. Jede Execution-Mutation markiert die Projection `rebuild_required`.
+
+Neue Evidence während `not_started|active` erhält beim Rebuild die offene projektweite Execution Dependency. Neue Evidence nach Completion/Cancellation ist fachlich ungewöhnlich und wird anhand des Source-Zeitpunkts als Inkonsistenz behandelt, bis ein späteres Lifecycle-Paket sie kontrolliert bewertet. Holds bleiben stärker als terminale Execution.
+
+## Delete Boundary und Retention
+
+Dieses Paket ändert weder Ready-Delete-Claim noch Lifecycle Eligibility und implementiert ausdrücklich **keinen finalen Evidence-bound Delete Unlock**. Selbst leere Missing Authorities und keine offenen unterstützten Dependencies reichen weiterhin nicht für Delete. Terminal bedeutet nur, dass die Execution Dependency geschlossen ist; es wurde keine Retentiondauer konfiguriert.
+
+## RLS, Grants, Audit, DTO und Read Service
+
+RLS ist für Execution und interne Commands aktiv. Authenticated Staff darf project-scoped lesen; direkte Browser-INSERT/UPDATE/DELETE und normaler Hard Delete sind nicht gewährt. Nur die schmalen Start-/Complete-/Cancel-RPCs sind ausführbar. Audit Events sind `project_execution_created`, `project_execution_started`, `project_execution_completed`, `project_execution_cancelled`; Metadaten enthalten nur Actor-, Project-, Execution- und Offer-UUID, vorherigen/resultierenden Status, Revision und Zeitpunkt, keine PII oder Angebotsinhalte.
+
+Das strikte DTO enthält ausschließlich Execution-/Project-/Accepted-Offer-ID, Status, Revision und Lifecycle-/Systemzeitpunkte. Der project-scoped Read Service lädt die aktuelle MVP-Execution ohne Customerdaten; eine spätere History-Ansicht ist nicht vorweggenommen.
+
+## Tests
+
+Migrationstests prüfen Tabelle, FKs/Offerintegrität, Uniqueness, Status-/Revision-/Timestamp-Constraints, Creation/Atomicity, RLS/Grants, Audit, typed Projection und Abwesenheit von PII/ERP/Delete-Unlock. Domain- und Servicetests prüfen Capability, Matrix, DTO, Admin Boundary, offene/gelöste Dependencies, No-order, Missing Authority und Inkonsistenz. Offer-, Status-, Correction-, Knowledge-, Projection-, Lifecycle- und Ready-Delete-Tests bleiben unveränderte Regression Gates.
+
+## Remaining Limits
+
+Nicht implementiert sind Scheduling, Kalender, Monteure/Teams, Arbeitszeiten, Material, Rechnungen, Work Orders, Customer Portal/Acceptance, WhatsApp, Vision, AI, Storageänderungen, Retentiondauer, Reopen sowie der finale Evidence-bound Delete Gate. Das nächste kleinste Paket ist die separat auditierte Final-Gate-/Lifecycle-Integration mit atomarer Delete-Revalidation; es darf keine der hier dokumentierten fail-closed Grenzen implizit aufheben.
+
+## Status
+
+`PERSISTENT OFFER AUTHORITY — IMPLEMENTED`
+
+`PERSISTENT EXECUTION AUTHORITY — IMPLEMENTED`
+
+`OFFER → EXECUTION BINDING — IMPLEMENTED`
+
+`EXECUTION CAS — IMPLEMENTED`
+
+`EXECUTION IDEMPOTENCY — IMPLEMENTED`
+
+`CORRECTION AUTHORITY — IMPLEMENTED`
+
+`AUTHORITATIVE MEDIA DEPENDENCY PROJECTION — IMPLEMENTED`
+
+`CORRECTION MISSING AUTHORITY — RESOLVED`
+
+`OFFER MISSING AUTHORITY — RESOLVED FOR AUTHORITATIVE NEW-FLOW PROJECTS`
+
+`EXECUTION MISSING AUTHORITY — RESOLVED FOR AUTHORITATIVE NEW-FLOW PROJECTS`
+
+`LEGACY PROJECT AUTHORITY — FAIL-CLOSED`
+
+`FINAL EVIDENCE-BOUND DELETE GATE — NOT IMPLEMENTED`
+
+`RETENTION DURATION — NOT CONFIGURED`
+
+`WHATSAPP — NOT IMPLEMENTED`
+
+`VISION — NOT IMPLEMENTED`
+
+`OVERALL PRODUCT — NOT PRODUCTION READY`
