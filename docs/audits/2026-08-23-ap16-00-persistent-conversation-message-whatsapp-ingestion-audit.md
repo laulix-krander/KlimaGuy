@@ -718,3 +718,81 @@ OVERALL PRODUCT — NOT PRODUCTION READY
 ## Remaining limits
 
 This package intentionally provides no Live Message processing, Cycle trigger, planner execution, answer normalization/interpretation, Knowledge mutation, outbound delivery, actual media ingestion, transport/provider identifiers, historical import, UI, retention policy, LLM or Vision. The next smallest package is AP-16-03: controlled canonical Message-to-Cycle orchestration with atomic outbound Message and pending-interaction activation, consuming these CAS and stale-detection boundaries.
+
+# AP-16-03 — Persistent Live Conversation Cycle Orchestration Result
+
+## Processing Command, Input Authority und Bindings
+
+Die additive Migration `202608230006_persistent_live_conversation_cycle.sql` führt `conversation_cycle_commands` als geschlossene, RLS-geschützte Processing Authority ein. Ein normaler Answer-Command ist über `source_message_id` eindeutig; Continue verwendet einen getrennten conversation-gescopten Server-Key. Der TypeScript-Input besteht ausschließlich aus `message_id`. Actor, Richtung, Art, unveränderter Text und Sequenz werden aus der vertrauenswürdig persistierten Message Authority geladen. Browser können weder Customer Actor noch Answer Contract oder Planner Context einspeisen.
+
+Die Authority bindet Conversation-, Runtime- und Knowledge-CAS, Source Message und exakt eine Pending Interaction. `prompt_message_id` verknüpft diese mit der konkreten Outbound-Frage; die kanonische Conversation Sequence muss die Antwort nach dem Prompt einordnen. Eine zweite, bereits zur alten Frage eingegangene Message kann deshalb nicht still die im ersten Cycle neu erzeugte Frage beantworten.
+
+## Normalisierung und Cycle-Reuse
+
+Der server-only Service rekonstruiert `RawCustomerAnswer` ausschließlich aus Message und gebundener Interaction und übergibt den exakten Text an `normalizeCustomerAnswer(...)`. Boolean, Zahl, Unknown und Skip bleiben deren bestehende Semantik. Nur ein erfolgreich normalisiertes Ergebnis wird an unverändert `runConversationCycle(...)` übergeben. Interpretation, State Apply, Retry/Effort, Missing Information, Readiness, Assessment, Planner und Renderer werden nicht dupliziert oder umsortiert. Normalisierungsfehler erzeugen keine Knowledge-Mutation.
+
+## Knowledge-/Runtime-Persistenz, Atomicity und CAS
+
+Das Commit-Contract transportiert den validierten Cycle Output zu genau einer Datenbanktransaktion. Die verbindliche Lock-Reihenfolge lautet Conversation, Runtime, Pending Interaction, project-scoped Knowledge Header, Processing Command und danach Component Rows/Messages. Dort werden Knowledge-Transition, Runtime Header, Collection, Retry, Effort, Evidence Request, Terminalisierung der alten Interaction, interne Outbound Message, neue Pending Interaction, Command-Ergebnis und sanitisiertes Audit gemeinsam CAS-validiert und geschrieben. SQL plant, mappt und bewertet keine Antworten. Ein Rollback lässt weder Claim ohne Runtime-Fortschritt noch Runtime-Fortschritt ohne Claim zurück.
+
+Knowledge-No-Change darf die Runtime Revision erhöhen, ohne die Knowledge Version zu ändern. Bei State Change führt die neue Runtime-Bindung exakt die angewandte Knowledge Version. Eine verlorene Antwort nach DB-Commit wird über das terminale Command-Ergebnis rekonstruiert; sie erzeugt keine zweite Message, Interaction, Revision, Claim-Anwendung oder Audit-Zeile.
+
+## Outbound, Pending Activation und kontrollierte Ergebnisse
+
+Nur der kontrolliert gerenderte Text desselben Planner-Ergebnisses darf als interne Outbound-Textmessage mit Actor `ai` persistiert werden. Outbound Message und Pending-Aktivierung bilden eine Transaktion, und das Command hält die Message-ID. Pro Cycle existiert höchstens eine primäre Frage. Rendererfehler rollen die Generation zurück.
+
+`intermediate_result_ready` beantwortet die alte Interaction, setzt `intermediate_break` und erzeugt ohne vorhandenes Template keinen freien Text. Der idempotente Continue-Command verwendet `continueConversationAfterIntermediateResult(...)`, bewahrt Knowledge/Retry/Collection/Evidence und aktiviert höchstens eine neue gerenderte Frage. Human Review setzt Conversation und Runtime konsistent, deaktiviert Customer Actions und sendet keine Fachdiagnose. Collection Stop lässt keine Pending Interaction zurück. Ein ausgewählter Evidence Request aktiviert ausschließlich Evidence Runtime State und den kontrollierten Anforderungstext; echte Medien bleiben außerhalb dieses Pakets.
+
+## Stale Answers, Two-message Race und Recovery
+
+Abweichende Conversation-/Runtime-/Knowledge-Revisionen oder eine nicht aktuelle Pending Interaction terminalisieren den Command als `stale`, ohne die alte Antwort anzuwenden. Automatisches Umdeuten oder Reopen findet nicht statt. Eindeutige Source Message, höchstens ein `processing` Command je Conversation, Row Locks, Prompt Sequence und Pending-CAS sorgen bei zwei Customer Messages dafür, dass genau eine die offene Frage beantwortet; die zweite bleibt kontrolliert nicht angewandte/stale History.
+
+Vor Domain-Ausführung auftretende technische Fehler lassen die Message unverändert. Retryable Failed Commands dürfen unter derselben Source Authority erneut beansprucht werden. Domain-Erfolg plus Commit-Fehler schreibt nichts; Commit-Erfolg plus verlorene Antwort ist replay-safe. Ein künftiger Transportfehler betrifft ein Folgepaket und rollt den fachlich erfolgreichen internen Cycle nicht zurück.
+
+## RLS, Grants, Audit, Tests und verbleibende Limits
+
+RLS ist aktiv; `anon` und `authenticated` besitzen weder Tabellenmutation noch Execute-Recht auf die interne Orchestrierung. Reviewer-/Customer-Automation existiert nicht. Sanitisiertes Audit umfasst `conversation_cycle_started`, `customer_message_bound_to_interaction`, `conversation_cycle_completed`, `outbound_interaction_created`, `conversation_cycle_stale`, `conversation_cycle_failed`, `conversation_entered_human_review` und `conversation_entered_intermediate_break`; Message Text, normalisierter Wert, Telefon und Providerdaten sind verboten.
+
+Contract-, Migration-, Domain- und Regressionstests decken strikten Message-only Input, geschlossene Status/Failures, Retry-Klassifikation, Replay-/CAS-Indizes, RLS/Grants, Sequence-/Prompt-Bindung sowie Normalizer, Cycle, Continuation, Planner, Evidence und Knowledge ab. Nicht implementiert bleiben WhatsApp/Provider/Webhook/Delivery, echte Media Ingestion, Vision, LLM Rewrite, Historical Import, UI und Retention.
+
+## AP-16-03 Status
+
+PERSISTENT CONVERSATION AUTHORITY — IMPLEMENTED
+
+PERSISTENT MESSAGE AUTHORITY — IMPLEMENTED
+
+PERSISTENT LIVE RUNTIME — IMPLEMENTED
+
+PERSISTENT PENDING INTERACTION — IMPLEMENTED
+
+PERSISTENT MESSAGE → CYCLE ORCHESTRATION — IMPLEMENTED
+
+PERSISTENT CUSTOMER ANSWER BINDING — IMPLEMENTED
+
+PERSISTENT OUTBOUND INTERNAL MESSAGE CREATION — IMPLEMENTED
+
+ATOMIC RUNTIME / OUTBOUND ACTIVATION — IMPLEMENTED
+
+KNOWLEDGE / RUNTIME CONSISTENCY — IMPLEMENTED
+
+MESSAGE REPLAY IDEMPOTENCY — IMPLEMENTED
+
+STALE ANSWER PROTECTION — IMPLEMENTED
+
+TWO-MESSAGE CROSS-QUESTION LEAKAGE — PROHIBITED
+
+WHATSAPP WEBHOOK INGESTION — NOT IMPLEMENTED
+
+WHATSAPP TEXT TRANSPORT — NOT IMPLEMENTED
+
+WHATSAPP MEDIA INGESTION — NOT IMPLEMENTED
+
+WHATSAPP OUTBOUND DELIVERY — NOT IMPLEMENTED
+
+HISTORICAL CHAT IMPORT — NOT IMPLEMENTED
+
+VISION — NOT IMPLEMENTED
+
+LLM CUSTOMER CONVERSATION — NOT IMPLEMENTED
+
+OVERALL PRODUCT — NOT PRODUCTION READY
