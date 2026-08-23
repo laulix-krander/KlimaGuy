@@ -32,6 +32,7 @@ export const pendingInteractionSchema = z.object({
   entity_type: z.enum(ENTITY_TYPES), entity_id: uuid, template_key: z.string().min(1).max(100),
   template_version: revision, locale: z.literal("de"), answer_type: plannerAnswerTypeSchema,
   expected_knowledge_state_version: revision, runtime_revision: revision,
+  prompt_message_id: uuid.nullable().optional(),
   status: z.enum(PENDING_INTERACTION_STATUSES), answered_by_message_id: uuid.nullable(),
   created_at: timestamp, answered_at: timestamp.nullable(), superseded_at: timestamp.nullable(), cancelled_at: timestamp.nullable(),
 }).strict().superRefine((value, context) => {
