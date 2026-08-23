@@ -431,3 +431,79 @@ Es wurde ausschließlich diese eine Auditdatei erstellt. Keine Migration, DB-, S
 `VISION — NOT IMPLEMENTED`
 
 `OVERALL PRODUCT — NOT PRODUCTION READY`
+
+# AP-15-05-03-03-03-04-01 — Minimal Persistent Offer Authority Result
+
+## Migration und Offer Authority
+
+Die additive Migration `202608230001_minimal_persistent_offer_authority.sql` führt `public.project_offers` als konkrete, persistente und project-scoped Lifecycle-Authority ein. Sie enthält ausschließlich Identität, positive projektweit eindeutige `offer_version`, monotone CAS-`revision`, geschlossenen Lifecycle, Supersession, Actor und Lifecycle-Zeitpunkte. Es wurden weder Preise/Positionen noch PII, Dokumentfelder, Storage-Referenzen oder Execution modelliert. UUID und Project-FK verwenden `ON DELETE RESTRICT`; Offer History besitzt keinen Hard-Delete-Pfad.
+
+## Offer Identity, Versioning und Statuses
+
+Jede fachliche Revision ist eine neue Row. Die erste Version ist `1`; kontrollierte Supersession erstellt `N+1`, erhält die alte Row als `superseded` und erzwingt projektgleichen, älteren Vorgänger, kein Self-Link, keinen Zyklus und höchstens eine nicht-superseded aktuelle Revision. Die Allowlist lautet exakt `draft`, `created`, `sent`, `accepted`, `rejected`, `superseded`; `expired` wurde mangels Produktsemantik nicht erfunden. Terminale Revisionen können nicht reaktiviert werden.
+
+## Created Proof und Sent Semantics
+
+`created` beweist in diesem MVP ausschließlich, dass eine konkrete persistente Offer-Revision durch den kontrollierten serverseitigen Schritt als Angebotsversion materialisiert wurde. Es beweist ausdrücklich **kein PDF, kein Dokumentartefakt und keine Datei**. Da weiterhin keine echte Artifact Authority existiert, wurde weder ein Dateiname noch eine Storage-/UI-Heuristik als Authority verwendet. `sent` ist eine admin-bestätigte interne Versandhandlung für diese konkrete Revision und ausdrücklich **kein Provider Delivery Receipt und keine Zustellgarantie**.
+
+## Acceptance, Rejection und Supersession
+
+Nur `sent -> accepted|rejected` ist zulässig. Acceptance ist in diesem Paket eine administrative Admin-Handlung, kein Customer-authenticated Flow; Rejection ist analog Offer-gebunden. Beide koordinieren Offer und Project atomar, erzeugen jedoch keine Execution. Supersession ist nur aus `created|sent` möglich, setzt den Vorgänger terminal und erstellt atomar einen neuen Draft.
+
+## Project Coordination und Actor Boundary
+
+Draft koordiniert `quote_draft`, Sent `quote_sent`, Acceptance `accepted`, Rejection `rejected`; Supersession koordiniert zurück zu `quote_draft`. Project Row und aktuelle Offer Row werden gesperrt und innerhalb derselben RPC-Transaktion geprüft/geändert. Ein DB-Guard und der allgemeine Server-Service verweigern freie offerrelevante Statusänderungen. Offer-Mutationen sind über die zentrale Capability `canManageProjectOffers` und erneut in jedem SECURITY-DEFINER-Einstieg Admin-only. Reviewer darf projektbezogen lesen, aber nicht mutieren; Customer und AI besitzen keine Authority.
+
+## CAS, Idempotency, Atomicity und Audit
+
+Jede Mutation verlangt die erwartete Offer-Revision (Create zusätzlich den erwarteten Projectstatus); stale Eingaben brechen ohne Partial Commit ab. Project-scoped eindeutige Command Keys machen Create/Created/Sent/Accept/Reject/Supersede replay-safe. Replay liefert denselben schmalen DTO-Zustand und erzeugt weder zweite Version noch Revision oder Auditzeile. Offer, Projectstatus, Command, Projection-dirty und sanitisiertes Audit werden in einer DB-Transaktion geschrieben. Events sind `offer_draft_created`, `offer_created`, `offer_sent`, `offer_accepted`, `offer_rejected`, `offer_superseded`; Metadaten enthalten nur Actor-/Project-/Offer-ID, Version, Revision, Status und Zeitpunkt.
+
+## New Evidence Behavior und Dependency Projection
+
+Die V3-Erweiterung ergänzt source-spezifisch `project_offer_id` sowie `offer_preparation` und `offer_open`; eine generische UUID ohne typisierten FK ist nicht zulässig. Für jede Evidence-bound Media eines Projekts wird konservativ dieselbe aktuelle Offer-Revision projiziert: Draft hält Preparation offen; Created/Sent halten Offer Open; Accepted/Rejected lösen beide. Supersession löst die alte Quelle und der neue Draft öffnet Preparation erneut. Eine Offer-Mutation sowie neue Evidence markieren die Projection `rebuild_required`.
+
+Es gibt bewusst keine `offer_evidence`-Relation. Deshalb gilt eine alte Created-/Sent-Revision niemals als präziser Nachweis, dass spätere Evidence berücksichtigt wurde: während eines offenen Offerprozesses bleiben alle Evidence-bound Project Media geschützt; neue Evidence bleibt durch den projektweiten offenen Offerblocker und die dirty/rebuild-Grenze fail-closed. Das ist konservativ und kein finaler Delete Unlock.
+
+Nach vollständigem Rebuild darf `offer` nur dann aus `missing_authority_types` verschwinden, wenn eine echte aktuelle `project_offers`-Row existiert. Ohne Row bleibt `offer` missing. `execution` bleibt immer missing. Der bestehende Evidence-bound Delete bleibt daher unabhängig vom terminalen Offerstatus blockiert.
+
+## Legacy Projects
+
+Es gibt keinen Backfill. Legacy Projects in `quote_draft`, `quote_sent`, `accepted`, `rejected` oder `closed` ohne Offer Row bleiben Offer Authority unknown/incomplete und fail-closed. Eine Statuszeile wird nicht in erfundene Historie umgedeutet. Eine spätere admin-only Reconciliation ist nicht Bestandteil dieses Pakets.
+
+## RLS, Grants, DTO und Read Service
+
+RLS ist auf Offers und internen Commands aktiv. Nur projektbezogene Staff-Reads sind erlaubt; Customer erhält keine Policy. `anon` und `authenticated` haben keine Tabellenmutation, insbesondere kein UPDATE/DELETE. Nur die engen fixed-search-path RPCs sind für `authenticated` ausführbar und bestimmen Actor, ID, Version, Revision, Status und Zeitpunkte serverseitig. Der strikte DTO enthält nur Offer-/Project-ID, Version, Revision, Status, Lifecycle-Zeitpunkte und optionalen Vorgänger. Der Read Service lädt aktuelle Revision und History mit einer project-scoped Listenabfrage ohne N+1.
+
+## Tests und Remaining Limits
+
+Migrationstests prüfen Tabelle/FKs, Allowlist, positive Revision, project/version uniqueness, Current-Index, Supersession/Self/Cycle, RLS/Grants, kein DELETE und die Abwesenheit von Preis-, PII-, Artifact- und Executionmodell. Domain-/Servicetests prüfen Capability, geschlossene Transitionen, Dependency Mapping, DTO-Grenze, CAS/Replay- und Atomicity-Verträge. Bestehende Status-, Evidence-, Correction-, Knowledge-, Projection-, Lifecycle- und Ready-Delete-Suites bleiben Regression Gates.
+
+Nicht implementiert sind echtes Offer Artifact/PDF, Provider Receipt, Customer Acceptance, Execution Authority, finale Delete-Freigabe, Retentiondauer, WhatsApp, Vision, AI und Storageänderung. Das nächste kleinste Paket ist die separat auditierte Minimal Execution Authority; erst danach kann ein eigenes Paket Projection und finalen Delete Gate untersuchen.
+
+## Status
+
+`PERSISTENT OFFER AUTHORITY — IMPLEMENTED`
+
+`OFFER REVISION AUTHORITY — IMPLEMENTED`
+
+`OFFER CREATED AUTHORITY — IMPLEMENTED`
+
+`OFFER SENT LIFECYCLE — IMPLEMENTED`
+
+`OFFER ACCEPTED / REJECTED LIFECYCLE — IMPLEMENTED`
+
+`LEGACY OFFER HISTORY AUTO-BACKFILL — NOT IMPLEMENTED`
+
+`EXECUTION AUTHORITY — NOT IMPLEMENTED`
+
+`EXECUTION MISSING AUTHORITY — STILL BLOCKING`
+
+`FINAL EVIDENCE-BOUND DELETE GATE — NOT IMPLEMENTED`
+
+`RETENTION DURATION — NOT CONFIGURED`
+
+`WHATSAPP — NOT IMPLEMENTED`
+
+`VISION — NOT IMPLEMENTED`
+
+`OVERALL PRODUCT — NOT PRODUCTION READY`

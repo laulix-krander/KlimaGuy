@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const MEDIA_DEPENDENCY_PROJECTION_VERSION = "media_dependency_projection_v1" as const;
-export const MEDIA_DEPENDENCY_TYPES = ["evidence_interpretation", "observation_followup", "claim_proposal_review", "claim_apply", "claim_correction"] as const;
+export const MEDIA_DEPENDENCY_TYPES = ["evidence_interpretation", "observation_followup", "claim_proposal_review", "claim_apply", "claim_correction", "offer_preparation", "offer_open"] as const;
 export const MEDIA_DEPENDENCY_STATUSES = ["open", "resolved", "invalidated"] as const;
 export const MEDIA_DEPENDENCY_COMPLETENESS_STATUSES = ["complete", "incomplete", "drifted", "rebuild_required"] as const;
 export const MEDIA_DEPENDENCY_MISSING_AUTHORITIES = ["offer", "execution"] as const;
@@ -9,6 +9,7 @@ export const MEDIA_DEPENDENCY_REASON_CODES = [
   "interpretation_pending", "interpretation_retry_required", "observation_followup_pending",
   "proposal_review_pending", "approved_apply_pending", "claim_apply_retry_required",
   "claim_correction_pending", "claim_correction_retry_required", "offer_authority_missing", "execution_authority_missing",
+  "offer_preparation_open", "offer_open",
   "source_record_inconsistent", "projection_incomplete", "source_media_unavailable",
 ] as const;
 
@@ -21,6 +22,7 @@ export type MediaDependencyProjectionInput = Readonly<{
   project_id: string;
   project_media_id: string;
   media_available: boolean;
+  current_offer?: Source & { status: "draft" | "created" | "sent" | "accepted" | "rejected" };
   evidence: readonly Readonly<{
     id: string;
     interpretation_runs: readonly (Source & { status: "pending" | "in_progress" | "completed" | "insufficient_evidence" | "failed" | "invalidated"; result_code: string | null })[];
@@ -32,7 +34,7 @@ export type MediaDependencyProjectionInput = Readonly<{
 }>;
 
 export type DerivedMediaDependency = Readonly<{
-  evidence_id: string; dependency_type: DependencyType; source_record_kind: "interpretation_run" | "observation" | "claim_proposal" | "knowledge_correction";
+  evidence_id: string; dependency_type: DependencyType; source_record_kind: "interpretation_run" | "observation" | "claim_proposal" | "knowledge_correction" | "project_offer";
   source_record_id: string; source_revision: number; status: DependencyStatus; reason_codes: readonly ReasonCode[];
 }>;
 export type MediaDependencyProjectionResult = Readonly<{
@@ -77,8 +79,13 @@ export function deriveProjectMediaDependencies(input: MediaDependencyProjectionI
       const open = correction.status === "pending" || correction.status === "stale" || correction.status === "failed";
       dependencies.push({ evidence_id: evidence.id, dependency_type: "claim_correction", source_record_kind: "knowledge_correction", source_record_id: correction.id, source_revision: correction.revision, status: open ? "open" : "resolved", reason_codes: open ? [correction.status === "pending" ? "claim_correction_pending" : "claim_correction_retry_required"] : [] });
     }
+    if (input.current_offer) {
+      const offer = input.current_offer;
+      dependencies.push({ evidence_id: evidence.id, dependency_type: "offer_preparation", source_record_kind: "project_offer", source_record_id: offer.id, source_revision: offer.revision, status: offer.status === "draft" ? "open" : "resolved", reason_codes: offer.status === "draft" ? ["offer_preparation_open"] : [] });
+      dependencies.push({ evidence_id: evidence.id, dependency_type: "offer_open", source_record_kind: "project_offer", source_record_id: offer.id, source_revision: offer.revision, status: offer.status === "created" || offer.status === "sent" ? "open" : "resolved", reason_codes: offer.status === "created" || offer.status === "sent" ? ["offer_open"] : [] });
+    }
   }
-  const missing = [...MEDIA_DEPENDENCY_MISSING_AUTHORITIES];
+  const missing: MissingAuthority[] = input.current_offer ? ["execution"] : [...MEDIA_DEPENDENCY_MISSING_AUTHORITIES];
   const reasons: ReasonCode[] = missing.map((authority) => reasonForMissing[authority]);
   if (!input.media_available) reasons.push("source_media_unavailable");
   if (inconsistent) reasons.push("source_record_inconsistent", "projection_incomplete");

@@ -89,6 +89,9 @@ export async function updateProjectStatusWithDataSource(
   if (targetStatus !== currentStatus && !isProjectStatusTransitionAllowed(currentStatus, targetStatus)) {
     return { success: false, error: "Dieser Statuswechsel ist nicht erlaubt." };
   }
+  if (targetStatus !== currentStatus && ["quote_draft", "quote_sent", "accepted", "rejected"].includes(targetStatus)) {
+    return { success: false, error: "Angebotsbezogene Statuswechsel erfolgen ausschließlich über den Angebotsprozess." };
+  }
 
   const payload: ProjectStatusUpdate = { status: targetStatus };
   const { data: project, error } = await dataSource
