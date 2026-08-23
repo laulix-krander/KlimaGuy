@@ -594,3 +594,55 @@ AP-16-00 erzeugt ausschließlich diese Auditdatei. Es implementiert **keine** Mi
 | OVERALL PRODUCT | **NOT PRODUCTION READY** |
 
 Ownerfreigabe dieses Audits ist noch keine Production- oder Gesamtimplementierungsfreigabe. Der nächste beantragbare Scope ist ausschließlich AP-16-01.
+
+# AP-16-01 — Persistent Conversation & Message Authority Result
+
+## Migration und Authorities
+
+Die additive Migration `202608230004_persistent_conversation_message_authority.sql` implementiert `conversations`, die append-only `conversation_messages` mit getrennten typisierten Text-/Referenzinhalten sowie `conversation_project_assignments`. Interne UUIDs sind die einzige Conversation- und Message-Identität. Conversation enthält ausschließlich optionale Customer-/aktuelle Project-Bindung, den geschlossenen Status `open|paused|human_review|closed`, positive Revision und Zeitpunkte; initial gelten `open` und Revision `1`.
+
+Customer und Project werden über die vorhandenen Authorities mit `ON DELETE RESTRICT` referenziert. Unassigned Conversations sind gültig. Ein Project kann mehrere Conversations haben, eine Conversation höchstens ein aktuelles Project. Initial Assignment und admin-only Reassignment sind atomar, CAS-gesichert und schreiben unveränderliche History (`assigned|reassigned`); direktes Umschreiben des aktuellen Projects wird durch einen Guard verhindert. Statuswechsel folgen ausschließlich der kleinen freigegebenen Matrix, nutzen `expected_revision`, erhöhen nur bei Änderung die Revision und öffnen `closed` niemals implizit wieder.
+
+## Message Contract, Inhalt und History
+
+Messages haben opaque UUID, conversation-lokal eindeutige positive `sequence`, geschlossene Direction (`inbound|outbound|internal`), Kind (`text|image_reference|document_reference|system_notice|internal_note`), Actor (`customer|admin|reviewer|system|ai`), getrennte `occurred_at`/`created_at` und optionales Reply. Die kanonische Reihenfolge ist `sequence`; gleiche Zeitpunkte bleiben deterministisch. Text ist unverändert, nicht leer und auf 20.000 Zeichen begrenzt. Semantische Bild-/Dokumentreferenzen tragen ausschließlich eine opaque interne UUID, keine Datei, URL oder Media-/Storage-Bindung. Es gibt keine freie Content-/Provider-JSONB-Autorität.
+
+Row-Guards verhindern UPDATE/DELETE an Messages, Text-/Referenzinhalt und Assignment-History. Replies müssen existieren, derselben Conversation angehören und dürfen keine Self-Reference sein. Normale Aufzeichnung in `closed` ist gesperrt. Internal Notes sind zwingend `internal`; Direction/Actor-Constraints verhindern die Interpretation als Kundenversand. Der öffentliche Staff-Input besitzt kein Actor-Feld und erlaubt weder inbound noch historische `occurred_at`; ein separat typisierter trusted server/import-ready Contract ist nicht als Browser-/Provider-Action exponiert.
+
+## Idempotenz, Audit und sichere Grenzen
+
+Conversation Creation, Assignment und Message Recording besitzen gescopte Command-/Idempotency-Keys. Identischer Replay liefert das vorhandene DTO, erzeugt keine zweite Sequence und keinen zweiten Audit-Eintrag; Konflikte failen geschlossen. Audit-Aktionen sind `conversation_created`, `conversation_project_assigned`, `conversation_status_changed` und `conversation_message_recorded`. Metadaten enthalten nur Actor-, Conversation-, optionale Project-/Message-ID, Kind/Direction, Revision/Sequence und Zeitpunkt — niemals Text, Customerdaten, Telefon, E-Mail, URL oder Transportdaten.
+
+RLS ist auf allen sechs Tabellen aktiv. Direkte Rechte werden vollständig entzogen; authenticated erhält ausschließlich scoped Read der Current-/Message-/Content-Projektion und explizit freigegebene Admin-RPCs. Unassigned Conversations sind admin-only; Reviewer lesen nur projectgebundene Conversations. Es gibt keine Customer-/anon-Rechte und keine direkten Message-Inserts, -Updates oder -Deletes. SECURITY-DEFINER-Funktionen nutzen einen festen `search_path`, `auth.uid()`, rekonstruierte Rollen und servergenerierte IDs/Sequence.
+
+## DTOs, Read Service und Pagination
+
+Strikte Zod-Verträge (Zusatzfelder abgelehnt) decken Conversation, Message, discriminated Content, Create, Assignment, Status, Staff-/Trusted-Record, DTOs, geschlossene Error Codes und Result Union ab. DTOs enthalten keine Transportdaten. Der Read Service lädt genau eine zugängliche Conversation oder höchstens 100 Messages über `sequence > cursor`, sortiert nach Sequence; keine unbounded History, Timestamp-Pagination oder N+1-Abfrage.
+
+## Provider-, Knowledge- und Import-Grenze
+
+Conversation/Message enthalten keinen Channel, Provider, Provider-Identifier, Telefonnummer, Transportpayload oder Delivery State. Provider-Bindings bleiben Folgepaket. Persistenz löst keinen Cycle, Planner, Normalizer, Knowledge-/Evidence-/Claim-Write oder Outbound-Versand aus. Die Trennung von `occurred_at` und `created_at` sowie opaque Message Identity ist für einen späteren kontrollierten historischen Import vorbereitet; es gibt jetzt weder Import API noch Importflag oder automatische Knowledge Extraction.
+
+## Tests und verbleibende Grenzen
+
+Contracttests prüfen Striktheit, UUID/Timestamps/Revision/Sequence, Allowlisten, exakten Text, Staff-/Actor-Grenze, Internal Notes, trusted historische Zeit und Keyset-Aufruf. Migrationstests prüfen Tabellen, Idempotenz, CAS, Reply-Scope, Append-only-Guards, Closed Gate, RLS/Grants, Admin-only Unassigned Read, Audit-PII-Isolation, Providerfeld-Abwesenheit und Pagination. Runtime-, Pending-, Transport-, Delivery-, Media-, Import-, AI-/Vision-, UI- und Retention-Entscheidungen bleiben ausdrücklich außerhalb dieses Pakets.
+
+## AP-16-01 Status
+
+- **PERSISTENT CONVERSATION AUTHORITY — IMPLEMENTED**
+- **PERSISTENT MESSAGE AUTHORITY — IMPLEMENTED**
+- **PROVIDER-INDEPENDENT MESSAGE IDENTITY — IMPLEMENTED**
+- **APPEND-ONLY CUSTOMER MESSAGE HISTORY — IMPLEMENTED**
+- **CONVERSATION / PROJECT ASSIGNMENT — IMPLEMENTED ACCORDING TO APPROVED MVP SCOPE**
+- **PERSISTENT LIVE CONVERSATION RUNTIME STATE — NOT IMPLEMENTED**
+- **PERSISTENT PENDING INTERACTION — NOT IMPLEMENTED**
+- **PERSISTENT COLLECTION / RETRY / EFFORT STATE — NOT IMPLEMENTED**
+- **WHATSAPP WEBHOOK INGESTION — NOT IMPLEMENTED**
+- **WHATSAPP TEXT INGESTION — NOT IMPLEMENTED**
+- **WHATSAPP MEDIA INGESTION — NOT IMPLEMENTED**
+- **WHATSAPP OUTBOUND DELIVERY — NOT IMPLEMENTED**
+- **HISTORICAL CHAT IMPORT — NOT IMPLEMENTED**
+- **AUTOMATIC HISTORICAL KNOWLEDGE EXTRACTION — NOT IMPLEMENTED**
+- **VISION — NOT IMPLEMENTED**
+- **LLM CUSTOMER CONVERSATION — NOT IMPLEMENTED**
+- **OVERALL PRODUCT — NOT PRODUCTION READY**
