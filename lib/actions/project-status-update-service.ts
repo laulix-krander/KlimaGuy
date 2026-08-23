@@ -92,6 +92,9 @@ export async function updateProjectStatusWithDataSource(
   if (targetStatus !== currentStatus && ["quote_draft", "quote_sent", "accepted", "rejected"].includes(targetStatus)) {
     return { success: false, error: "Angebotsbezogene Statuswechsel erfolgen ausschließlich über den Angebotsprozess." };
   }
+  if (currentStatus === "accepted" && targetStatus === "closed") {
+    return { success: false, error: "Der Abschluss erfolgt ausschließlich über den Ausführungsprozess." };
+  }
 
   const payload: ProjectStatusUpdate = { status: targetStatus };
   const { data: project, error } = await dataSource

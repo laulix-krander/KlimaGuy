@@ -78,6 +78,11 @@ describe("project status update service", () => {
     await expect(updateProjectStatusWithDataSource(source({ row: null }).dataSource, validProjectId, validInput)).resolves.toMatchObject({ success: false, error: "Das Projekt wurde zwischenzeitlich geändert. Bitte laden Sie die Seite neu." });
   });
 
+  it("does not let project closure impersonate execution completion", async () => {
+    await expect(updateProjectStatusWithDataSource(source({ current: { id: validProjectId, customer_id: customerId, status: "accepted" } }).dataSource, validProjectId, { status: "closed" }))
+      .resolves.toMatchObject({ success: false, error: "Der Abschluss erfolgt ausschließlich über den Ausführungsprozess." });
+  });
+
   it("maps FormData to the status allowlist and keeps project revalidation paths available", () => {
     const formData = new FormData();
     formData.set("project_id", validProjectId);

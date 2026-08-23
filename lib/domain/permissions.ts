@@ -67,6 +67,11 @@ export function canManageProjectOffers(role: Role | null): boolean {
   return role === "admin";
 }
 
+/** Execution lifecycle is a separate, admin-only workflow authority. */
+export function canManageProjectExecution(role: Role | null): boolean {
+  return role === "admin";
+}
+
 /** Physical deletion is an explicit, stronger admin-only capability. */
 export function canExecuteProjectMediaDeletion(role: Role | null): boolean {
   return role === "admin";
