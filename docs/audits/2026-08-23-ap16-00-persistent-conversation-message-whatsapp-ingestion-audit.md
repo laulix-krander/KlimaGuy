@@ -646,3 +646,75 @@ Contracttests prüfen Striktheit, UUID/Timestamps/Revision/Sequence, Allowlisten
 - **VISION — NOT IMPLEMENTED**
 - **LLM CUSTOMER CONVERSATION — NOT IMPLEMENTED**
 - **OVERALL PRODUCT — NOT PRODUCTION READY**
+
+# AP-16-02 — Persistent Live Conversation Runtime & Pending Interaction Result
+
+## Implementation result
+
+AP-16-02 adds migration `202608230005_persistent_conversation_runtime.sql`. It deliberately remains a normalized current-state authority: a conversation-scoped runtime header references the project-scoped Knowledge version, while pending interactions, information collection items, retry items, effort counters, evidence requests, and the idempotent command ledger remain typed relations. There is no general runtime JSON snapshot and no copy of Knowledge claims.
+
+The runtime status allowlist is `idle`, `awaiting_customer_answer`, `awaiting_evidence`, `intermediate_break`, `human_review`, and `collection_stopped`. Header invariants enforce exactly one primary active customer action and keep active IDs consistent with status. Runtime revision starts at 1 during lazy initialization; every future real command must CAS against `expected_revision` and advance by one, while a replay is identified by `(conversation_id,idempotency_key)` and returns the prior result without advancing.
+
+Initialization locks Conversation and Knowledge header in that order, requires an assigned active Conversation project and existing authoritative project Knowledge state, records its current version, creates only the neutral effort row, and invents neither pending questions, collection facts, retry attempts, nor evidence. Existing Conversations are not backfilled. Unassigned Conversations and missing Knowledge authority fail closed.
+
+Pending interaction identity binds the planner `decision_id`, closed selected action type, information/entity identity, exact template key/version/locale and answer type, expected Knowledge version, and activation runtime revision. A partial unique index allows at most one pending question. Identity fields are immutable; only controlled terminal transitions may set `answered`, `superseded`, or `cancelled`. The original template registry version remains the answer-contract authority: the TypeScript gate requires the exact registry entry and matching action/information/answer contract, and missing versions fail closed without silent upgrade. Rendered text and raw answers are not stored here.
+
+`answered_by_message_id` and evidence `resolved_by_message_id` use restrictive Message FKs plus same-Conversation triggers. Thus opaque provenance can be attached later without copying Message or Answer content and without mutating append-only Messages.
+
+Information collection persistence mirrors `InformationCollectionState` fields and its version, including status, meaning, evidence/revisit disposition, bounded attempts, dependency signature, collection path, gain reason, and update time. Retry persistence preserves the domain maximum of exactly two. Effort persistence contains only the three existing counters and optional break timestamp, so the four-question boundary survives restart. The controlled continuation boundary is represented by `intermediate_break`: it has no active customer action; a later `continue_after_break` command may advance runtime revision and reset only the permitted effort break fields while preserving Knowledge, retry, collection and evidence state, before a separate later replan creates an interaction.
+
+Evidence runtime rows reuse existing request statuses (`planned`, `requested`, `provided`, `skipped`, `declined`, `superseded`, `cancelled`), typed targets/purposes/views/counts and bounded attempts. There are no provider media IDs, Storage URLs or synthetic availability rows; `project_evidence` remains evidence authority. A partial unique index prevents multiple requested evidence actions, and the header prevents evidence and a normal interaction from being concurrently active.
+
+Conversation `human_review`, `paused`, and `closed` are hard automatic-action boundaries. Human review is mirrored as runtime `human_review`; pause/closed must have neither active pending interaction nor active evidence request. No automatic resume exists. Runtime mutations are designed as short atomic transactions locking Conversation, Runtime header, active actions and (when relevant) Knowledge header in consistent order. Component rows carry the runtime revision, preventing mixed materialized generations. Future Knowledge apply orchestration must atomically advance the header Knowledge version before activating another question; this package itself never mutates Knowledge.
+
+`isPendingInteractionCurrent` is the explicit stale-answer gate. It checks parsed status, Conversation and Project identity, active ID, runtime revision, expected/runtime/current Knowledge version, and distinguishes stale from impossible future bindings. An external correction from N to N+1 therefore leaves history intact but makes the old question unusable; AP-16-03 must supersede and replan rather than apply its answer.
+
+The internal DTO/read service obtains the header, active pending summary, collection, retry, effort and evidence summaries in one set-oriented RPC and strictly validates all rows. Materializers consume the established Domain Zod schemas and reject invalid binding, duplicate keys, mixed runtime revisions, or mixed collection versions. No critical persistence value is silently defaulted.
+
+All Runtime tables have RLS enabled. Authenticated staff receive scoped reads; there are no direct authenticated inserts, updates, or deletes. Runtime initialization is an admin-only fixed-`search_path` security-definer command. Reviewer mutation and customer access are absent. The command table is append-only and unavailable for direct browser reads/mutation. Audit metadata contains only opaque IDs, status/version facts, and never Message text, answer value, customer identity, phone number, provider information, or rendered content.
+
+Pending activation does not render or create an outbound Message. AP-16-03 must atomically couple validated runtime transition, canonical outbound Message and pending activation. No Message insert trigger invokes planner, normalization, Cycle or Knowledge apply. The runtime modules contain no transport, network, Storage, AI, Vision or provider coupling.
+
+## Status
+
+PERSISTENT CONVERSATION AUTHORITY — IMPLEMENTED
+
+PERSISTENT MESSAGE AUTHORITY — IMPLEMENTED
+
+PERSISTENT LIVE CONVERSATION RUNTIME STATE — IMPLEMENTED
+
+PERSISTENT PENDING INTERACTION — IMPLEMENTED
+
+PERSISTENT INFORMATION COLLECTION STATE — IMPLEMENTED
+
+PERSISTENT RETRY STATE — IMPLEMENTED
+
+PERSISTENT CUSTOMER EFFORT STATE — IMPLEMENTED
+
+PERSISTENT EVIDENCE REQUEST RUNTIME STATE — IMPLEMENTED
+
+PERSISTENT INTERMEDIATE BREAK / CONTINUATION STATE — IMPLEMENTED
+
+PERSISTENT HUMAN-REVIEW RUNTIME BOUNDARY — IMPLEMENTED
+
+LIVE MESSAGE → CONVERSATION CYCLE ORCHESTRATION — NOT IMPLEMENTED
+
+WHATSAPP WEBHOOK INGESTION — NOT IMPLEMENTED
+
+WHATSAPP TEXT INGESTION — NOT IMPLEMENTED
+
+WHATSAPP MEDIA INGESTION — NOT IMPLEMENTED
+
+WHATSAPP OUTBOUND DELIVERY — NOT IMPLEMENTED
+
+HISTORICAL CHAT IMPORT — NOT IMPLEMENTED
+
+VISION — NOT IMPLEMENTED
+
+LLM CUSTOMER CONVERSATION — NOT IMPLEMENTED
+
+OVERALL PRODUCT — NOT PRODUCTION READY
+
+## Remaining limits
+
+This package intentionally provides no Live Message processing, Cycle trigger, planner execution, answer normalization/interpretation, Knowledge mutation, outbound delivery, actual media ingestion, transport/provider identifiers, historical import, UI, retention policy, LLM or Vision. The next smallest package is AP-16-03: controlled canonical Message-to-Cycle orchestration with atomic outbound Message and pending-interaction activation, consuming these CAS and stale-detection boundaries.

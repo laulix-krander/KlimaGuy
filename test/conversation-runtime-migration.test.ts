@@ -1,0 +1,10 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+const sql=readFileSync("supabase/migrations/202608230005_persistent_conversation_runtime.sql","utf8");
+describe("persistent conversation runtime migration",()=>{
+ it("normalizes every runtime component and enables RLS",()=>{for(const table of ["conversation_runtime_states","conversation_pending_interactions","conversation_information_collection","conversation_retry_states","conversation_effort_states","conversation_evidence_request_states","conversation_runtime_commands"]){expect(sql).toContain(`create table public.${table}`);expect(sql).toContain(`alter table public.${table} enable row level security`)}});
+ it("enforces unique active actions, restrictive message FKs and immutable interaction identity",()=>{expect(sql).toContain("one_pending_interaction_per_conversation");expect(sql).toContain("one_active_evidence_request_per_conversation");expect(sql.match(/references public\.conversation_messages\(id\) on delete restrict/g)?.length).toBe(2);expect(sql).toContain("pending_interaction_identity_immutable")});
+ it("provides lazy initialization, CAS ledger, scoped reads, and no browser mutation grants",()=>{expect(sql).toContain("initialize_conversation_runtime");expect(sql).toContain("knowledge_state_not_initialized");expect(sql).toContain("runtime_requires_project");expect(sql).toContain("unique(conversation_id,idempotency_key)");expect(sql).not.toMatch(/grant (insert|update|delete|all).*conversation_runtime/i)});
+ it("contains no provider, outbound, Cycle, planner, normalization, or Knowledge mutation coupling",()=>{for(const forbidden of ["whatsapp","meta api","provider_message","fetch(","planNextAction","normalizeCustomerAnswer","runConversationCycle","applyStateTransitionProposal"]){expect(sql).not.toContain(forbidden)}});
+ it("keeps sanitized audit metadata",()=>{expect(sql).toContain("conversation_runtime_initialized");for(const forbidden of ["phone","message_text","answer_value","customer_name"]){expect(sql).not.toContain(forbidden)}});
+});
