@@ -62,6 +62,11 @@ export function canManageProjectMediaLifecycle(role: Role | null): boolean {
   return role === "admin";
 }
 
+/** Offer lifecycle authority is an admin-only responsibility in the MVP. */
+export function canManageProjectOffers(role: Role | null): boolean {
+  return role === "admin";
+}
+
 /** Physical deletion is an explicit, stronger admin-only capability. */
 export function canExecuteProjectMediaDeletion(role: Role | null): boolean {
   return role === "admin";
