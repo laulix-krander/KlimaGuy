@@ -15,7 +15,11 @@ export const PROJECT_MEDIA_DELETION_REASON_CODES = Object.freeze([
   "retention_policy_missing", "retention_not_completed", "project_active", "offer_state_unknown",
   "offer_open", "offer_preparation_open", "evidence_dependency_open", "observation_dependency_unknown",
   "proposal_dependency_unknown", "review_dependency_unknown", "correction_dependency_unknown",
-  "legal_or_operational_hold", "cross_project_mismatch", "unsupported_media_state",
+  "legal_or_operational_hold", "cross_project_mismatch", "unsupported_media_state", "project_not_terminal",
+  "offer_authority_unknown", "execution_active", "execution_authority_unknown", "correction_open",
+  "dependency_projection_missing", "dependency_projection_incomplete", "dependency_projection_drifted",
+  "dependency_projection_rebuild_required", "missing_authorities", "open_dependencies", "media_not_present",
+  "stale_lifecycle_revision", "stale_projection", "legacy_authority_unknown", "delete_attempt_conflict",
 ] as const);
 export const PROJECT_MEDIA_RETENTION_POLICY_VERSIONS = Object.freeze(["customer_photo_retention_v1"] as const);
 export const PROJECT_MEDIA_DELETION_EXECUTION_STATES = Object.freeze([
@@ -76,6 +80,15 @@ export type ProjectMediaDeletionEligibilityInput = {
   evidence: { binding_status: string; target_valid: boolean; purpose_valid: boolean }[];
   offer_state: "not_relevant" | "unknown" | "open" | "closed";
   dependency_state: "not_relevant" | "unknown" | "open" | "closed";
+  expected_lifecycle_revision?: number;
+  physical_state?: "present" | "deletion_pending" | "absent" | "deletion_failed";
+  final_authority?: Readonly<{
+    projection: null | { version: typeof import("./project-media-dependency-projection").MEDIA_DEPENDENCY_PROJECTION_VERSION; expected_version: typeof import("./project-media-dependency-projection").MEDIA_DEPENDENCY_PROJECTION_VERSION; revision: number; expected_revision: number; completeness: "complete" | "incomplete" | "drifted" | "rebuild_required"; drift_detected: boolean; missing_authorities: readonly string[]; open_dependencies: number };
+    offer: null | { status: "draft" | "created" | "sent" | "accepted" | "rejected" };
+    execution: null | { status: "not_started" | "active" | "completed" | "cancelled" };
+    correction_open: boolean;
+    active_delete_attempt: boolean;
+  }>;
 };
 
 const blocked = (status: Exclude<ProjectMediaDeletionEligibility["status"], "eligible">, ...reason_codes: (typeof PROJECT_MEDIA_DELETION_REASON_CODES)[number][]): ProjectMediaDeletionEligibility => ({ status, reason_codes });
@@ -89,14 +102,36 @@ export function evaluateProjectMediaDeletionEligibility(input: ProjectMediaDelet
     return blocked("media_not_ready", "media_not_ready", reason);
   }
   if (!input.lifecycle) return blocked("lifecycle_state_blocks", "lifecycle_missing");
+  if (input.expected_lifecycle_revision !== undefined && input.lifecycle.revision !== input.expected_lifecycle_revision) return blocked("lifecycle_state_blocks", "stale_lifecycle_revision");
+  if (input.physical_state !== undefined && input.physical_state !== "present") return blocked("media_not_ready", "media_not_present");
   if (!input.lifecycle.policy_version) return blocked("policy_not_configured", "retention_policy_missing");
   if (input.lifecycle.hold_status !== "none") return blocked("lifecycle_state_blocks", "legal_or_operational_hold");
   if (input.project_status !== "closed") return blocked("project_state_blocks", "project_active");
+  const boundEvidence = input.evidence.some((item) => item.binding_status === "bound");
+  if (boundEvidence && input.final_authority) {
+    const authority = input.final_authority;
+    if (!authority.projection) return blocked("dependency_state_unknown", "dependency_projection_missing");
+    if (authority.projection.version !== authority.projection.expected_version || authority.projection.revision !== authority.projection.expected_revision) return blocked("dependency_state_unknown", "stale_projection");
+    if (authority.projection.completeness === "incomplete") return blocked("dependency_state_unknown", "dependency_projection_incomplete");
+    if (authority.projection.completeness === "drifted" || authority.projection.drift_detected) return blocked("dependency_state_unknown", "dependency_projection_drifted");
+    if (authority.projection.completeness === "rebuild_required") return blocked("dependency_state_unknown", "dependency_projection_rebuild_required");
+    if (authority.projection.missing_authorities.length) return blocked("dependency_state_unknown", "missing_authorities");
+    if (authority.projection.open_dependencies > 0) return blocked("evidence_dependency_blocks", "open_dependencies");
+    if (authority.correction_open) return blocked("evidence_dependency_blocks", "correction_open");
+    if (!authority.offer) return blocked("offer_state_blocks", "offer_authority_unknown", "legacy_authority_unknown");
+    if (["draft", "created", "sent"].includes(authority.offer.status)) return blocked("offer_state_blocks", "offer_open");
+    if (authority.offer.status === "accepted") {
+      if (!authority.execution) return blocked("dependency_state_unknown", "execution_authority_unknown");
+      if (["not_started", "active"].includes(authority.execution.status)) return blocked("evidence_dependency_blocks", "execution_active");
+    } else if (authority.execution) return blocked("dependency_state_unknown", "execution_authority_unknown");
+    if (authority.active_delete_attempt) return blocked("lifecycle_state_blocks", "delete_attempt_conflict");
+  }
   if (input.offer_state === "unknown") return blocked("offer_state_blocks", "offer_state_unknown");
   if (input.offer_state === "open") return blocked("offer_state_blocks", "offer_open");
   if (input.evidence.some((item) => item.binding_status === "bound" && (!item.target_valid || !item.purpose_valid))) return blocked("evidence_dependency_blocks", "evidence_dependency_open");
   if (input.evidence.length > 0 && input.dependency_state === "unknown") return blocked("dependency_state_unknown", "observation_dependency_unknown", "proposal_dependency_unknown", "review_dependency_unknown", "correction_dependency_unknown");
   if (input.dependency_state === "open") return blocked("evidence_dependency_blocks", "evidence_dependency_open");
+  if (boundEvidence && !input.final_authority) return blocked("dependency_state_unknown", "legacy_authority_unknown");
   if (input.lifecycle.retention_state !== "deletion_eligible" || input.lifecycle.eligibility_status !== "eligible") return blocked("lifecycle_state_blocks", "retention_not_completed");
   return { status: "eligible", reason_codes: [] };
 }

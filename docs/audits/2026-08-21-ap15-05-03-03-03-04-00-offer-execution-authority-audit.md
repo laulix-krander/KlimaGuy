@@ -593,3 +593,81 @@ Nicht implementiert sind Scheduling, Kalender, Monteure/Teams, Arbeitszeiten, Ma
 `VISION — NOT IMPLEMENTED`
 
 `OVERALL PRODUCT — NOT PRODUCTION READY`
+
+# AP-15-05-03-03-03-04-03 — Final Evidence-bound Delete Gate Integration Result
+
+## Final Authority Matrix
+
+| Authority | Final gate | Fail-closed condition |
+|---|---|---|
+| Project/Media | project-scoped, ready, present, active | mismatch, missing, soft-deleted, non-present |
+| Lifecycle | configured policy, explicit `deletion_eligible`, no hold, idle execution, CAS revision | missing policy, non-eligible retention, hold, active attempt, stale revision |
+| Projection | V1 snapshot under lock, `complete`, no drift, no rebuild, empty missing authorities, zero open dependencies | every other state |
+| Correction | current correction source rows revalidated under lock | pending, stale or failed |
+| Offer | current non-superseded Offer revalidated under lock | missing/legacy or draft/created/sent |
+| Execution | accepted Offer requires its current completed/cancelled Execution | missing, not_started, active, inconsistent |
+| No-order | rejected Offer, no Execution, closed Project | Execution present or inconsistent Project |
+
+## Eligibility Contract
+
+`evaluateProjectMediaDeletionEligibility` remains a deterministic closed union (`eligible` or controlled blocked result). The persistent evaluator is Admin-only and atomically persists the decision, projection snapshot and sanitized audit event. It grants eligibility only when every gate succeeds. A no-change replay returns the existing lifecycle row. A changed authority is evaluated again and can re-block the lifecycle; eligibility is not irreversible.
+
+## Project Terminal Gate and Flows
+
+`projects.status='closed'` is necessary but never sufficient for bound Evidence. A no-order flow additionally requires the current Offer to be `rejected` and Execution to be not applicable (no Execution row). A completed-order flow requires the current Offer to be `accepted`, its project-scoped Execution to be `completed`, and the Project closed. `cancelled` is equally terminal for this deletion dependency. Offer `draft`, `created` or `sent` is open. Execution `not_started` or `active` is open. Missing Offer/Execution authority and legacy closed Projects remain fail-closed.
+
+## Correction, Projection, and Dependencies
+
+The gate consumes Correction Authority rather than creating it. Pending, stale, or failed corrections linked by the authoritative projection block. Only projection completeness `complete` is accepted; missing, incomplete, drifted, rebuild-required, version/revision-stale projections block. Any `missing_authority_types` entry or any effective open dependency blocks. Resolved and invalidated history remains persistent and is not interpreted as generic success.
+
+New Evidence or a new Correction marks the existing projection rebuild-required through the existing authority triggers. Evidence created after terminal Offer/Execution is additionally detected by the existing rebuild consistency rule. Thus old terminal state cannot be inherited without a fresh complete authoritative projection.
+
+## Lifecycle CAS and Re-blocking
+
+Evaluation checks the expected lifecycle revision and binds successful eligibility to `projection_version` plus `source_revision`. Controlled re-evaluation changes a stale eligible snapshot back to blocked. No browser-supplied reason or authority status is accepted.
+
+## Delete Claim Revalidation and TOCTOU
+
+The existing Ready-Media claim now invokes the same final gate while Project, Media, Lifecycle, projection, dependency and relevant source rows are locked. It compares the current projection version/revision to the eligibility snapshot. A new correction, Evidence/projection dirty event, Offer revision/state inconsistency, Execution change, open dependency, hold, physical-state change, lifecycle CAS mismatch, or active attempt rejects the claim atomically and writes `media_deletion_claim_rejected_by_final_gate`. This removes reliance on a stale persisted `eligibility_status`.
+
+## Bound vs Unbound, Holds, and Policy
+
+Evidence-bound media is enabled only for fully authoritative eligible flows. Legacy/unknown bound media remains closed. The prior unbound-media rule remains scoped to active, ready/present media in a closed Project and is not unnecessarily tightened by Offer/Execution requirements. Operational and legal holds always win. `customer_photo_retention_v1` must be configured and retention must already be explicitly `deletion_eligible`; no duration, timer, scheduler, or customer request flow is introduced.
+
+## Physical Delete Boundary, Tombstones, and History
+
+The gate performs no Storage operation and no hard delete. After claim, the established recoverable path remains `claimed/storage_delete_pending → storage delete adapter → completion_pending → Evidence tombstone → absent`. Tombstones are created only during completion. Knowledge Claims, Observations, Proposals, Reviews, Corrections, resolved dependencies and provenance history are retained; original-media rereview continues to encounter `source_media_unavailable` after tombstoning.
+
+## RLS, RPC Security, and Audit
+
+RLS and table grants are unchanged. The new helper is not executable by clients. Admin-only evaluator and claim RPCs use `SECURITY DEFINER`, fixed `search_path`, `auth.uid()`, project scope, server-derived statuses, deterministic locks, and no client locator/reason authority. Eligibility mutation plus `media_deletion_eligibility_granted`/`media_deletion_eligibility_blocked` is atomic. Claim validation, attempt transition, and audit remain atomic. Audit metadata contains only actor/project/media UUIDs, lifecycle revision, projection version/revision, result, closed reason codes and timestamp—never PII or Storage paths.
+
+## Tests
+
+Pure tests cover authoritative rejected/no-order, completed and cancelled execution success; open Offers; active Execution; correction; missing authorities; every projection failure state; stale lifecycle/projection CAS; active attempts; legacy bound failure; and unbound regression. Migration contract tests cover source/projection locks, claim-time revalidation, audit, security, and absence of a second Storage or hard-delete capability. Existing lifecycle, deletion/tombstone, projection, Offer, Execution, Correction, Knowledge and Evidence suites remain regression gates.
+
+## Remaining Limits
+
+No retention duration, automatic scheduler, customer deletion request workflow, hard delete, new Storage architecture, WhatsApp, Vision, AI, Planner, or readiness feature is implemented. Physical deletion still depends on the existing server-only adapter and recovery semantics. Legacy projects require a separate explicit reconciliation package; they are intentionally not inferred safe.
+
+## Status
+
+- **PERSISTENT CORRECTION AUTHORITY — IMPLEMENTED**
+- **PERSISTENT OFFER AUTHORITY — IMPLEMENTED**
+- **PERSISTENT EXECUTION AUTHORITY — IMPLEMENTED**
+- **AUTHORITATIVE MEDIA DEPENDENCY PROJECTION — IMPLEMENTED**
+- **PROJECTION COMPLETENESS / DRIFT — IMPLEMENTED**
+- **FINAL EVIDENCE-BOUND DELETE ELIGIBILITY GATE — IMPLEMENTED**
+- **FINAL DELETE CLAIM REVALIDATION — IMPLEMENTED**
+- **EVIDENCE-BOUND READY MEDIA DELETE — ENABLED ONLY FOR FULLY AUTHORITATIVE ELIGIBLE FLOWS**
+- **LEGACY EVIDENCE-BOUND DELETE — FAIL-CLOSED**
+- **ACTIVE OFFER DELETE — PROHIBITED**
+- **ACTIVE EXECUTION DELETE — PROHIBITED**
+- **OPEN CORRECTION DELETE — PROHIBITED**
+- **HOLD BYPASS — PROHIBITED**
+- **RETENTION DURATION — NOT CONFIGURED**
+- **AUTOMATIC RETENTION SCHEDULER — NOT IMPLEMENTED**
+- **CUSTOMER DELETION REQUEST WORKFLOW — NOT IMPLEMENTED**
+- **WHATSAPP — NOT IMPLEMENTED**
+- **VISION — NOT IMPLEMENTED**
+- **OVERALL PRODUCT — NOT PRODUCTION READY**
