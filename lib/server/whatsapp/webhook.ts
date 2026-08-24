@@ -3,6 +3,7 @@ import "server-only";
 import { parseWhatsAppWebhook } from "./parser";
 import { verifyWhatsAppChallenge, verifyWhatsAppSignature } from "./security";
 import { persistWhatsAppInboundText, triggerPersistentMessageCycle, type MessageCycleTrigger, type WhatsAppInboundPersistence } from "./ingestion";
+import { reconcileWhatsAppDeliveryStatus } from "./status-reconciliation";
 
 /** Internal security ceiling, not a claimed Meta provider limit. */
 export const WHATSAPP_WEBHOOK_MAX_BYTES = 1_048_576;
@@ -31,11 +32,13 @@ export function createWhatsAppWebhookHandlers(dependencies: {
   triggerCycle?: MessageCycleTrigger;
   verifyToken?: () => string | undefined;
   appSecret?: () => string | undefined;
+  reconcileStatus?: (event: import("./contracts").WhatsAppDeliveryStatus) => Promise<void>;
 } = {}) {
   const persist = dependencies.persist ?? persistWhatsAppInboundText;
   const triggerCycle = dependencies.triggerCycle ?? triggerPersistentMessageCycle;
   const verifyToken = dependencies.verifyToken ?? (() => process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN);
   const appSecret = dependencies.appSecret ?? (() => process.env.WHATSAPP_META_APP_SECRET);
+  const reconcileStatus=dependencies.reconcileStatus??reconcileWhatsAppDeliveryStatus;
   return {
     GET: async (request: Request): Promise<Response> => {
       const configured = verifyToken();
@@ -67,6 +70,7 @@ export function createWhatsAppWebhookHandlers(dependencies: {
             try { await triggerCycle({ message_id: result.internal_message_id }); } catch { /* Persistence is final; AP-16-03 owns recovery. */ }
           }
         }
+        for(const item of parsed) if(item.kind==="delivery_status") await reconcileStatus(item.event);
       } catch { return new Response(null, { status: 500 }); }
       return new Response(null, { status: 200 });
     },

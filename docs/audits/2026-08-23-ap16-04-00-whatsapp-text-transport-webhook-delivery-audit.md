@@ -535,6 +535,90 @@ LLM CUSTOMER CONVERSATION — NOT IMPLEMENTED
 
 OVERALL PRODUCT — NOT PRODUCTION READY
 
+# AP-16-04-02 — WhatsApp Outbound Delivery & Status Reconciliation Result
+
+## Official Meta Contract Verification
+
+Prüfdatum: **2026-08-24**. Als ausschließliche Providerquellen wurden die offiziellen Meta-Seiten zur [Cloud API Messages Reference](https://developers.facebook.com/docs/whatsapp/cloud-api/reference/messages), zu [Cloud API Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks), zu [Webhook Payload Examples](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/payload-examples) und zum [Graph API Changelog](https://developers.facebook.com/docs/graph-api/changelog/) adressiert. Der bereitgestellte Web-Connector antwortete erneut mit `401 Unauthorized`. Deshalb übernimmt die Implementierung nur den im Auftrag verifizierten Grundvertrag und pinnt konservativ **`v25.0`**; die Konfiguration akzeptiert weder `latest`, einen versionslosen Pfad noch eine andere Version. Vor Produktion muss der Owner `v25.0` noch einmal im offiziellen Meta-Dashboard des konkreten Accounts bestätigen. Nicht verifizierte optionale Statuswerte, Provider-Retry-Header oder eine sichere Provider-Idempotency-Key-Semantik werden nicht angenommen.
+
+Der enge Adapter sendet `POST https://graph.facebook.com/v25.0/{Phone-Number-ID}/messages` mit serverseitigem `Authorization: Bearer …` und exakt `{messaging_product:"whatsapp",recipient_type:"individual",to,type:"text",text:{body}}`. `to` stammt ausschließlich aus der aktiven Transport Identity; `body` ist exakt die persistierte interne Textmessage. Die kontrollierte Success-Projektion übernimmt ausschließlich `messages[0].id`. Raw Response, Fehlertext, Token, Destination und Text verlassen diese Grenze nicht.
+
+## Outbound Authority, Eligibility und Pre-send Revalidation
+
+Migration `202608240002_whatsapp_outbound_delivery.sql` ergänzt `transport_delivery_commands`, `transport_send_attempts` und append-only/deduplizierte `transport_delivery_events`. Der Command kopiert weder Text noch Telefonnummer, sondern bindet interne Message, Conversation, aktives Binding und Transport Identity. `(provider, transport_binding_id, internal_message_id)` ist eindeutig. Die Provider-ID bleibt in der wiederverwendeten `transport_message_bindings`-Authority mit `direction=outbound`; die interne Message-UUID bleibt kanonisch.
+
+Der service-only Claim nimmt ausschließlich `internal_message_id`. Er sperrt Message, Conversation, Binding, Identity und Command, akzeptiert nur bestehende `outbound`/`text` Messages mit kundenseitig zulässigem Actor, fordert aktive WhatsApp-Bindung/Identity und prüft `open`. Interne Notes, inbound Messages, paused, human_review und closed failen vor Netzwerkzugriff. Wenn `prompt_message_id` eine Pending Interaction bindet, müssen deren `pending`-Status sowie der aktive Runtime-Link noch bestehen. Direkt vor `fetch()` wird dieselbe Conversation-/Binding-/Pending-Grenze unter dem persistenten Claim-Token erneut geprüft. Damit blockiert ein Human Takeover oder Supersede zwischen Cycle und Send die alte automatische Frage.
+
+Claim-Token und Row Locks verhindern zwei parallele bekannte Sends. Maximal drei Attempts sind schematisch möglich; dieses Paket enthält jedoch weder Scheduler noch automatische Retryloop. Replay in `sending`, `accepted_by_provider`, `delivered`, `read`, `delivery_ambiguous` oder `blocked` führt keinen zweiten Netzwerkcall aus. Die Destination wird nie aus Customer/Project/Message-Inhalt geraten. Senderkonfiguration besteht ausschließlich serverseitig aus `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` und `WHATSAPP_GRAPH_API_VERSION=v25.0`; Webhook Verify Token und App Secret bleiben getrennt.
+
+## Provider Acceptance, Attempts, Ambiguity und Recovery
+
+Ein valider HTTP-Success mit WhatsApp Message ID bedeutet nur `accepted_by_provider`. Er bedeutet weder `delivered` noch `read`. Completion bindet die Provider-ID idempotent an die interne outbound Message, finalisiert den Attempt und setzt `accepted_at`. Ein DB-Completionfehler nach bekanntem Provider-Success wird als `delivery_completion_requires_reconciliation` nach außen begrenzt; die Orchestrierung sendet nicht automatisch erneut.
+
+401/403 werden `provider_auth_error/configuration`, 429 `rate_limited/retryable`, eindeutige HTTP-5xx `transient_provider_error/retryable` und andere Ablehnungen `provider_rejected/terminal`. Ein Throw/Timeout/Connection Reset nach Beginn des Requests ist dagegen `ambiguous_send_result/requires_reconciliation` und setzt `delivery_ambiguous`; darauf folgt kein blinder Resend. Externe Netzwerksideeffects sind nicht mit der DB atomar und dieses Paket behauptet ausdrücklich kein Exactly-once. Das Ziel ist höchstens ein kontrollierter Send bei bekanntem Zustand plus manuelle/folgende Reconciliation bei Ambiguität.
+
+Attempts speichern nur interne Command-ID, monotone Nummer, Zeiten, kontrollierte Result-/Failure-Klasse und gegebenenfalls Provider Message ID. Auditaktionen `whatsapp_delivery_attempt_started|completed|failed` enthalten ausschließlich interne UUIDs, Nummer und Resultklasse – keine Destination, keinen `wa_id`, keinen Text, Token, Phone Number ID oder Raw Response.
+
+## Status Webhooks und monotone Reconciliation
+
+Die bestehende, HMAC-authentifizierte POST-Route und derselbe additive Parser verarbeiten nun `value.statuses[]`. Die strikte Projektion erlaubt nur `sent`, `delivered`, `read`, `failed`, Provider Message ID, Sender Scope, Providerzeit und optional den numerischen Fehlercode. Providerfehlertexte und Raw Payload werden nicht persistiert. Unbekannte Statuswerte failen geschlossen als malformed; die Domain-Allowlist wird nicht dynamisch erweitert.
+
+`sent` mappt auf `accepted_by_provider`, `delivered` auf `delivered`, `read` auf `read`, `failed` auf `failed`. Die Aggregation ist semantisch monoton: `read` wird durch delivered/sent nicht zurückgestuft, delivered nicht durch sent; failed nach delivered/read überschreibt einen bestätigten höheren Zustand nicht. Jeder deduplizierte Fakt bleibt in `transport_delivery_events`; ein identisches Statusereignis mutiert effektiv nur einmal. Matching ist ausschließlich `(whatsapp, sender_scope, provider_message_id, direction=outbound)`. Eine unbekannte Provider-ID wird als `matched=false` aufbewahrt, niemals fuzzy zugeordnet; eine inbound Provider Binding Collision verändert keinen Delivery Command. Statusupdates reopen keine geschlossene Conversation, lösen keinen Planner/Cycle aus und mutieren weder Runtime noch Pending Interaction noch Knowledge.
+
+## Exposure, RLS, Privilege, PII und Limits
+
+Transport Exposure bleibt ausschließlich Delivery Authority: Pending Interaction kann fachlich weiter bestehen, obwohl Send fehlgeschlagen oder ambig ist. Provider Acceptance, Delivery und Read sind getrennte Zustände; eine inbound Kundenantwort bleibt unabhängig von fehlenden Delivery Events für AP-16-03 autoritativ. Alle drei Tabellen haben RLS; `public`, `anon` und `authenticated` besitzen keine direkten Rechte. Nur die vier engen `SECURITY DEFINER`-RPCs sind für `service_role` ausführbar, und der privilegierte Client verlässt das jeweilige server-only Modul nicht.
+
+Tests decken exakten Endpoint/Header/Body/Text/Destination, Success, Replay, Revalidation/Takeover, fehlende Konfiguration, Auth, Rate Limit, 5xx, Timeout-Ambiguität, Statusprojektion, RLS, Eindeutigkeit, outbound-only Matching und monotone SQL-Matrix ab. Inbound Webhook-, Transport- und vollständige Regression-Suite bleiben unverändert. Nicht enthalten sind Media Download, Project Media Ingestion, Vision, LLM, Historical Import, UI, Scheduler oder neue Dependency.
+
+## AP-16-04-02 Status
+
+WHATSAPP TRANSPORT IDENTITY — IMPLEMENTED
+
+WHATSAPP INBOUND TEXT INGESTION — IMPLEMENTED
+
+WHATSAPP OUTBOUND DELIVERY AUTHORITY — IMPLEMENTED
+
+WHATSAPP TEXT SEND ADAPTER — IMPLEMENTED
+
+WHATSAPP PROVIDER MESSAGE OUTBOUND BINDING — IMPLEMENTED
+
+WHATSAPP SEND ATTEMPT AUTHORITY — IMPLEMENTED
+
+WHATSAPP DELIVERY STATUS AUTHORITY — IMPLEMENTED
+
+WHATSAPP SENT RECONCILIATION — IMPLEMENTED
+
+WHATSAPP DELIVERED RECONCILIATION — IMPLEMENTED
+
+WHATSAPP READ RECONCILIATION — IMPLEMENTED
+
+WHATSAPP FAILED RECONCILIATION — IMPLEMENTED
+
+OUT-OF-ORDER DELIVERY STATUS REGRESSION — PROTECTED
+
+OUTBOUND MESSAGE REPLAY — IDEMPOTENT
+
+AMBIGUOUS NETWORK SEND — REQUIRES RECONCILIATION
+
+HUMAN TAKEOVER PRE-SEND CHECK — IMPLEMENTED
+
+PROVIDER ACCEPTANCE ≠ CUSTOMER DELIVERY — ENFORCED
+
+DELIVERY STATUS → KNOWLEDGE MUTATION — PROHIBITED
+
+WHATSAPP MEDIA INGESTION — NOT IMPLEMENTED
+
+HISTORICAL CHAT IMPORT — NOT IMPLEMENTED
+
+VISION — NOT IMPLEMENTED
+
+LLM CUSTOMER CONVERSATION — NOT IMPLEMENTED
+
+OVERALL PRODUCT — NOT PRODUCTION READY
+
+Das nächste kleinste Paket ist eine kontrollierte **Outbound-Reconciliation-/Operations-Grenze** für ambige Completion und explizit freigegebene Retries; weiterhin ohne automatische Fachfrage, Scheduler oder Media.
+
 # AP-16-04-01-01 — WhatsApp Webhook & Inbound Text Completion Result
 
 ## Result and provider contract sources

@@ -10,7 +10,32 @@ export const transportReceiptStatusSchema = z.enum([
   "unsupported",
   "failed",
 ]);
-export const transportDirectionSchema = z.literal("inbound");
+export const transportDirectionSchema = z.enum(["inbound", "outbound"]);
+const timestampSchema = z.string().datetime({ offset: true });
+
+export const transportDeliveryStatusSchema = z.enum([
+  "pending", "sending", "accepted_by_provider", "delivered", "read",
+  "failed", "delivery_ambiguous", "blocked",
+]);
+export const transportDeliveryFailureCodeSchema = z.enum([
+  "provider_auth_error", "rate_limited", "provider_rejected",
+  "transient_provider_error", "network_error", "ambiguous_send_result",
+  "destination_invalid", "conversation_not_sendable", "binding_missing",
+  "stale_interaction", "human_takeover_blocked", "configuration_error",
+]);
+export const transportDeliveryRetryClassificationSchema = z.enum([
+  "retryable", "requires_reconciliation", "terminal", "configuration",
+  "human_review_required",
+]);
+
+export const transportDeliveryCommandDtoSchema = z.object({
+  deliveryCommandId: z.string().uuid(), internalMessageId: z.string().uuid(),
+  provider: transportProviderSchema, status: transportDeliveryStatusSchema,
+  attemptCount: z.number().int().min(0).max(3), acceptedAt: timestampSchema.nullable(),
+  deliveredAt: timestampSchema.nullable(), readAt: timestampSchema.nullable(),
+  failedAt: timestampSchema.nullable(), createdAt: timestampSchema,
+  updatedAt: timestampSchema,
+}).strict();
 
 export const transportFailureCodeSchema = z.enum([
   "invalid_webhook_verification",
@@ -36,8 +61,6 @@ export const transportRetryClassificationSchema = z.enum([
   "terminal",
   "configuration",
 ]);
-
-const timestampSchema = z.string().datetime({ offset: true });
 
 /** Provider-independent, server-bound persistence DTO. It intentionally has no payload or message text. */
 export const transportReceiptSchema = z
