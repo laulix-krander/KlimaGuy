@@ -14,6 +14,7 @@ export const transportDirectionSchema = z.literal("inbound");
 
 export const transportFailureCodeSchema = z.enum([
   "invalid_webhook_verification",
+  "missing_signature",
   "invalid_signature",
   "payload_too_large",
   "malformed_payload",
@@ -24,7 +25,7 @@ export const transportFailureCodeSchema = z.enum([
   "transport_identity_failed",
   "conversation_resolution_failed",
   "message_persistence_failed",
-  "binding_failed",
+  "provider_binding_failed",
   "cycle_trigger_failed",
   "configuration_error",
 ]);
