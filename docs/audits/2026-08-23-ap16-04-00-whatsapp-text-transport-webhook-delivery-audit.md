@@ -448,3 +448,89 @@ Ausdrücklich bestätigt: **ausschließlich Audit**; kein Webhook implementiert;
 - **VISION — NOT IMPLEMENTED**
 - **LLM CUSTOMER CONVERSATION — NOT IMPLEMENTED**
 - **OVERALL PRODUCT — NOT PRODUCTION READY**
+
+# AP-16-04-01 — WhatsApp Transport Persistence & Inbound Text Ingestion Result
+
+## Result and Official Contract Verification
+
+**Result: PARTIALLY IMPLEMENTED / META-SPECIFIC WORK BLOCKED BY THE MANDATORY CONTRACT GATE.** On 2026-08-23, before writing Meta-specific code, access was attempted exclusively through official Meta developer documentation for:
+
+- `https://developers.facebook.com/docs/graph-api/webhooks/getting-started`
+- `https://developers.facebook.com/docs/graph-api/webhooks/getting-started/webhooks-for-whatsapp`
+- `https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks`
+- `https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/payload-examples`
+
+The official documentation endpoint returned `401 Unauthorized`. Consequently no current Graph API version, verification parameters, challenge response, signature header/algorithm, exact raw-body contract, inbound envelope/message/contact/timestamp/text fields, Provider Message ID scope, or HTTP acknowledgement/retry expectation could be verified. No value was inferred from memory or secondary sources. No Meta API version is claimed or configured.
+
+## Migration and transport authorities
+
+Migration `202608230007_conversation_transport_persistence.sql` adds only the separable provider-independent persistence layer. Its closed provider enum contains `whatsapp`, but no Meta wire field is mapped to it.
+
+- `conversation_transport_identities` isolates opaque external identity and sender scope as PII, permits only a nullable later-controlled Customer binding, has no Project FK, uses the repository `updated_at` trigger, and uniquely protects `(provider, sender_scope, external_identity)` against identity races.
+- `conversation_transport_bindings` relates an internal Conversation to a Transport Identity. A partial unique index permits one active binding per identity; explicit superseded history and positive revision replace any “latest conversation” heuristic. No closed-Conversation reopen or resolution operation is exposed.
+- `transport_webhook_receipts` contains only event identity, kind, received time, processing status, optional internal Message result, and failure code. It has no raw body or text column. Its provider/sender-scope/event key can deduplicate once a verified adapter supplies opaque values.
+- `transport_message_bindings` keeps Provider Message identity separate from internal Message UUID, binds inbound direction, Transport Identity and Provider occurrence time, and scopes uniqueness by provider plus opaque sender scope. This conservative scope makes no claim about Meta global uniqueness.
+
+All four tables have RLS enabled and all privileges are revoked from `public`, `anon`, and `authenticated`. No browser RPC or generic service-role client was added. Normal Conversation DTOs remain provider-free, Reviewer/Customer reads gain no PII, and the future webhook must use a narrow server-only transaction/RPC.
+
+## Contracts, PII, audit and failure codes
+
+Strict provider-independent TypeScript contracts close provider, authority states, inbound direction, all requested failure codes, and the technical retry classifications. The receipt DTO excludes provider event identity, sender identity, text, payload, and secrets. The narrow future admin projection accepts only a redacted identity and rejects external identity.
+
+No audit event is emitted because there is no authenticated webhook event yet. Future sanitized events must contain only internal receipt/identity/conversation/message UUIDs, result/status, and timestamps—never phone/`wa_id`, sender scope, Provider Message ID, customer text, raw payload, or secrets.
+
+## Verification route, signature, raw body, parser and inbound text
+
+In accordance with the STOP rule there is no GET verification route, POST webhook route, request-size constant, raw-body reader, signature utility, Meta parser, Meta canonical-event mapper, unsupported-media classifier, secret/environment variable, ingestion transaction, unknown-contact Conversation creation, trusted Message recording call, or AP-16-03 invocation. Invalid signatures cannot create Messages because no webhook entry point exists; valid WhatsApp requests also cannot yet be ingested.
+
+Unknown contacts are not matched to `customers.phone`; no fake Customer or Project is created or guessed. Closed, unassigned, paused, and human-review behavior is not executed by transport code. Sequence remains solely the existing Message Authority's responsibility. The future AP-16-03 boundary remains internal `message_id` only; Provider payload must never enter it.
+
+The webhook acknowledgement boundary remains undecided until the official expectation can be read. No queue/worker, provider fetch, outbound send, delivery/read state, media download, Project Media, Storage integration, Vision, LLM, historical import, or UI was added. `package.json` and the lockfile are unchanged.
+
+## Tests, race conditions and remaining limits
+
+Focused tests cover closed schemas, strict DTO PII rejection, the four Authorities, identity/message/receipt uniqueness, one-active-binding race protection, RLS, revoked browser grants, no raw-payload persistence, and no Provider columns on Conversation/Message Core. Verification, signature, parser, HTTP, Message ingestion, replay-to-Message and AP-16-03 trigger tests are intentionally absent rather than encoding an unverified contract.
+
+The next smallest package is the remainder of AP-16-04-01 after official Meta documentation becomes accessible: document the verified version/contract first, then raw-body verification and parsing, followed by one narrow atomic persistence boundary and the existing AP-16-03 `message_id` trigger.
+
+## AP-16-04-01 Status
+
+PERSISTENT CONVERSATION AUTHORITY — IMPLEMENTED
+
+PERSISTENT MESSAGE AUTHORITY — IMPLEMENTED
+
+PERSISTENT LIVE RUNTIME — IMPLEMENTED
+
+PERSISTENT MESSAGE-TO-CYCLE ORCHESTRATION — IMPLEMENTED
+
+WHATSAPP TRANSPORT IDENTITY — IMPLEMENTED (PROVIDER-INDEPENDENT PERSISTENCE ONLY)
+
+WHATSAPP CONVERSATION TRANSPORT BINDING — IMPLEMENTED (PROVIDER-INDEPENDENT PERSISTENCE ONLY)
+
+WHATSAPP WEBHOOK RECEIPT AUTHORITY — IMPLEMENTED (PROVIDER-INDEPENDENT PERSISTENCE ONLY)
+
+WHATSAPP PROVIDER MESSAGE BINDING — IMPLEMENTED (PROVIDER-INDEPENDENT PERSISTENCE ONLY)
+
+WHATSAPP WEBHOOK VERIFICATION — NOT IMPLEMENTED; OFFICIAL CONTRACT NOT ACCESSIBLE
+
+WHATSAPP WEBHOOK SIGNATURE VALIDATION — NOT IMPLEMENTED; OFFICIAL CONTRACT NOT ACCESSIBLE
+
+WHATSAPP TEXT INGESTION — NOT IMPLEMENTED; OFFICIAL CONTRACT NOT ACCESSIBLE
+
+WHATSAPP → INTERNAL MESSAGE BOUNDARY — NOT IMPLEMENTED
+
+WHATSAPP → AP-16-03 TRIGGER — NOT IMPLEMENTED
+
+WHATSAPP OUTBOUND DELIVERY — NOT IMPLEMENTED
+
+WHATSAPP DELIVERY RECONCILIATION — NOT IMPLEMENTED
+
+WHATSAPP MEDIA INGESTION — NOT IMPLEMENTED
+
+HISTORICAL CHAT IMPORT — NOT IMPLEMENTED
+
+VISION — NOT IMPLEMENTED
+
+LLM CUSTOMER CONVERSATION — NOT IMPLEMENTED
+
+OVERALL PRODUCT — NOT PRODUCTION READY
