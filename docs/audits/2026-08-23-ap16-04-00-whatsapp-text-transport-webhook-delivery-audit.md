@@ -534,3 +534,95 @@ VISION — NOT IMPLEMENTED
 LLM CUSTOMER CONVERSATION — NOT IMPLEMENTED
 
 OVERALL PRODUCT — NOT PRODUCTION READY
+
+# AP-16-04-01-01 — WhatsApp Webhook & Inbound Text Completion Result
+
+## Result and provider contract sources
+
+**Result: IMPLEMENTED for authenticated inbound WhatsApp text only.** The contract supplied for this package was previously verified against Meta's official Webhooks and WhatsApp Cloud API documentation (`developers.facebook.com/docs/graph-api/webhooks/getting-started`, `.../webhooks-for-whatsapp`, `developers.facebook.com/docs/whatsapp/cloud-api/webhooks` and `.../payload-examples`). This package does not call Graph API, does not claim an outbound API version, and adds no Graph-version configuration.
+
+GET `/api/webhooks/whatsapp` accepts only `hub.mode=subscribe`, the configured `hub.verify_token`, and a non-empty `hub.challenge`. A successful request returns the challenge as plain text with HTTP 200; wrong/missing values fail closed with 403. The verify token is read only from the server environment.
+
+POST requires `X-Hub-Signature-256` in the exact `sha256=<64 lowercase hex>` form. Node Crypto computes HMAC-SHA256 with the server-only Meta App Secret and compares equal-length digests with `timingSafeEqual`. Missing, malformed, modified-body, wrong-secret, and invalid signatures return 401 before JSON parsing, receipt claim, identity resolution, or Message creation.
+
+## Raw body, size and acknowledgement boundary
+
+The Node.js Route Handler consumes `Request.body` as bounded `Uint8Array` chunks. HMAC validation is performed over those original bytes; only after successful authentication are those same bytes decoded as strict UTF-8 and parsed once as JSON. It never verifies a reserialized object. `1 MiB` is an explicit conservative internal application security ceiling, **not a Meta contract limit**. `Content-Length` is rejected early where present and streamed bytes are independently counted, so chunked input cannot bypass the bound.
+
+Neither raw body, signature, secret, Provider Message ID, sender scope, external identity nor customer text is logged or persisted outside its dedicated minimal transport/message authority. The route returns no payload, stack, or internal failure detail. It acknowledges after synchronous durable transport ingestion. A subsequent AP-16-03 command-claim failure does not roll back or duplicate the Message; no new queue/worker and no exactly-once claim were introduced.
+
+## Parser and canonical event
+
+The server-only adapter tolerates additive provider fields and walks every `entry[]`, every `changes[]`, and every `messages[]`. It recognizes only `object=whatsapp_business_account`, `change.field=messages`, `value.metadata.phone_number_id` as sender/business scope, and the documented message fields `from`, `id`, `timestamp`, `type`, plus **exactly** `text.body` for text. Epoch seconds are checked and converted to UTC ISO time. The strict canonical output contains only provider, Provider Message ID, external sender identity, sender scope, provider occurrence time, `message_type=text`, and unchanged text.
+
+Classification is closed: `inbound_text`, `media_deferred`, `unsupported_message_type`, `non_message_event`, and `malformed`. Status events are recognized as non-message/deferred to AP-16-04-02. Image, document, audio, video, and sticker are deferred without fetch, Storage, Project Media, invented response, or Message creation. A malformed relevant message rejects the request; legitimate unsupported/additive events are safely acknowledged.
+
+## Atomic ingestion, identity and conversation resolution
+
+Migration `202608240001_whatsapp_inbound_text_ingestion.sql` adds one service-role-only `SECURITY DEFINER` workflow. One database transaction claims the Receipt by `(whatsapp, sender_scope, provider_message_id)`, race-safely resolves/creates the Transport Identity by the existing unique key, locks/resolves the active Binding, optionally creates an open Conversation, appends the internal Customer text Message with the next database sequence, creates the Provider Message Binding, completes the Receipt, and emits sanitized audit rows.
+
+Unknown senders create only `customer_id=null` Transport Identity, unassigned `project_id=null` Conversation, active Binding, and Message. No Customer is created and no phone, latest Project, latest Conversation, content, or other heuristic selects a Project. A known identity may carry only its already-authoritative Customer binding. If an active Binding points at a closed Conversation, it is superseded and a new open, project-unassigned Conversation is created; old history is unchanged and the old Conversation is never reopened.
+
+Inbound text becomes exactly one provider-independent `conversation_messages` UUID with `direction=inbound`, `actor_class=customer`, `message_kind=text`, unchanged `conversation_message_text.body`, and provider UTC time as `occurred_at`. `created_at` remains database time. Sequence comes exclusively from the locked Conversation Message authority and is independent of Provider ID and timestamp. Provider ID remains only in `transport_message_bindings`; no Provider column was added to Conversation Core.
+
+## Dedupe, replay and AP-16-03
+
+Receipt and Provider Message uniqueness both use the existing conservative provider plus sender-scope semantics. Exact and concurrent replay serialize at the database unique constraint and return the already-created internal Message UUID; they create no second Identity, active Binding, Message, Provider Binding, or cycle trigger. Two distinct IDs create two Messages even at the same provider timestamp, with unique monotonic internal sequence values.
+
+After commit, the application may invoke AP-16-03 only when the atomic result says the Conversation is open, project-bound, has a matching Runtime, and is awaiting a customer answer. The trigger receives the strict object `{ message_id: <internal UUID> }` and nothing from the provider event. Unassigned, paused, human-review, closed, or non-processable Conversations still retain the Message but run no cycle. AP-16-03's existing command uniqueness remains the final replay/recovery authority. A cycle failure does not delete the Message or reopen transport ingestion.
+
+## Privilege, RLS, PII, secrets and audit
+
+The existing transport RLS and revoked browser grants remain unchanged. The new RPC is executable only by `service_role`; its client is constructed and retained inside one server-only adapter, never exported as a generic privileged client. Browser actions, UI, Reviewer PII reads, and normal Conversation DTOs were not expanded. Transport-created Conversations allow a null human creator; the immutable-identity trigger was correspondingly hardened to `IS DISTINCT FROM` semantics.
+
+Only `WHATSAPP_WEBHOOK_VERIFY_TOKEN` and `WHATSAPP_META_APP_SECRET` were added to the environment example. They never enter a DTO, database, audit row, response, or log. Sanitized audit actions are `whatsapp_webhook_received`, `whatsapp_webhook_replayed`, `whatsapp_inbound_text_recorded`, `whatsapp_transport_identity_created`, and `whatsapp_conversation_bound`, containing only internal UUIDs, result codes, and timestamps. Transactional database failures roll back all partial ingestion and do not attempt an unsafe second raw-payload audit write.
+
+The closed transport failure vocabulary contains verification, missing/invalid signature, size, malformed/unsupported, duplicate, identity/conversation/message/provider-binding, cycle, and configuration failures, separate from question retry semantics and classified as `retryable`, `requires_recheck`, `terminal`, or `configuration`.
+
+## Tests and remaining limits
+
+Focused tests cover verification GET, raw-byte HMAC success/failure/mutation/malformed/missing cases, exact Unicode/newline text, provider timestamp, additive fields, multiple entries/changes/messages, all deferred media types, status/non-message/unsupported/malformed/unexpected object, invalid-signature isolation, strict message-ID-only cycle invocation, duplicate suppression at the handler boundary, and persistence despite cycle failure. Migration regression checks cover atomic ordering, service-only grant, dedupe constraints, PII/audit isolation, closed-conversation supersession, no Project heuristic, and no Provider columns in Core. Full AP-16-01/02/03, authority, runtime, transport, permission, typecheck, lint, test, and build gates remain required.
+
+Remaining limits are intentional: no outbound send, delivery/read reconciliation, provider network call, media fetch/download, Storage or Project Media, historical import, UI, Vision, LLM customer conversation, Graph API version, queue/worker, or production-readiness claim. The next smallest package is **AP-16-04-02 — WhatsApp Outbound Delivery & Status Reconciliation** with a newly verified outbound/versioned Meta contract.
+
+## AP-16-04-01-01 Status
+
+WHATSAPP TRANSPORT IDENTITY — IMPLEMENTED
+
+WHATSAPP CONVERSATION TRANSPORT BINDING — IMPLEMENTED
+
+WHATSAPP WEBHOOK RECEIPT AUTHORITY — IMPLEMENTED
+
+WHATSAPP PROVIDER MESSAGE BINDING — IMPLEMENTED
+
+WHATSAPP WEBHOOK VERIFICATION — IMPLEMENTED
+
+WHATSAPP WEBHOOK SIGNATURE VALIDATION — IMPLEMENTED
+
+WHATSAPP TEXT PAYLOAD PARSING — IMPLEMENTED
+
+WHATSAPP INBOUND TEXT INGESTION — IMPLEMENTED
+
+WHATSAPP → INTERNAL MESSAGE BOUNDARY — IMPLEMENTED
+
+WHATSAPP → AP-16-03 TRIGGER — IMPLEMENTED
+
+DUPLICATE WHATSAPP MESSAGE REPLAY — IDEMPOTENT
+
+UNKNOWN WHATSAPP CONTACT → UNASSIGNED CONVERSATION — IMPLEMENTED
+
+PROJECT GUESSING FROM TRANSPORT IDENTITY — PROHIBITED
+
+WHATSAPP OUTBOUND DELIVERY — NOT IMPLEMENTED
+
+WHATSAPP DELIVERY RECONCILIATION — NOT IMPLEMENTED
+
+WHATSAPP MEDIA INGESTION — NOT IMPLEMENTED
+
+HISTORICAL CHAT IMPORT — NOT IMPLEMENTED
+
+VISION — NOT IMPLEMENTED
+
+LLM CUSTOMER CONVERSATION — NOT IMPLEMENTED
+
+OVERALL PRODUCT — NOT PRODUCTION READY
