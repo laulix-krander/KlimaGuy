@@ -514,3 +514,61 @@ Offen bleiben die erfolgreiche offizielle Meta-Verifikation, Parsermapping des a
 **AUTOMATIC IMAGE CLAIMS — NOT IMPLEMENTED**
 
 **OVERALL PRODUCT — NOT PRODUCTION READY**
+
+# AP-16-05-01-01 — WhatsApp Provider Media Lookup & Bounded Download Result
+
+## Official Meta Contract Gate — BLOCKED
+
+**Prüfdatum:** 2026-08-26. Vor jeder providerspezifischen Änderung wurden ausschließlich die offiziellen Meta-Seiten [Webhook Payload Examples](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/payload-examples), [Media Reference](https://developers.facebook.com/docs/whatsapp/cloud-api/reference/media) und [Cloud API Overview](https://developers.facebook.com/docs/whatsapp/cloud-api/overview) angefragt. Der bereitgestellte Web-Connector antwortete mit `401 Unauthorized`; direkte HTTPS-Anfragen an alle drei offiziellen Seiten scheiterten am Netzwerktunnel mit `403 Forbidden`. Damit waren weder Seiteninhalt noch eine aktuelle Graph-API-Version in dieser Umgebung verifizierbar.
+
+Der verbindliche Contract Gate ist deshalb **BLOCKED BY OFFICIAL PROVIDER CONTRACT**. Insbesondere wurden inbound Image Shape, Media-ID- und MIME-/Caption-Felder, Business-/Sender-Scope, Metadata-Endpoint und -Response, Authorization, Download-Location, Redirect- und Token-Weitergabesemantik, URL-Ablauf, Fehler-/Retryklassen sowie Providerlimits nicht aus Erinnerung übernommen. Es wurde keine Graph-API-Version für Media Lookup angenommen oder gepinnt.
+
+Gemäß Fail-Closed-Vorgabe endet AP-16-05-01-01 an diesem Gate. Es gibt keine Änderung an Parser, Webhook, Ingestion State Machine, Command Claim, Provideradapter, Netzwerkzugriff, Download, Storage, Migrationen, RLS, Audit-Runtime oder Produktlogik. Insbesondere wurden keine Provider-URL, kein Token und keine Raw Provider Response persistiert oder geloggt. Die vorhandenen AP-16-05-01-Grenzen bleiben unverändert autoritativ.
+
+## AP-16-05-01-01 Status
+
+WHATSAPP IMAGE EVENT PARSING — BLOCKED BY OFFICIAL PROVIDER CONTRACT
+
+WHATSAPP IMAGE MESSAGE INGESTION — BLOCKED BY OFFICIAL PROVIDER CONTRACT
+
+WHATSAPP MEDIA INGESTION COMMAND — IMPLEMENTED (UNCHANGED FROM AP-16-05-01)
+
+WHATSAPP MEDIA PROVIDER LOOKUP — NOT IMPLEMENTED; BLOCKED BY OFFICIAL PROVIDER CONTRACT
+
+WHATSAPP MEDIA DOWNLOAD — NOT IMPLEMENTED; BLOCKED BY OFFICIAL PROVIDER CONTRACT
+
+WHATSAPP MEDIA DOWNLOAD BYTE LIMIT — IMPLEMENTED FOR EXISTING STAGING CONTRACT ONLY
+
+WHATSAPP MEDIA MIME / MAGIC VALIDATION — IMPLEMENTED FOR EXISTING STAGING CONTRACT ONLY
+
+WHATSAPP MEDIA SSRF BOUNDARY — NOT IMPLEMENTED; NO PROVIDER FETCH EXISTS
+
+WHATSAPP PRIVATE MEDIA STAGING — IMPLEMENTED (UNCHANGED FROM AP-16-05-01)
+
+UNKNOWN CONTACT MEDIA STAGING — NOT END-TO-END IMPLEMENTED; PROVIDER CONTRACT BLOCKED
+
+WHATSAPP MEDIA REPLAY — IDEMPOTENT FOR EXISTING AP-16-05-01 CONTRACT
+
+WHATSAPP MEDIA → PROJECT MEDIA — NOT IMPLEMENTED
+
+WHATSAPP MEDIA → PROJECT EVIDENCE — NOT IMPLEMENTED
+
+WHATSAPP EVIDENCE REQUEST COMPLETION — NOT IMPLEMENTED
+
+IMAGE MESSAGE → TEXT ANSWER CYCLE — PROHIBITED
+
+WHATSAPP MEDIA → KNOWLEDGE — PROHIBITED
+
+WHATSAPP MEDIA → TECHNICAL READINESS — PROHIBITED
+
+VISION — NOT IMPLEMENTED
+
+OCR — NOT IMPLEMENTED
+
+AUTOMATIC IMAGE CLAIMS — NOT IMPLEMENTED
+
+OVERALL PRODUCT — NOT PRODUCTION READY
+
+## Remaining Limit and Next Smallest Package
+
+Reale WhatsApp-Image-Bytes können noch nicht vom Provider ins private Staging gelangen. Der nächste kleinste Schritt bleibt AP-16-05-01-01 nach erfolgreichem Zugriff auf die aktuellen offiziellen Meta-Verträge: Contractquellen und Graph-Version verifizieren, danach erst den minimalen Image-Mapper, den engen server-only Media-Adapter und den bounded Command-Processor implementieren. Promotion, Evidence, Evidence-Request-Erfüllung, Vision, OCR, Knowledge, Readiness, UI, Scheduler und LLM bleiben außerhalb dieses Pakets.
