@@ -67,7 +67,7 @@ export type ActivatePlannerSnapshotInput = Readonly<{
   snapshot: unknown;
 }>;
 
-function validateSnapshotRow(value: unknown, expectedPendingId: string): PlannerSnapshotRow | undefined {
+export function validatePlannerSnapshotRow(value: unknown, expectedPendingId: string): PlannerSnapshotRow | undefined {
   const row = plannerSnapshotRowSchema.safeParse(value);
   if (!row.success || row.data.pending_interaction_id !== expectedPendingId) return undefined;
   const snapshot = plannerInteractionSnapshotSchema.safeParse({ snapshot_schema_version: row.data.snapshot_schema_version, selected_action: row.data.selected_action, rendered_interaction: row.data.rendered_interaction });
@@ -97,7 +97,7 @@ export async function activatePlannerInteractionSnapshot(source: PlannerSnapshot
     target_outbound_text: composeRenderedCustomerText(rendered),
   });
   if (result.error) return { success: false as const, error: "persistence_failed" as const };
-  const row = validateSnapshotRow(result.data, ids.data.pending_interaction_id);
+  const row = validatePlannerSnapshotRow(result.data, ids.data.pending_interaction_id);
   if (!row || row.id !== ids.data.snapshot_id || row.outbound_message_id !== ids.data.outbound_message_id
     || row.selected_action.decision_id !== snapshot.data.selected_action.decision_id) return { success: false as const, error: "invalid_persistence" as const };
   return { success: true as const, snapshot: row };
@@ -108,6 +108,6 @@ export async function loadPlannerInteractionSnapshot(source: PlannerSnapshotData
   if (!uuid.safeParse(pendingInteractionId).success) return { success: false as const, error: "invalid_input" as const };
   const result = await source.rpc("get_planner_interaction_snapshot", { target_pending_interaction_id: pendingInteractionId });
   if (result.error || result.data === null) return { success: false as const, error: "snapshot_missing" as const };
-  const row = validateSnapshotRow(result.data, pendingInteractionId);
+  const row = validatePlannerSnapshotRow(result.data, pendingInteractionId);
   return row ? { success: true as const, snapshot: row } : { success: false as const, error: "invalid_persistence" as const };
 }
