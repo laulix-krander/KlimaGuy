@@ -84,4 +84,34 @@ describe("WhatsApp webhook security and route", () => {
     const h=createWhatsAppWebhookHandlers({appSecret:()=>secret,persist,triggerCycle:vi.fn().mockRejectedValue(new Error("cycle_trigger_failed"))});
     expect((await h.POST(signed(envelope()))).status).toBe(200);
   });
+
+  it.each(["completed", "human_review", "failed", "busy", "stale", "ownership_lost", "already_terminal"])(
+    "acknowledges the persisted transport for runner result %s without exposing it",
+    async (kind) => {
+      const persist=vi.fn().mockResolvedValue({status:"recorded",receipt_id:uuid(1),transport_identity_id:uuid(2),conversation_id:uuid(3),internal_message_id:uuid(4),cycle_eligible:true});
+      const triggerCycle=vi.fn().mockResolvedValue({kind});
+      const response=await createWhatsAppWebhookHandlers({appSecret:()=>secret,persist,triggerCycle}).POST(signed(envelope()));
+      expect(response.status).toBe(200); expect(await response.text()).toBe("");
+    },
+  );
+
+  it("awaits cycle execution and does not start it after duplicate, ineligible, or persistence failure", async () => {
+    let release: (() => void) | undefined;
+    const triggerCycle=vi.fn(() => new Promise<void>(resolve => { release=resolve; }));
+    const recorded={status:"recorded" as const,receipt_id:uuid(1),transport_identity_id:uuid(2),conversation_id:uuid(3),internal_message_id:uuid(4),cycle_eligible:true};
+    const handler=createWhatsAppWebhookHandlers({appSecret:()=>secret,persist:vi.fn().mockResolvedValue(recorded),triggerCycle});
+    let settled=false; const pending=handler.POST(signed(envelope())).then(response => { settled=true; return response; });
+    await vi.waitFor(() => expect(triggerCycle).toHaveBeenCalledWith({message_id:uuid(4)}));
+    expect(settled).toBe(false);
+    release?.(); expect((await pending).status).toBe(200);
+
+    for (const result of [{...recorded,status:"duplicate" as const},{...recorded,cycle_eligible:false}]) {
+      const trigger=vi.fn();
+      await createWhatsAppWebhookHandlers({appSecret:()=>secret,persist:vi.fn().mockResolvedValue(result),triggerCycle:trigger}).POST(signed(envelope()));
+      expect(trigger).not.toHaveBeenCalled();
+    }
+    const never=vi.fn();
+    expect((await createWhatsAppWebhookHandlers({appSecret:()=>secret,persist:vi.fn().mockRejectedValue(new Error("db")),triggerCycle:never}).POST(signed(envelope()))).status).toBe(500);
+    expect(never).not.toHaveBeenCalled();
+  });
 });
