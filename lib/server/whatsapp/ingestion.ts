@@ -2,6 +2,8 @@ import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { createProductiveCycleRuntime } from "@/lib/server/conversation/productive-cycle-runtime";
+import { runPersistentCustomerMessageCycle } from "@/lib/server/conversation/recoverable-cycle-runner";
 import type { WhatsAppInboundText } from "./contracts";
 
 const resultSchema = z.object({
@@ -38,8 +40,8 @@ export const persistWhatsAppInboundText: WhatsAppInboundPersistence = async (eve
   return parsed.data;
 };
 
-/** AP-16-03 command claim receives only the provider-independent internal UUID. */
+/** Runs the recoverable cycle with only the provider-independent internal UUID. */
 export const triggerPersistentMessageCycle: MessageCycleTrigger = async ({ message_id }) => {
-  const { error } = await serviceClient().rpc("claim_customer_message_cycle", { target_message_id: message_id });
-  if (error) throw new Error("cycle_trigger_failed");
+  const runtime = createProductiveCycleRuntime();
+  await runPersistentCustomerMessageCycle(runtime.runner, { message_id });
 };
