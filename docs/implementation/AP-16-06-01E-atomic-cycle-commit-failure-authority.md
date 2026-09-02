@@ -1,228 +1,91 @@
 # AP-16-06-01E – Atomic Cycle Commit and Failure Authority
 
-## Status: STOP – prerequisite contract gap
-
-**Baseline:** `a29559df69f8424fd27529a3dfacb7e269e9266a`
-
-AP-16-06-01E was deliberately not partially implemented. The pre-implementation
-check found that the current `ConversationCycleSuccess` drops authority that the
-AP-16-06-01A atomic payload and the merged AP-16-06-01D knowledge authority both
-require. Building the SQL commit from the remaining state diff or event payloads
-would introduce a second knowledge interpretation and violates STOP conditions
-1, 2 and 6 of this package.
+**Baseline:** `368753c2bf6ef1d318e3608d7db14aa86b042804`
 
 ## 1. Architecture Basis
 
-The review used AP-16-06-00, AP-16-06-01A and the merged AP-16-06-01B/C/D
-implementations. The current code takes precedence where it differs from the
-audit. In particular, AP-16-06-01A requires `normalized_answer_result` and
-`knowledge_transition` in `PersistentConversationCycleCommit`, while the current
-service exposes only a reduced `PersistentCycleCommit` containing the terminal
-`ConversationCycleSuccess`.
+Die Implementierung basiert auf AP-16-06-00, dem Authority-Audit AP-16-06-01A sowie den gemergten Paketen AP-16-06-01B, C, D und DE. Maßgeblich ist der aktuelle Domain-/Service-Vertrag: Domain-Code berechnet, Persistence validiert Identität/CAS und persistiert. Die Grenze ist server-only, providerunabhängig und Teil des modularen Monolithen.
 
-## 2. Scope
+## 2. Previous STOP Condition
 
-This document records the mandatory STOP and the smallest prerequisite change.
-It adds no RPC, schema, migration, adapter, runner or runtime mutation.
+Der erste E-Versuch wurde beendet, weil `ConversationCycleSuccess` Normalized Answer, Interpretation, `StateTransitionProposal` und originales `StateTransitionApplySuccess` verlor. Eine Commit-Implementierung hätte Claims, Provenienz und `changed` aus Diffs oder Events rekonstruieren müssen. Das wäre eine zweite Knowledge-Semantik gewesen.
 
-## 3. Pre-implementation check (A–J)
+## 3. AP-16-06-01DE Resolution
 
-### A. Actual `ConversationCycleSuccess`
+AP-16-06-01DE reicht die vier originalen Authorities bis `PersistentCycleCommit.cycle` durch. Der Adapter prüft ihre Bindungen und sendet sie unverändert an die Transaktion. Human Review besitzt eine separate fachliche Completion-Grenze; technische Failures sind auf `normalization_failed | cycle_failed | persistence_failed` begrenzt. Fünf Event-IDs reichen weiterhin: die aktuelle Ableitung erzeugt höchstens Interpretation, einen Claim, eine Supersession, ein semantisches Ereignis und Completion.
 
-The success value contains resulting Knowledge/Runtime components, planning and
-render results, and events. It does **not** contain the successful
-`InterpretationResult`, its `StateTransitionProposal`, or the successful
-`StateTransitionApplyResult`.
+## 4. Scope
 
-### B. Mutations expected by `processPersistentCustomerMessage`
+Enthalten sind eine additive Migration, der zentrale Success-Commit, eine inhaltsarme Failure-Authority, eine Human-Review-Completion und strikt validierende TypeScript-Adapter. Es wird kein produktiver Caller verdrahtet.
 
-`processPersistentCustomerMessage` passes only command/source/pending IDs, two
-expected revisions and `cycle` to `commitCustomerMessageCycle`. The normalized
-answer is local and is not included in the commit input. Consequently the commit
-adapter cannot construct the AP-16-06-01D input without interpreting the answer
-again or deriving a proposal from result state.
+## 5. Atomic Commit Boundary
 
-### C. Failure data
+`commit_customer_message_cycle(uuid,jsonb)` ist genau ein PostgreSQL-Statement und damit genau eine Transaktion. Es führt Knowledge Apply, Runtime-/Komponentenmutation, vorherige Pending-Auflösung, optionale Snapshot-/Message-/Text-/Pending-Erzeugung, Domain Events und zuletzt Command Completion aus. Constraint-/Schreibfehler werden erneut geworfen; dadurch rollt PostgreSQL sämtliche fachlichen Mutationen zurück. Insbesondere wird keine Kette unabhängiger produktiver RPC-Commits ausgeführt.
 
-The current data-source contract permits only `normalization_failed` and
-`cycle_failed`. The orchestration allow-list also contains `persistence_failed`,
-but the `failCustomerMessage` signature cannot persist it. Failure authority can
-be implemented after the success contract is repaired, but implementing it alone
-would be a partial AP-16-06-01E authority.
+## 6. Commit Contract
 
-### D. AP-16-06-01D knowledge apply authority
+Der TypeScript-Adapter erhält `PersistentCycleCommit` mit dem vollständigen `ConversationCycleSuccess`. Er validiert IDs, Normalized Answer, Interpretation, Proposal, Apply Result, Collection, Retry, Effort, Evidence, maximal fünf Events und eine optionale bereits ausgewählte/gerenderte Interaktion mit bestehenden Zod-Schemas. Der RPC-Payload enthält ausschließlich die für Persistence erforderlichen bereits berechneten Authorities. Der Adapter plant, interpretiert, applied oder rendert nicht.
 
-The merged adapter requires a strictly matching `StateTransitionProposal` and
-successful `StateTransitionApplyResult`. The RPC persists the proposal payload,
-checks reserved IDs/provenance, and uses its `changed` bit for the exact 0-or-1
-Knowledge-version transition. Neither object is available to the E commit caller.
+## 7. CAS / Locking
 
-### E. Persistent Runtime components
+Die SQL-Authority entdeckt zunächst nur die Command-Bindungen und sperrt danach stabil Conversation, Runtime, Knowledge State, exakte Pending Interaction und Command. Geprüft werden Command-Status/-Typ, Source Message, Conversation/Project, exakte Pending-ID, Prompt Message, Snapshot, Runtime Revision, Knowledge Version sowie alle reservierten Knowledge-, Event- und Next-Interaction-IDs. Ein CAS-Fehler beendet die Funktion vor jeder Mutation; es gibt kein Reload und keinen automatischen Retry.
 
-The repository persists the Runtime header, information collection, retry,
-customer effort and evidence-request state. The success result carries these
-components, so this part is classifiable.
+## 8. Knowledge Apply Integration
 
-### F. Pending lifecycle
+Die Transaktion ruft die bestehende AP-16-06-01D-Funktion intern mit dem originalen Proposal, Apply-ID und originalen `changed` auf. Das ist kein externer RPC-Commit: Der Aufruf läuft im selben PostgreSQL-Statement. Ein nicht erfolgreicher Apply beendet den äußeren Commit vor Runtime-Mutationen; eine SQL-Exception rollt auch den Knowledge-Anteil zurück. Claims, Customer-/System-Provenienz und Supersession bleiben ausschließlich in den AP-16-06-01D-Tabellen.
 
-The existing lifecycle is `pending`, `answered`, `superseded`, `cancelled`.
-Customer-answer success can bind the exact previous Pending row to the source
-message. Human-review handling remains separate because the current cycle emits
-it as a failure rather than a success result.
+## 9. Runtime Commit
 
-### G. AP-16-06-01B activation
+Runtime Revision wird genau einmal von der erwarteten Revision auf `+1` gesetzt. Knowledge Version ist exakt das Ergebnis des Knowledge Apply. Runtime Status und aktive Authority folgen dem bereits berechneten Cycle-Ausgang; SQL führt weder Readiness noch Planung aus. Information Collection, Retry, Customer Effort und Evidence Requests werden aus den resultierenden Komponenten persistiert.
 
-AP-16-06-01B atomically creates a snapshot, internal outbound message/text and
-Pending Interaction while advancing Runtime. Its semantic checks can be invoked
-inside a future outer PostgreSQL transaction, provided every non-success result
-causes the outer transaction to abort rather than return after partial writes.
+## 10. Pending Interaction Lifecycle
 
-### H. Reserved IDs
+Ausschließlich die am Command gebundene Pending Interaction wird als `answered` mit der gebundenen Source Message aufgelöst. Es gibt keine Suche nach „latest pending“. Eine neue Pending Interaction wird nur für eine vorhandene customer-answerable Selected/Rendered Interaction und ausschließlich mit den reservierten IDs angelegt.
 
-AP-16-06-01C reserves the interpretation, transition, claim, evidence, apply,
-assessment, planner decision, five events, next evidence request, next Pending,
-next snapshot and next outbound IDs. The read mapper currently retains IDs used
-inside `ConversationCycleContext`, but does not expose the three next-interaction
-IDs on `CustomerMessageCycleAuthority`; the database can still derive them from
-the locked command.
+## 11. Planner Snapshot Integration
 
-### I. Command states/result codes
+Für die nächste answerable Interaction werden vollständiger `SelectedNextAction` und `RenderedCustomerInteraction` unverändert als Schema-v1-Snapshot gespeichert. Decision, Candidate-/Template-/Answer-Contract-, Runtime- und Knowledge-Bindungen werden gegen Command und Result geprüft. Es gibt keinen Registry Lookup, kein Replanning und kein Re-Rendering.
 
-The persisted command lifecycle supports `pending`, `processing`, `completed`,
-`failed`, `stale` and `human_review_required`. Existing result kinds are
-`completed_with_next_interaction`, `intermediate_break`, `evidence_request`,
-`human_review`, `collection_stopped`, `stale`, `retry_required`,
-`already_processed` and `failed`. No new strings are needed.
+## 12. Internal Outbound Message
 
-### J. Conversation events
+Eine nächste answerable Interaction erzeugt atomar genau eine interne `conversation_messages`-Zeile, deren ID am Command reserviert ist. Sie enthält keine Provider Message ID und keine Delivery Authority.
 
-The successful Domain cycle returns structured events. The current derivation
-uses at most the five reserved event slots established by AP-16-06-01A/C. Events
-alone are not a lossless replacement for the Knowledge proposal/apply contract.
+## 13. Domain Events
 
-## 4. Atomic Commit Boundary
+`conversation_cycle_events` ist eine neue append-only/RLS-geschützte Tabelle. Der Commit akzeptiert höchstens die fünf Command-Reservierungen, prüft Slot/Sequence, Project, Conversation und Correlation und speichert nur das schema-validierte, inhaltsarme Domain-Payload. Customer Message Text wird nicht in Event-Metadaten kopiert.
 
-No commit boundary was added. In particular, AP-16-06-01D and AP-16-06-01B were
-not chained as independent external RPC commits. The required future boundary
-remains one PostgreSQL transaction containing all pre-commit locks/CAS checks,
-Knowledge apply, Runtime and component writes, previous/next Pending lifecycle,
-snapshot/message/text, events and terminal command completion.
+## 14. Command Completion
 
-## 5. Commit Payload blocker
+Erst nach allen anderen Writes wird das Command `completed`. Gespeichert werden nur Result-Code, resultierende Revisionen, optionale interne Outbound-ID, Payload-Hash und Completion-Zeit. Der Hash enthält keine neue Fachauthority; er ist ausschließlich der exakte Replay-/Conflict-Beweis des validierten Commit-Payloads.
 
-The smallest safe prerequisite is a focused Domain/orchestration contract update
-that makes the already-computed successful interpretation proposal and apply
-result available without recomputation. The recommended shape is to extend
-`ConversationCycleSuccess` with immutable, schema-validated
-`knowledge_transition: { proposal, apply_result }` and to pass the normalized
-answer result required by AP-16-06-01A through the commit mapper (without storing
-raw customer text). This must preserve the existing reserved IDs and prove exact
-proposal/apply matching with the AP-16-06-01D schemas.
+## 15. Replay / Idempotency
 
-This is not a request to reconstruct those values from `knowledge_state`, events,
-or planner output. Such reconstruction would be new Knowledge semantics.
+Bei terminalem Success wird der kanonische JSONB-Payload-Hash verglichen. Identischer Replay liefert die vorhandenen Result-IDs und Revisionen. Ein abweichender Payload liefert `duplicate_conflict`; keine bestehende Authority wird überschrieben und keine zweite Version, Claim, Pending, Message, Snapshot oder Event-Zeile erzeugt.
 
-## 6. Knowledge Apply Integration
+## 16. No-Change
 
-Blocked: AP-16-06-01D cannot receive its required proposal/apply pair from the
-current E input. Calling its RPC before the cycle commit is forbidden, and
-re-running interpretation/apply in the adapter or SQL is equally forbidden.
+Nur `StateTransitionApplySuccess.changed` bestimmt den Knowledge No-Change. AP-16-06-01D erhöht in diesem Fall die Knowledge Version nicht und erzeugt keinen Claim. Der äußere Commit kann dennoch Runtime-Komponenten, Pending-Auflösung, nächste Interaction und Events atomar persistieren.
 
-## 7. Runtime Commit
+## 17. Human Review
 
-Classifiable but intentionally not implemented in isolation. Runtime must not be
-committed without the unavailable Knowledge authority.
+`complete_customer_message_human_review` ist von Success Commit und technischem Failure getrennt. Es prüft Command, Source Message, exakte Pending Authority und CAS, resolved die beantwortete Pending Interaction, setzt Runtime/Command auf Human Review und erzeugt weder Knowledge Apply noch Claim, Reviewer, Approval, descriptive Claim oder Outbound Message.
 
-## 8. Pending Interaction Lifecycle
+## 18. Failure Authority
 
-Classifiable but intentionally not implemented in isolation. The previous
-Pending resolution and any next Pending must share the final transaction.
+`fail_customer_message_cycle` erlaubt ausschließlich `normalization_failed`, `cycle_failed` und `persistence_failed`. Identischer Failure-Replay ist idempotent; Success, Stale und Human Review werden nie überschrieben. Gespeichert werden nur Code und Timestamp, keine Exception, Stacktrace, SQL-Details oder Message-Inhalte. Nach einem vollständig zurückgerollten Success-Commit kann der Service diese separate technische Grenze für `persistence_failed` verwenden.
 
-## 9. Planner Snapshot Integration
+## 19. Security / Data Minimization
 
-Classifiable but intentionally not implemented in isolation. No replanning or
-re-rendering was introduced.
+Alle drei RPCs sind `security definer` mit festem `search_path=public,pg_temp`, prüfen `service_role`, widerrufen `public`, `anon` und `authenticated` und gewähren nur `service_role` Execute. Events haben RLS und Browserrollen keine Mutation. Es werden keine Telefonnummern, Raw WhatsApp Payloads, Tokens, Provider IDs, OpenAI-Daten, Exceptions oder Customer Message Contents in Command, Failure oder Events dupliziert.
 
-## 10. Internal Outbound Message
+## 20. Tests
 
-Classifiable but intentionally not implemented in isolation. No message, provider
-identifier, delivery command or outbound network call was added.
+Der fokussierte Test deckt Adaptervalidierung, originale Domain-Authorities, kontrollierte Fehlerabbildung, Lock/CAS-Bindungen, AP-16-06-01D-Komposition, Runtime-Komponenten, Pending/Snapshot/Outbound/Event-Reihenfolge, Replay/Conflict, Event-Slots, Rollback-Verhalten, Failure-Allowlist/-Idempotenz, Human-Review-/Security- und No-Recompute-Grenzen ab. Vollsuite, Typecheck, Lint, Diff-Check und statische Migrationschecks werden zum Abschluss ausgeführt.
 
-## 11. Domain Events
+## 21. Explicitly Not Implemented
 
-Five reservations are sufficient for the current event derivation. No event
-table was added because events must roll back with the blocked full commit.
+Nicht implementiert sind produktiver Runner, Webhook-zu-Cycle-Komposition, Worker, Lease/Reclaim, Scheduler, Cron, Recovery, WhatsApp Delivery/Send, Graph API, Provider Adapter/IDs, OpenAI, LLM, AI SDK, Language Rewrite, Replanning, Re-Rendering, erneute Normalisierung oder erneutes Domain Knowledge Apply.
 
-## 12. Command Completion and CAS boundaries
+## 22. Handoff to AP-16-06-01F
 
-The command retains Conversation, Runtime, Knowledge, Pending, prompt, source
-message, snapshot and reserved-ID authority. These checks are implementable, but
-command completion must remain last in the same transaction and therefore was
-not added separately.
-
-## 13. Replay / Idempotency
-
-The command and reserved IDs provide the planned replay identity. Payload-conflict
-proof is incomplete until the missing Knowledge proposal/apply values are present
-in the strictly validated payload; no weaker hash or state-diff heuristic was
-introduced.
-
-## 14. Failure Authority
-
-No standalone failure RPC was added because this package explicitly requires the
-complete success and failure authorities together. A follow-up implementation
-must allow-list `normalization_failed`, `cycle_failed`, and (if retained by the
-existing orchestration contract) `persistence_failed`; store no exception text;
-and never overwrite terminal success.
-
-## 15. Human Review / No Change
-
-`runConversationCycle` currently returns `human_review_required` as a
-`ConversationCycleFailure`, not a `ConversationCycleSuccess`, while AP-16-06-01A
-describes a terminal human-review commit boundary. The prerequisite contract
-update must explicitly map this existing failure result to command-only/review
-state behavior without inventing Pending resolution or Knowledge apply.
-
-No-change also needs the original apply result: the resulting version equality
-alone cannot prove the validated AP-16-06-01D `changed` decision and proposal
-identity.
-
-## 16. Security
-
-No authority or grant was added. There is no new customer-content duplication,
-audit metadata, stacktrace, provider data, secret, browser mutation path or AI
-boundary.
-
-## 17. Tests
-
-The repository validation suite may be run against this documentation-only STOP.
-Atomicity tests cannot honestly be added before an atomic RPC exists; static tests
-claiming transactionality would not prove the requested behavior.
-
-## 18. Explicitly Not Implemented
-
-- atomic success commit or failure RPC
-- database migration, tables, columns, policies or grants
-- TypeScript commit/failure adapter
-- productive runner, webhook composition, worker, scheduler or recovery loop
-- WhatsApp send/delivery bridge or provider IDs
-- OpenAI, LLM or inference integration
-- replanning, re-rendering or answer reinterpretation
-- changes to historical migrations
-
-## 19. Handoff / smallest required re-audit
-
-Create a narrow **AP-16-06-01D/E contract-alignment prerequisite** covering only:
-
-1. retention of `StateTransitionProposal` and successful
-   `StateTransitionApplyResult` in `ConversationCycleSuccess`;
-2. retention/passing (not separate persistence) of the normalized-answer result
-   required by the audited commit payload;
-3. explicit human-review mapping, since it is currently a cycle failure;
-4. widening the failure adapter input to the already allow-listed
-   `persistence_failed` category if that category remains required.
-
-After that focused alignment, AP-16-06-01E can implement one additive migration,
-one success RPC, one failure RPC, strict server-only adapters and genuine
-transaction/replay/CAS tests. AP-16-06-01F remains the subsequent composition
-package.
+AP-16-06-01F kann Claim, AP-16-06-01C Authority Load, `processPersistentCustomerMessage` und diese drei Adapter an einer expliziten produktiven Ausführungsgrenze komponieren. Dabei muss ein vollständig zurückgerollter Success-Commit erst danach separat als `persistence_failed` terminalisiert werden. Delivery bleibt eine nachgelagerte, unabhängige Authority.
