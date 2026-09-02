@@ -1,7 +1,7 @@
 import "server-only";
 import { normalizeCustomerAnswer } from "@/lib/domain/conversation-intelligence/answer-normalization";
 import { runConversationCycle } from "@/lib/domain/conversation-intelligence/conversation-cycle";
-import type { ConversationCycleContext, ConversationCycleSuccess } from "@/lib/domain/conversation-intelligence/conversation-cycle-types";
+import type { ConversationCycleContext, ConversationCycleFailure, ConversationCycleSuccess } from "@/lib/domain/conversation-intelligence/conversation-cycle-types";
 import type { RenderedCustomerInteraction } from "@/lib/domain/conversation-intelligence/question-template-types";
 import { classifyCycleFailure, processCustomerMessageCommandSchema, type CycleFailureCode, type PersistentCycleResult } from "@/lib/domain/conversation-cycle-orchestration";
 
@@ -16,12 +16,18 @@ export type PersistentCycleCommit = {
   command_id: string; source_message_id: string; pending_interaction_id: string; expected_runtime_revision: number; expected_knowledge_version: number;
   cycle: ConversationCycleSuccess;
 };
+export type PersistentCycleHumanReview = {
+  command_id: string; source_message_id: string; pending_interaction_id: string;
+  cycle_result: (ConversationCycleFailure & Readonly<{ requires_human_review: true }>) | (ConversationCycleSuccess & Readonly<{ cycle_status: "human_review_required" }>);
+};
 export type PersistentCycleDataSource = {
   /** The RPC performs authorization and locks Conversation, Runtime, Pending, Knowledge, then Command. */
   claimCustomerMessage(messageId: string): Promise<{ authority?: CustomerMessageCycleAuthority; replay?: TerminalReplay; error?: CycleFailureCode }>;
   /** One database transaction applies Knowledge transition and the complete runtime/outbound generation. */
   commitCustomerMessageCycle(payload: PersistentCycleCommit): Promise<PersistentCycleResult>;
-  failCustomerMessage(commandId: string, code: "normalization_failed" | "cycle_failed"): Promise<void>;
+  /** A controlled domain outcome; it creates neither a review actor nor an approval. */
+  completeCustomerMessageWithHumanReview(payload: PersistentCycleHumanReview): Promise<PersistentCycleResult>;
+  failCustomerMessage(commandId: string, code: "normalization_failed" | "cycle_failed" | "persistence_failed"): Promise<void>;
 };
 const failed = (code: CycleFailureCode, command_id?: string): PersistentCycleResult => ({ success:false, kind:"failed", code, retry_class:classifyCycleFailure(code), ...(command_id ? { command_id } : {}) });
 
@@ -38,6 +44,12 @@ export async function processPersistentCustomerMessage(source: PersistentCycleDa
   const normalized = normalizeCustomerAnswer({ raw_answer:raw, rendered_interaction:a.rendered_interaction, attempt_number:1 });
   if (!normalized.success) { await source.failCustomerMessage(a.command_id, "normalization_failed"); return failed("normalization_failed", a.command_id); }
   const cycle = runConversationCycle({ ...a.cycle_context, normalized_answer:normalized.normalized_answer, execution_status:"not_processed" });
+  if (!cycle.success && cycle.requires_human_review) {
+    return source.completeCustomerMessageWithHumanReview({ command_id:a.command_id, source_message_id:a.message_id, pending_interaction_id:a.pending_interaction_id, cycle_result:{ ...cycle, requires_human_review:true } });
+  }
   if (!cycle.success) { await source.failCustomerMessage(a.command_id, "cycle_failed"); return failed("cycle_failed", a.command_id); }
+  if (cycle.cycle_status === "human_review_required") {
+    return source.completeCustomerMessageWithHumanReview({ command_id:a.command_id, source_message_id:a.message_id, pending_interaction_id:a.pending_interaction_id, cycle_result:{ ...cycle, cycle_status:"human_review_required" } });
+  }
   return source.commitCustomerMessageCycle({ command_id:a.command_id, source_message_id:a.message_id, pending_interaction_id:a.pending_interaction_id, expected_runtime_revision:a.expected_runtime_revision, expected_knowledge_version:a.expected_knowledge_version, cycle });
 }
