@@ -34,10 +34,17 @@ const replayResult = z.object({
   result_knowledge_version: version.nullable(), outbound_message_id: uuid.nullable(),
 }).passthrough();
 const failedClaim = z.object({ success: z.literal(false), code: claimErrorCode }).passthrough();
+const busyClaim = z.object({ success:z.literal(false), code:z.literal("busy"), command_id:uuid }).passthrough();
 
 export type PersistentCycleClaimSource = {
-  rpc(name: "claim_customer_message_cycle", args: { target_message_id: string }): Promise<{ data: unknown; error: unknown }>;
+  rpc(name: "claim_customer_message_cycle" | "acquire_customer_message_cycle_execution", args: Record<string, unknown>): Promise<{ data: unknown; error: unknown }>;
 };
+
+export type CycleExecutionContext = Readonly<{
+  ownerId: string;
+  leaseSeconds: number;
+  onOwnershipLost?: () => void;
+}>;
 
 export type PersistentCycleDataSourceDependencies = {
   claim: PersistentCycleClaimSource;
@@ -78,12 +85,20 @@ function replay(data: z.infer<typeof replayResult>): Extract<PersistentCycleResu
  */
 export function createPersistentCycleDataSource(
   dependencies: PersistentCycleDataSourceDependencies,
+  execution?: CycleExecutionContext,
 ): PersistentCycleDataSource {
   return {
     async claimCustomerMessage(messageId) {
       if (!uuid.safeParse(messageId).success) return { error: "invalid_input" };
-      const claimed = await dependencies.claim.rpc("claim_customer_message_cycle", { target_message_id: messageId });
+      const claimed = execution
+        ? await dependencies.claim.rpc("acquire_customer_message_cycle_execution", {
+            target_message_id: messageId,
+            execution_owner: execution.ownerId,
+            lease_seconds: execution.leaseSeconds,
+          })
+        : await dependencies.claim.rpc("claim_customer_message_cycle", { target_message_id: messageId });
       if (claimed.error) return { error: "persistence_failed" };
+      if (busyClaim.safeParse(claimed.data).success) return { error: "interaction_not_current" };
       const failure = failedClaim.safeParse(claimed.data);
       if (failure.success) return { error: failure.data.code };
       const terminal = replayResult.safeParse(claimed.data);
@@ -96,8 +111,8 @@ export function createPersistentCycleDataSource(
       const loaded = await loadCustomerMessageCycleAuthority(dependencies.read, command.data.command_id);
       return loaded.success ? { authority: loaded.authority } : { error: READ_ERROR_MAP[loaded.error] };
     },
-    commitCustomerMessageCycle: payload => commitCustomerMessageCycle(dependencies.commit, payload),
-    completeCustomerMessageWithHumanReview: payload => completeCustomerMessageWithHumanReview(dependencies.commit, payload),
-    failCustomerMessage: (commandId, code) => failCustomerMessage(dependencies.commit, commandId, code),
+    commitCustomerMessageCycle: payload => execution ? commitCustomerMessageCycle(dependencies.commit, payload, execution) : commitCustomerMessageCycle(dependencies.commit, payload),
+    completeCustomerMessageWithHumanReview: payload => execution ? completeCustomerMessageWithHumanReview(dependencies.commit, payload, execution) : completeCustomerMessageWithHumanReview(dependencies.commit, payload),
+    failCustomerMessage: (commandId, code) => execution ? failCustomerMessage(dependencies.commit, commandId, code, execution) : failCustomerMessage(dependencies.commit, commandId, code),
   };
 }
