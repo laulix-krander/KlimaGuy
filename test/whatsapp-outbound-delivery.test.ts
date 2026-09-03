@@ -5,9 +5,9 @@ import { deliverPendingWhatsAppMessage,type DeliveryPersistence } from "@/lib/se
 import { parseWhatsAppWebhook } from "@/lib/server/whatsapp/parser";
 
 const id=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,"0")}`;
-const claim={delivery_command_id:id(1),claim_token:id(2),destination:"491234",text:" Exakt\nso ",sender_scope:"sender-1",status:"sending" as const};
+const acquired={delivery_command_id:id(1),outbound_message_id:id(9),execution_owner_id:id(2),execution_lease_expires_at:"2026-09-02T12:01:00.000Z",destination:"491234",text:" Exakt\nso ",sender_scope:"sender-1",status:"acquired" as const};
 const dispatch={status:"authorized" as const,delivery_command_id:id(1),attempt_number:1,dispatch_token:id(3),dispatch_started_at:"2026-09-02T12:00:00.000Z"};
-const store=(overrides:Partial<DeliveryPersistence>={}):DeliveryPersistence=>({claim:vi.fn().mockResolvedValue(claim),revalidate:vi.fn().mockResolvedValue(true),authorize:vi.fn().mockResolvedValue(dispatch),failPreDispatch:vi.fn().mockResolvedValue({status:"completed"}),complete:vi.fn().mockResolvedValue({status:"completed"}),...overrides});
+const store=(overrides:Partial<DeliveryPersistence>={}):DeliveryPersistence=>({acquire:vi.fn().mockResolvedValue(acquired),revalidate:vi.fn().mockResolvedValue({status:"valid"}),authorize:vi.fn().mockResolvedValue(dispatch),failPreDispatch:vi.fn().mockResolvedValue({status:"completed"}),complete:vi.fn().mockResolvedValue({status:"completed"}),...overrides});
 
 describe("WhatsApp Cloud API outbound adapter",()=>{
   it("uses the pinned endpoint, bearer token, destination and exact text only",async()=>{
@@ -24,11 +24,11 @@ describe("WhatsApp Cloud API outbound adapter",()=>{
 describe("controlled delivery orchestration",()=>{
   it("revalidates immediately, completes acceptance, and replays without a send",async()=>{
     const complete=vi.fn().mockResolvedValue({status:"completed"});const deliveryStore=store({complete});const send=vi.fn().mockResolvedValue({success:true,providerMessageId:"wamid.out",acceptedAt:"2026-08-24T12:00:00.000Z"});
-    expect(await deliverPendingWhatsAppMessage({internal_message_id:id(9)},{store:deliveryStore,send,createDispatchToken:()=>id(3),env:{WHATSAPP_ACCESS_TOKEN:"token",WHATSAPP_PHONE_NUMBER_ID:"phone",WHATSAPP_GRAPH_API_VERSION:"v25.0"}})).toMatchObject({status:"accepted_by_provider"});expect(send).toHaveBeenCalledOnce();expect(complete).toHaveBeenCalledOnce();
-    deliveryStore.claim=vi.fn().mockResolvedValue({...claim,status:"replay"});expect((await deliverPendingWhatsAppMessage({internal_message_id:id(9)},{store:deliveryStore,send})).status).toBe("replay");expect(send).toHaveBeenCalledOnce();
+    expect(await deliverPendingWhatsAppMessage({internal_message_id:id(9)},{store:deliveryStore,send,createExecutionOwner:()=>id(2),createDispatchToken:()=>id(3),env:{WHATSAPP_ACCESS_TOKEN:"token",WHATSAPP_PHONE_NUMBER_ID:"phone",WHATSAPP_GRAPH_API_VERSION:"v25.0"}})).toMatchObject({status:"accepted_by_provider"});expect(send).toHaveBeenCalledOnce();expect(complete).toHaveBeenCalledOnce();
+    deliveryStore.acquire=vi.fn().mockResolvedValue({delivery_command_id:id(1),status:"already_terminal"});expect((await deliverPendingWhatsAppMessage({internal_message_id:id(9)},{store:deliveryStore,send,createExecutionOwner:()=>id(2)})).status).toBe("already_terminal");expect(send).toHaveBeenCalledOnce();
   });
-  it("blocks a takeover race before fetch",async()=>{const deliveryStore=store({revalidate:vi.fn().mockResolvedValue(false)});const send=vi.fn();expect((await deliverPendingWhatsAppMessage({internal_message_id:id(9)},{store:deliveryStore,send})).status).toBe("blocked");expect(send).not.toHaveBeenCalled();expect(deliveryStore.authorize).not.toHaveBeenCalled();});
-  it("fails closed before dispatch when configuration is missing",async()=>{const failPreDispatch=vi.fn().mockResolvedValue({status:"completed"});const deliveryStore=store({failPreDispatch});await deliverPendingWhatsAppMessage({internal_message_id:id(9)},{store:deliveryStore,env:{}});expect(failPreDispatch).toHaveBeenCalledWith(id(1),id(2));expect(deliveryStore.authorize).not.toHaveBeenCalled();});
+  it("blocks a takeover race before fetch",async()=>{const deliveryStore=store({revalidate:vi.fn().mockResolvedValue({status:"ownership_lost"})});const send=vi.fn();expect((await deliverPendingWhatsAppMessage({internal_message_id:id(9)},{store:deliveryStore,send,createExecutionOwner:()=>id(2)})).status).toBe("ownership_lost");expect(send).not.toHaveBeenCalled();expect(deliveryStore.authorize).not.toHaveBeenCalled();});
+  it("fails closed before dispatch when configuration is missing",async()=>{const failPreDispatch=vi.fn().mockResolvedValue({status:"completed"});const deliveryStore=store({failPreDispatch});await deliverPendingWhatsAppMessage({internal_message_id:id(9)},{store:deliveryStore,createExecutionOwner:()=>id(2),env:{}});expect(failPreDispatch).toHaveBeenCalledWith(id(1),id(2));expect(deliveryStore.authorize).not.toHaveBeenCalled();});
 });
 
 describe("delivery status and persistence contract",()=>{
