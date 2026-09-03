@@ -2,14 +2,17 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { canChangeUserRole, canCreateCustomer, canCreateProjectNote, canViewProjectMedia } from "@/lib/domain/permissions";
 import { changeUserRoleSchema, roleSchema } from "@/lib/domain/schemas";
-import { provisionSystemActor, SYSTEM_ACTOR_KEY, type SystemActorProvisioningBoundary } from "@/lib/server/system-actor-provisioning";
+import { provisionSystemActor, SYSTEM_ACTOR_KEY, systemActorProvisioningExitCode, type SystemActorProvisioningBoundary } from "@/lib/server/system-actor-provisioning";
 
 const USER_ID = "10000000-0000-4000-8000-000000000001";
 const migration = readFileSync("supabase/migrations/202609030003_system_actor_identity_authority.sql", "utf8");
 
 function boundary(overrides: Partial<SystemActorProvisioningBoundary> = {}): SystemActorProvisioningBoundary {
+  const verify = vi.fn()
+    .mockResolvedValueOnce({ status: "not_provisioned" })
+    .mockResolvedValue({ status: "verified", auth_user_id: USER_ID });
   return {
-    verify: vi.fn().mockResolvedValue({ status: "not_provisioned" }),
+    verify,
     findRecoverableAuthUser: vi.fn().mockResolvedValue(null),
     createAuthUser: vi.fn().mockResolvedValue({ id: USER_ID }),
     register: vi.fn().mockResolvedValue({ status: "provisioned", auth_user_id: USER_ID }),
@@ -32,12 +35,13 @@ describe("system actor role", () => {
 });
 
 describe("system actor provisioning", () => {
-  it("creates exactly one supported Admin API identity and registers it", async () => {
+  it("creates exactly one supported Admin API identity, registers it and verifies the persisted authority", async () => {
     const source = boundary();
-    await expect(provisionSystemActor("system@deployment.invalid", source)).resolves.toEqual({ status: "provisioned", auth_user_id: USER_ID });
+    await expect(provisionSystemActor("system@deployment.invalid", source)).resolves.toEqual({ status: "verified", auth_user_id: USER_ID });
     expect(source.createAuthUser).toHaveBeenCalledTimes(1);
     expect(source.createAuthUser).toHaveBeenCalledWith(expect.objectContaining({ systemActorKey: SYSTEM_ACTOR_KEY }));
     expect(source.register).toHaveBeenCalledWith(USER_ID);
+    expect(source.verify).toHaveBeenCalledTimes(2);
   });
 
   it("does not create on a verified replay", async () => {
@@ -48,9 +52,29 @@ describe("system actor provisioning", () => {
 
   it("recovers the Auth-created/registry-missing crash state without another create", async () => {
     const source = boundary({ findRecoverableAuthUser: vi.fn().mockResolvedValue({ id: USER_ID, systemActorKey: SYSTEM_ACTOR_KEY }) });
-    await expect(provisionSystemActor("system@deployment.invalid", source)).resolves.toEqual({ status: "provisioned", auth_user_id: USER_ID });
+    await expect(provisionSystemActor("system@deployment.invalid", source)).resolves.toEqual({ status: "verified", auth_user_id: USER_ID });
     expect(source.createAuthUser).not.toHaveBeenCalled();
     expect(source.register).toHaveBeenCalledWith(USER_ID);
+    expect(source.verify).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["not_provisioned", "invalid_actor", "conflict"] as const)("fails closed when post-registration verification returns %s", async (status) => {
+    const source = boundary({ verify: vi.fn().mockResolvedValueOnce({ status: "not_provisioned" }).mockResolvedValueOnce({ status }) });
+    await expect(provisionSystemActor("system@deployment.invalid", source)).resolves.toEqual({ status: "provisioning_failed" });
+    expect(source.verify).toHaveBeenCalledTimes(2);
+    expect(source.createAuthUser).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed when final verification resolves a different Auth identity", async () => {
+    const source = boundary({ verify: vi.fn().mockResolvedValueOnce({ status: "not_provisioned" }).mockResolvedValueOnce({ status: "verified", auth_user_id: "20000000-0000-4000-8000-000000000002" }) });
+    await expect(provisionSystemActor("system@deployment.invalid", source)).resolves.toEqual({ status: "provisioning_failed" });
+  });
+
+  it("returns registration conflicts without a verification bypass or second create", async () => {
+    const source = boundary({ register: vi.fn().mockResolvedValue({ status: "conflict" }) });
+    await expect(provisionSystemActor("system@deployment.invalid", source)).resolves.toEqual({ status: "conflict" });
+    expect(source.verify).toHaveBeenCalledTimes(1);
+    expect(source.createAuthUser).toHaveBeenCalledTimes(1);
   });
 
   it("fails closed for conflicting recovery metadata, malformed results and weak generated secrets", async () => {
@@ -63,6 +87,16 @@ describe("system actor provisioning", () => {
     const result = await provisionSystemActor("system@deployment.invalid", boundary());
     const output = JSON.stringify(result);
     expect(output).not.toMatch(/password|token|email|secret/i);
+  });
+
+  it("maps only closed success results to exit zero and keeps serialized output secret-free", () => {
+    expect(systemActorProvisioningExitCode({ status: "verified", auth_user_id: USER_ID })).toBe(0);
+    expect(systemActorProvisioningExitCode({ status: "already_provisioned", auth_user_id: USER_ID })).toBe(0);
+    for (const status of ["provisioning_failed", "conflict", "invalid_actor"] as const) {
+      const result = { status };
+      expect(systemActorProvisioningExitCode(result)).toBe(1);
+      expect(JSON.stringify(result)).not.toMatch(/password|token|email|secret/i);
+    }
   });
 });
 
