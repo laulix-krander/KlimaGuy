@@ -4,6 +4,11 @@ import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { createProductiveCycleRuntime } from "@/lib/server/conversation/productive-cycle-runtime";
 import { runPersistentCustomerMessageCycle } from "@/lib/server/conversation/recoverable-cycle-runner";
+import type { RecoverableCycleRunnerResult } from "@/lib/server/conversation/recoverable-cycle-runner";
+import {
+  createProductiveRecoverableWhatsAppDeliveryDependencies,
+} from "./outbound-delivery";
+import { runRecoverableWhatsAppDelivery } from "./recoverable-delivery-runner";
 import type { WhatsAppInboundText } from "./contracts";
 
 const resultSchema = z.object({
@@ -16,7 +21,32 @@ const resultSchema = z.object({
 }).strict();
 export type WhatsAppIngestionResult = z.infer<typeof resultSchema>;
 export type WhatsAppInboundPersistence = (event: WhatsAppInboundText) => Promise<WhatsAppIngestionResult>;
-export type MessageCycleTrigger = (input: { message_id: string }) => Promise<void>;
+export const WHATSAPP_WEBHOOK_RUNTIME_MS = 60_000;
+export const IMMEDIATE_DELIVERY_MINIMUM_REMAINING_MS = 20_000;
+export type MessageCycleTrigger = (input: { message_id: string; request_started_at?: number }) => Promise<void>;
+
+export async function runImmediateWhatsAppDelivery(
+  result: RecoverableCycleRunnerResult,
+  requestStartedAt: number,
+  dependencies: Readonly<{
+    now?: () => number;
+    deliver?: typeof runRecoverableWhatsAppDelivery;
+    createDeliveryDependencies?: typeof createProductiveRecoverableWhatsAppDeliveryDependencies;
+  }> = {},
+): Promise<void> {
+  if (result.kind !== "completed" || !result.outbound_message_id) return;
+  const now = dependencies.now ?? (() => performance.now());
+  const remaining = WHATSAPP_WEBHOOK_RUNTIME_MS - (now() - requestStartedAt);
+  if (remaining < IMMEDIATE_DELIVERY_MINIMUM_REMAINING_MS) return;
+  try {
+    await (dependencies.deliver ?? runRecoverableWhatsAppDelivery)(
+      { outbound_message_id: result.outbound_message_id },
+      (dependencies.createDeliveryDependencies ?? createProductiveRecoverableWhatsAppDeliveryDependencies)(),
+    );
+  } catch {
+    // Inbound persistence is final; durable delivery recovery remains authoritative.
+  }
+}
 
 function serviceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -41,7 +71,9 @@ export const persistWhatsAppInboundText: WhatsAppInboundPersistence = async (eve
 };
 
 /** Runs the recoverable cycle with only the provider-independent internal UUID. */
-export const triggerPersistentMessageCycle: MessageCycleTrigger = async ({ message_id }) => {
+export const triggerPersistentMessageCycle: MessageCycleTrigger = async ({ message_id, request_started_at }) => {
   const runtime = createProductiveCycleRuntime();
-  await runPersistentCustomerMessageCycle(runtime.runner, { message_id });
+  const result = await runPersistentCustomerMessageCycle(runtime.runner, { message_id });
+  const startedAt = request_started_at ?? performance.now();
+  await runImmediateWhatsAppDelivery(result, startedAt);
 };

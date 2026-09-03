@@ -51,6 +51,7 @@ export function createWhatsAppWebhookHandlers(dependencies: {
       return new Response(challenge, { status: 200, headers: { "content-type": "text/plain; charset=utf-8" } });
     },
     POST: async (request: Request): Promise<Response> => {
+      const requestStartedAt = performance.now();
       const secret = appSecret();
       if (!secret) return new Response(null, { status: 503 });
       const body = await readBoundedBody(request);
@@ -67,7 +68,7 @@ export function createWhatsAppWebhookHandlers(dependencies: {
           if (item.kind !== "inbound_text") continue;
           const result = await persist(item.event);
           if (result.status === "recorded" && result.cycle_eligible) {
-            try { await triggerCycle({ message_id: result.internal_message_id }); } catch { /* Persistence is final; AP-16-03 owns recovery. */ }
+            try { await triggerCycle({ message_id: result.internal_message_id, request_started_at: requestStartedAt }); } catch { /* Persistence is final; recovery owns later work. */ }
           }
         }
         for(const item of parsed) if(item.kind==="delivery_status") await reconcileStatus(item.event);
