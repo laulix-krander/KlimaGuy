@@ -28,6 +28,14 @@ describe("AP-16-06-02 recoverable conversation cycle runner",()=>{
     expect(processPersistentCustomerMessage).toHaveBeenCalledTimes(1);
   });
 
+  it("hands off exactly the persisted outbound identity and never invents one",async()=>{
+    const outboundId="a1000000-0000-4000-8000-000000000004";
+    vi.mocked(processPersistentCustomerMessage).mockResolvedValueOnce({success:true,kind:"completed_with_next_interaction",command_id:commandId,runtime_revision:2,knowledge_version:2,outbound_message_id:outboundId,pending_interaction_id:"a1000000-0000-4000-8000-000000000005"});
+    await expect(runPersistentCustomerMessageCycle(dependencies,{message_id:messageId})).resolves.toEqual({kind:"completed",command_id:commandId,outbound_message_id:outboundId});
+    vi.mocked(processPersistentCustomerMessage).mockResolvedValueOnce({success:true,kind:"collection_stopped",command_id:commandId,runtime_revision:2,knowledge_version:2,outbound_message_id:null,pending_interaction_id:null});
+    await expect(runPersistentCustomerMessageCycle(dependencies,{message_id:messageId})).resolves.toEqual({kind:"completed",command_id:commandId});
+  });
+
   it("validates bounded content-free recovery discovery",async()=>{
     const row={command_id:commandId,source_message_id:messageId,lease_expired_at:"2026-09-02T12:00:00.000Z"};
     const rpc=vi.fn().mockResolvedValue({data:[row],error:null});
