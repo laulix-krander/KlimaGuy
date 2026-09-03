@@ -10,7 +10,8 @@ export const CONVERSATION_CYCLE_LEASE_SECONDS = 5 * 60;
 export const RECOVERABLE_CYCLE_DISCOVERY_LIMIT = 100;
 
 export type RecoverableCycleRunnerResult =
-  | Readonly<{ kind:"completed" | "human_review" | "already_terminal" | "failed" | "stale" | "busy" | "ownership_lost"; command_id?:string }>;
+  | Readonly<{ kind:"completed"; command_id?:string; outbound_message_id?:string }>
+  | Readonly<{ kind:"human_review" | "already_terminal" | "failed" | "stale" | "busy" | "ownership_lost"; command_id?:string }>;
 
 export type RecoverableCycleDependencies = PersistentCycleDataSourceDependencies & Readonly<{
   createOwnerId?: () => string;
@@ -31,7 +32,11 @@ export async function runPersistentCustomerMessageCycle(
   try {
     const result = await processPersistentCustomerMessage(source, input);
     if (ownershipLost) return { kind:"ownership_lost", ...(result.command_id ? {command_id:result.command_id} : {}) };
-    if (result.success) return { kind:result.kind === "already_processed" ? "already_terminal" : result.kind === "human_review" ? "human_review" : "completed", command_id:result.command_id };
+    if (result.success) {
+      if (result.kind === "already_processed") return { kind:"already_terminal", command_id:result.command_id };
+      if (result.kind === "human_review") return { kind:"human_review", command_id:result.command_id };
+      return { kind:"completed", command_id:result.command_id, ...(result.outbound_message_id ? {outbound_message_id:result.outbound_message_id} : {}) };
+    }
     if (result.code === "interaction_not_current") return { kind:"busy", ...(result.command_id ? {command_id:result.command_id} : {}) };
     if (result.code === "stale_runtime_revision" || result.code === "stale_knowledge_version") return { kind:"stale", ...(result.command_id ? {command_id:result.command_id} : {}) };
     if (result.code === "persistence_failed" && result.command_id && !ownershipLost) {

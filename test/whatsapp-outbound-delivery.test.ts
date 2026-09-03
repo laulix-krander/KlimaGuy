@@ -6,6 +6,8 @@ import { parseWhatsAppWebhook } from "@/lib/server/whatsapp/parser";
 
 const id=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,"0")}`;
 const claim={delivery_command_id:id(1),claim_token:id(2),destination:"491234",text:" Exakt\nso ",sender_scope:"sender-1",status:"sending" as const};
+const dispatch={status:"authorized" as const,delivery_command_id:id(1),attempt_number:1,dispatch_token:id(3),dispatch_started_at:"2026-09-02T12:00:00.000Z"};
+const store=(overrides:Partial<DeliveryPersistence>={}):DeliveryPersistence=>({claim:vi.fn().mockResolvedValue(claim),revalidate:vi.fn().mockResolvedValue(true),authorize:vi.fn().mockResolvedValue(dispatch),failPreDispatch:vi.fn().mockResolvedValue({status:"completed"}),complete:vi.fn().mockResolvedValue({status:"completed"}),...overrides});
 
 describe("WhatsApp Cloud API outbound adapter",()=>{
   it("uses the pinned endpoint, bearer token, destination and exact text only",async()=>{
@@ -21,12 +23,12 @@ describe("WhatsApp Cloud API outbound adapter",()=>{
 
 describe("controlled delivery orchestration",()=>{
   it("revalidates immediately, completes acceptance, and replays without a send",async()=>{
-    const complete=vi.fn();const store:DeliveryPersistence={claim:vi.fn().mockResolvedValue(claim),revalidate:vi.fn().mockResolvedValue(true),complete};const send=vi.fn().mockResolvedValue({success:true,providerMessageId:"wamid.out",acceptedAt:"2026-08-24T12:00:00.000Z"});
-    expect(await deliverPendingWhatsAppMessage({internal_message_id:id(9)},{store,send,env:{WHATSAPP_ACCESS_TOKEN:"token",WHATSAPP_PHONE_NUMBER_ID:"phone",WHATSAPP_GRAPH_API_VERSION:"v25.0"}})).toMatchObject({status:"accepted_by_provider"});expect(send).toHaveBeenCalledOnce();expect(complete).toHaveBeenCalledOnce();
-    store.claim=vi.fn().mockResolvedValue({...claim,status:"replay"});expect((await deliverPendingWhatsAppMessage({internal_message_id:id(9)},{store,send})).status).toBe("replay");expect(send).toHaveBeenCalledOnce();
+    const complete=vi.fn().mockResolvedValue({status:"completed"});const deliveryStore=store({complete});const send=vi.fn().mockResolvedValue({success:true,providerMessageId:"wamid.out",acceptedAt:"2026-08-24T12:00:00.000Z"});
+    expect(await deliverPendingWhatsAppMessage({internal_message_id:id(9)},{store:deliveryStore,send,createDispatchToken:()=>id(3),env:{WHATSAPP_ACCESS_TOKEN:"token",WHATSAPP_PHONE_NUMBER_ID:"phone",WHATSAPP_GRAPH_API_VERSION:"v25.0"}})).toMatchObject({status:"accepted_by_provider"});expect(send).toHaveBeenCalledOnce();expect(complete).toHaveBeenCalledOnce();
+    deliveryStore.claim=vi.fn().mockResolvedValue({...claim,status:"replay"});expect((await deliverPendingWhatsAppMessage({internal_message_id:id(9)},{store:deliveryStore,send})).status).toBe("replay");expect(send).toHaveBeenCalledOnce();
   });
-  it("blocks a takeover race before fetch",async()=>{const store:DeliveryPersistence={claim:vi.fn().mockResolvedValue(claim),revalidate:vi.fn().mockResolvedValue(false),complete:vi.fn()};const send=vi.fn();expect((await deliverPendingWhatsAppMessage({internal_message_id:id(9)},{store,send})).status).toBe("blocked");expect(send).not.toHaveBeenCalled();});
-  it("fails closed on missing configuration without exposing a token",async()=>{const complete=vi.fn();const store:DeliveryPersistence={claim:vi.fn().mockResolvedValue(claim),revalidate:vi.fn().mockResolvedValue(true),complete};await deliverPendingWhatsAppMessage({internal_message_id:id(9)},{store,env:{}});expect(complete.mock.calls[0][2]).toMatchObject({failureCode:"provider_auth_error",retryClassification:"configuration"});expect(JSON.stringify(complete.mock.calls)).not.toContain("token");});
+  it("blocks a takeover race before fetch",async()=>{const deliveryStore=store({revalidate:vi.fn().mockResolvedValue(false)});const send=vi.fn();expect((await deliverPendingWhatsAppMessage({internal_message_id:id(9)},{store:deliveryStore,send})).status).toBe("blocked");expect(send).not.toHaveBeenCalled();expect(deliveryStore.authorize).not.toHaveBeenCalled();});
+  it("fails closed before dispatch when configuration is missing",async()=>{const failPreDispatch=vi.fn().mockResolvedValue({status:"completed"});const deliveryStore=store({failPreDispatch});await deliverPendingWhatsAppMessage({internal_message_id:id(9)},{store:deliveryStore,env:{}});expect(failPreDispatch).toHaveBeenCalledWith(id(1),id(2));expect(deliveryStore.authorize).not.toHaveBeenCalled();});
 });
 
 describe("delivery status and persistence contract",()=>{
