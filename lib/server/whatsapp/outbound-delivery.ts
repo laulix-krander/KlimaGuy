@@ -1,9 +1,9 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { PINNED_WHATSAPP_GRAPH_API_VERSION, sendWhatsAppText, type WhatsAppSendResult } from "./outbound-adapter";
+import { sendWhatsAppText, type WhatsAppSendResult } from "./outbound-adapter";
+import { runRecoverableWhatsAppDelivery, type RecoverableWhatsAppDeliveryDependencies } from "./recoverable-delivery-runner";
 
 export const WHATSAPP_DELIVERY_LEASE_SECONDS = 60 as const;
 export const WHATSAPP_DELIVERY_RECOVERY_LIMIT = 5 as const;
@@ -24,7 +24,6 @@ const preDispatchSchema = z.object({ status: z.enum(["completed", "ownership_los
 const recoverySchema = z.object({ status: z.enum(["finalized", "safe_to_run", "busy", "already_terminal", "provider_binding_exists", "not_eligible", "inconsistent_attempt", "not_authorized"]) }).strict();
 const discoverySchema = z.array(z.object({ delivery_command_id: uuid, outbound_message_id: uuid, recovery_action: z.enum(["SAFE_TO_RUN", "FINALIZE_AMBIGUOUS"]) }).strict()).max(WHATSAPP_DELIVERY_RECOVERY_LIMIT);
 
-type AcquiredExecution = Extract<z.infer<typeof acquiredSchema>, { status: "acquired" }>;
 type AuthorizedDispatch = Extract<z.infer<typeof dispatchSchema>, { status: "authorized" }>;
 export type DeliveryAcquireResult = z.infer<typeof acquiredSchema>;
 export type DeliveryRecoveryResult = z.infer<typeof recoverySchema>;
@@ -51,7 +50,7 @@ async function rpc(name: string, parameters: Record<string, unknown>, errorCode:
   return data;
 }
 
-const persistence: DeliveryPersistence = {
+export const whatsAppDeliveryPersistence: DeliveryPersistence = {
   async acquire(messageId, ownerId) { return acquiredSchema.parse(await rpc("acquire_whatsapp_delivery_execution", { target_internal_message_id: messageId, target_execution_owner_id: ownerId }, "delivery_acquire_failed")); },
   async revalidate(commandId, ownerId) { return revalidationSchema.parse(await rpc("revalidate_whatsapp_outbound_delivery", { target_delivery_command_id: commandId, target_execution_owner_id: ownerId }, "delivery_revalidation_failed")); },
   async authorize(commandId, ownerId, dispatchToken) { return dispatchSchema.parse(await rpc("authorize_whatsapp_outbound_dispatch", { target_delivery_command_id: commandId, target_execution_owner_id: ownerId, target_dispatch_token: dispatchToken }, "delivery_dispatch_authorization_failed")); },
@@ -59,7 +58,7 @@ const persistence: DeliveryPersistence = {
   async complete(commandId, ownerId, dispatch, result) { return completionSchema.parse(await rpc("complete_whatsapp_outbound_delivery", { target_delivery_command_id: commandId, target_execution_owner_id: ownerId, target_dispatch_token: dispatch.dispatch_token, target_attempt_number: dispatch.attempt_number, target_success: result.success, target_provider_message_id: result.success ? result.providerMessageId : null, target_failure_code: result.success ? null : result.failureCode, target_retry_classification: result.success ? null : result.retryClassification, target_provider_accepted_at: result.success ? result.acceptedAt : null }, "delivery_completion_failed")); },
 };
 
-export async function acquireWhatsAppDeliveryExecution(messageId: string, ownerId: string, store: Pick<DeliveryPersistence, "acquire"> = persistence) {
+export async function acquireWhatsAppDeliveryExecution(messageId: string, ownerId: string, store: Pick<DeliveryPersistence, "acquire"> = whatsAppDeliveryPersistence) {
   return store.acquire(uuid.parse(messageId), uuid.parse(ownerId));
 }
 
@@ -71,30 +70,33 @@ export async function discoverRecoverableWhatsAppDeliveries(limit = WHATSAPP_DEL
   return discoverySchema.parse(await rpc("discover_recoverable_whatsapp_deliveries", { target_limit: Math.min(Math.max(Math.trunc(limit), 0), WHATSAPP_DELIVERY_RECOVERY_LIMIT) }, "delivery_discovery_failed"));
 }
 
-/** Existing bridge primitive only; a productive recoverable runner is deliberately deferred to AP-16-06-04D. */
-export async function deliverPendingWhatsAppMessage(input: { internal_message_id: string }, deps: { store?: DeliveryPersistence; send?: typeof sendWhatsAppText; env?: Partial<NodeJS.ProcessEnv>; createExecutionOwner?: () => string; createDispatchToken?: () => string } = {}): Promise<{ deliveryCommandId?: string; status: string }> {
-  const store = deps.store ?? persistence;
-  const ownerId = uuid.parse((deps.createExecutionOwner ?? randomUUID)());
-  const acquired = await acquireWhatsAppDeliveryExecution(input.internal_message_id, ownerId, store);
-  if (acquired.status !== "acquired") return { deliveryCommandId: "delivery_command_id" in acquired ? acquired.delivery_command_id : undefined, status: acquired.status };
-  return executeAcquiredDelivery(acquired, ownerId, store, deps);
+export function createProductiveRecoverableWhatsAppDeliveryDependencies(): RecoverableWhatsAppDeliveryDependencies {
+  return {
+    ...whatsAppDeliveryPersistence,
+    readConfiguration: () => ({ accessToken: process.env.WHATSAPP_ACCESS_TOKEN, phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID, graphApiVersion: process.env.WHATSAPP_GRAPH_API_VERSION }),
+    send: sendWhatsAppText,
+    finalizeAmbiguous: finalizeExpiredWhatsAppDeliveryAmbiguous,
+  };
 }
 
-async function executeAcquiredDelivery(acquired: AcquiredExecution, ownerId: string, store: DeliveryPersistence, deps: { send?: typeof sendWhatsAppText; env?: Partial<NodeJS.ProcessEnv>; createDispatchToken?: () => string }): Promise<{ deliveryCommandId: string; status: string }> {
-  const revalidation = await store.revalidate(acquired.delivery_command_id, ownerId);
-  if (revalidation.status !== "valid") return { deliveryCommandId: acquired.delivery_command_id, status: revalidation.status };
+/** Compatibility adapter; the recoverable runner is the sole orchestration path. */
+export async function deliverPendingWhatsAppMessage(input: { internal_message_id: string }, deps: { store?: DeliveryPersistence; send?: typeof sendWhatsAppText; env?: Partial<NodeJS.ProcessEnv>; createExecutionOwner?: () => string; createDispatchToken?: () => string } = {}): Promise<{ deliveryCommandId?: string; status: string }> {
+  const store = deps.store ?? whatsAppDeliveryPersistence;
   const env = deps.env ?? process.env;
-  const accessToken = env.WHATSAPP_ACCESS_TOKEN;
-  const phoneNumberId = env.WHATSAPP_PHONE_NUMBER_ID;
-  const version = env.WHATSAPP_GRAPH_API_VERSION;
-  if (!accessToken || !phoneNumberId || version !== PINNED_WHATSAPP_GRAPH_API_VERSION) {
-    const failure = await store.failPreDispatch(acquired.delivery_command_id, ownerId);
-    return { deliveryCommandId: acquired.delivery_command_id, status: failure.status === "completed" ? "blocked" : failure.status };
-  }
-  const dispatch = await store.authorize(acquired.delivery_command_id, ownerId, (deps.createDispatchToken ?? randomUUID)());
-  if (dispatch.status !== "authorized") return { deliveryCommandId: acquired.delivery_command_id, status: dispatch.status };
-  const result = await (deps.send ?? sendWhatsAppText)({ destination: acquired.destination, text: acquired.text, phoneNumberId, accessToken, graphApiVersion: version });
-  const completion = await store.complete(acquired.delivery_command_id, ownerId, dispatch, result);
-  if (completion.status !== "completed") return { deliveryCommandId: acquired.delivery_command_id, status: completion.status };
-  return { deliveryCommandId: acquired.delivery_command_id, status: result.success ? "accepted_by_provider" : result.failureCode === "ambiguous_send_result" ? "delivery_ambiguous" : result.retryClassification === "configuration" ? "blocked" : "failed" };
+  let deliveryCommandId: string | undefined;
+  const result = await runRecoverableWhatsAppDelivery({ outbound_message_id: input.internal_message_id }, {
+    ...store,
+    acquire: async (messageId, ownerId) => {
+      const acquired = await store.acquire(messageId, ownerId);
+      if ("delivery_command_id" in acquired) deliveryCommandId = acquired.delivery_command_id;
+      return acquired;
+    },
+    readConfiguration: () => ({ accessToken: env.WHATSAPP_ACCESS_TOKEN, phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID, graphApiVersion: env.WHATSAPP_GRAPH_API_VERSION }),
+    send: deps.send ?? sendWhatsAppText,
+    finalizeAmbiguous: finalizeExpiredWhatsAppDeliveryAmbiguous,
+    createExecutionOwner: deps.createExecutionOwner,
+    createDispatchToken: deps.createDispatchToken,
+  });
+  const legacyStatus = result.status === "sent" ? "accepted_by_provider" : result.status === "ambiguous" ? "delivery_ambiguous" : result.status === "terminal_failed" ? "blocked" : result.status;
+  return { deliveryCommandId, status: legacyStatus };
 }
