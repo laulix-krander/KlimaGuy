@@ -12,7 +12,7 @@ const authorityResultSchema = z.discriminatedUnion("status", [
 
 export type SystemActorAuthorityResult = z.infer<typeof authorityResultSchema>;
 export type SystemActorProvisioningResult =
-  | { status: "provisioned" | "already_provisioned" | "verified"; auth_user_id: string }
+  | { status: "already_provisioned" | "verified"; auth_user_id: string }
   | { status: "conflict" | "invalid_actor" | "provisioning_failed" };
 
 export type SystemActorProvisioningBoundary = {
@@ -49,10 +49,20 @@ export async function provisionSystemActor(
     }
 
     const registration = authorityResultSchema.parse(await boundary.register(authUserId));
-    if (registration.status === "provisioned") return registration;
-    if (registration.status === "verified" && registration.auth_user_id === authUserId) return { status: "verified", auth_user_id: authUserId };
-    return { status: registration.status === "conflict" ? "conflict" : "invalid_actor" };
+    if (registration.status === "conflict") return { status: "conflict" };
+    if (registration.status !== "provisioned" && registration.status !== "verified") return { status: "invalid_actor" };
+    if (registration.auth_user_id !== authUserId) return { status: "conflict" };
+
+    const finalVerification = authorityResultSchema.parse(await boundary.verify());
+    if (finalVerification.status !== "verified" || finalVerification.auth_user_id !== authUserId) {
+      return { status: "provisioning_failed" };
+    }
+    return { status: "verified", auth_user_id: authUserId };
   } catch {
     return { status: "provisioning_failed" };
   }
+}
+
+export function systemActorProvisioningExitCode(result: SystemActorProvisioningResult): 0 | 1 {
+  return result.status === "verified" || result.status === "already_provisioned" ? 0 : 1;
 }

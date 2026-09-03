@@ -149,9 +149,10 @@ als `SYSTEM_ACTOR_PROVISIONING_EMAIL` konfigurieren und danach
 `npm run provision:system-actor` in einer geschützten Server-/Operator-Umgebung ausführen.
 Der Wert ist kein Credential, darf aber keine echte Mitarbeiteradresse sein. Das
 Repository erfindet bewusst keine reale Maildomain. Der Command nutzt die unterstützte
-Supabase Admin API, registriert deren nicht-sensitive Auth UUID und muss mit
-`provisioned`, `already_provisioned` oder `verified` enden; anschließende Verification
-muss `verified` liefern.
+Supabase Admin API, registriert deren nicht-sensitive Auth UUID und verifiziert danach
+selbst erneut die persistierte Authority. Er endet nur mit `verified` oder beim bereits
+verifizierten Replay mit `already_provisioned`; die verifizierte UUID muss exakt der
+intern erzeugten beziehungsweise wiederaufgenommenen Auth UUID entsprechen.
 
 ## 23. Tests
 
