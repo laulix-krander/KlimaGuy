@@ -37,6 +37,7 @@ export function UserRoleChangeControl({ user_id: targetUserId, role: currentRole
   if (isCurrentUser) return <p className="text-sm text-slate-600">Die eigene Rolle kann nicht geändert werden.</p>;
   if (profileStatus === "missing") return <p className="text-sm text-slate-600">Rollenänderung nicht möglich: Profil fehlt.</p>;
   if (profileStatus === "invalid_role" || currentRole === null) return <p className="text-sm text-slate-600">Rollenänderung nicht möglich: Ungültige Rolle.</p>;
+  if (currentRole === "system") return <p className="text-sm text-slate-600">Technische Systemidentität – Rollenänderung gesperrt.</p>;
 
   const validatedCurrentRole: Role = currentRole;
   const targetRole: Role = validatedCurrentRole === "reviewer" ? "admin" : "reviewer";

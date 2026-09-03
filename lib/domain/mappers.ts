@@ -49,6 +49,7 @@ export const PROJECT_CLASS_DESCRIPTIONS: Readonly<Record<ProjectClass, string>> 
 export const ROLE_LABELS: Readonly<Record<Role, string>> = Object.freeze({
   admin: "Administrator",
   reviewer: "Prüfer",
+  system: "System",
 });
 
 export const statusLabels = PROJECT_STATUS_LABELS;

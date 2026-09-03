@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { DEFAULT_REQUIRES_HUMAN_REVIEW, PROJECT_CLASSES, PROJECT_STATUSES, ROLES } from "./types";
+import { DEFAULT_REQUIRES_HUMAN_REVIEW, HUMAN_ROLES, PROJECT_CLASSES, PROJECT_STATUSES, ROLES } from "./types";
 
 export const roleSchema = z.enum(ROLES);
+export const humanRoleSchema = z.enum(HUMAN_ROLES);
 export const projectStatusSchema = z.enum(PROJECT_STATUSES);
 export const projectClassSchema = z.enum(PROJECT_CLASSES);
 export const nullableProjectClassSchema = projectClassSchema.nullable();
@@ -80,8 +81,8 @@ export const userAdministrationQuerySchema = z.object({
 
 export const changeUserRoleSchema = z.object({
   target_user_id: z.string().uuid("Die Benutzer-ID ist ungültig."),
-  target_role: roleSchema,
-  expected_current_role: roleSchema,
+  target_role: humanRoleSchema,
+  expected_current_role: humanRoleSchema,
 }).strict();
 
 export const inviteReviewerSchema = z.object({
