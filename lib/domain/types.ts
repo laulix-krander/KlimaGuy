@@ -1,5 +1,6 @@
-export const ROLES = ["admin", "reviewer"] as const;
+export const ROLES = ["admin", "reviewer", "system"] as const;
 export type Role = (typeof ROLES)[number];
+export const HUMAN_ROLES = ["admin", "reviewer"] as const;
 
 export const PROJECT_STATUSES = [
   "new",
