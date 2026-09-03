@@ -2,158 +2,178 @@
 
 ## 1. Purpose
 
-Dieses Paket sollte den vorhandenen einmaligen Operator-Command für den **KlimaGuy
+Dieses Paket stellt den vorhandenen einmaligen Operator-Command für den **KlimaGuy
 System** Actor über einen ausschließlich manuell gestarteten GitHub-Actions-Workflow
-zugänglich machen. Der Repository-Precheck hat jedoch zwei fehlende Contracts ergeben.
-Deshalb wird in diesem Paket bewusst kein ausführbarer Workflow angelegt.
+bereit. Der Workflow ist nur eine geschützte Ausführungsoberfläche; er enthält keine
+Provisioning-Domainlogik.
 
 ## 2. Architecture Basis
 
-KlimaGuy bleibt ein modularer Monolith. PostgreSQL, die vorhandenen RPCs und der
-serverseitige Provisioning-Code bleiben die einzigen Authorities. Ein Workflow dürfte
-nur die bestehende npm-Schnittstelle aufrufen und weder Domain-, Auth- noch
-Verifikationslogik nachbilden.
+KlimaGuy bleibt ein modularer Monolith. PostgreSQL, die vorhandenen service-only RPCs,
+`scripts/provision-system-actor.ts`, die Provisioning-Domain und ihr Supabase-Adapter
+bleiben die Authorities. Der Workflow ruft ausschließlich die bestehende npm-
+Schnittstelle auf und bildet weder Auth-, Registry- noch Verifikationslogik nach.
 
-## 3. Existing Provisioning Authority
+## 3. A1 Original STOP
 
-Die vorhandene Authority besteht aus:
+Der ursprüngliche A1-Precheck stoppte, weil dem Command die abschließende Verification
+nach Registration und dem Repository eine versionierte npm-Lockdatei fehlten. Daher
+wurde damals bewusst kein ausführbarer Workflow angelegt.
 
-- `npm run provision:system-actor`,
-- `scripts/provision-system-actor.ts`,
-- `lib/server/system-actor-provisioning.ts`,
-- `lib/server/system-actor-supabase-adapter.ts` und
-- `supabase/migrations/202609030003_system_actor_identity_authority.sql`.
+## 4. A2 Closure
 
-Sie benötigt genau `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` und
-`SYSTEM_ACTOR_PROVISIONING_EMAIL`. Es wurde kein weiterer Environment- oder
-Secret-Contract festgestellt.
+AP-16-06-05D-A2 schloss beide Blocker. `package-lock.json` ist die reproduzierbare
+Installationsauthority für `npm ci`. Der bestehende Command führt nun
+`verify → create/recover → register → verify → verified` aus und prüft beim Abschluss
+den exakten UUID-Match. Ein Fehler der finalen Verification endet fail-closed.
 
-## 4. Manual `workflow_dispatch` Only
+## 5. Workflow File
 
-Der vorgesehene Workflow dürfte ausschließlich `workflow_dispatch` verwenden. Push,
-Pull Request, Merge, Schedule, Deployment, Release, `repository_dispatch` und
-`workflow_run` dürften keinen Lauf auslösen. Wegen der unten dokumentierten
-STOP-Bedingungen wurde der Workflow noch nicht angelegt.
+Der Operator ist in `.github/workflows/provision-system-actor.yml` unter dem exakten
+Namen **Provision KlimaGuy System Actor** definiert.
 
-## 5. Confirmation Guard
+## 6. `workflow_dispatch` Only
 
-Vor jeder Supabase-Kommunikation müsste ein erforderlicher Input `confirmation` exakt
-mit `PROVISION` verglichen werden. Jede andere Eingabe müsste den Job kontrolliert
-beenden, ohne Secrets zu binden oder Provisioning auszuführen.
+Der einzige Trigger ist `workflow_dispatch`. Push, Pull Request, Schedule, Release,
+Deployment, `workflow_run` und `repository_dispatch` lösen keinen Lauf aus. Es gibt keine
+automatische Ausführung und keine automatische Branch-Manipulation.
 
-## 6. Required GitHub Repository Secrets
+## 7. Confirmation Guard
 
-Der spätere Provisioning-Step darf ausschließlich diese vorhandenen Repository Secrets
-erhalten:
+Der erforderliche String-Input `confirmation` muss exakt `PROVISION` sein. Der Vergleich
+ist weder case-insensitive noch trim-basiert. Jede abweichende Eingabe beendet den Job
+vor Secret-Preflight, Checkout, Dependency-Installation und Supabase-Zugriff mit
+`Confirmation must equal PROVISION.`
+
+## 8. Required Repository Secrets
+
+Der Secret-Contract besteht ausschließlich aus den vorhandenen Repository Secrets:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SYSTEM_ACTOR_PROVISIONING_EMAIL`
 
-Insbesondere darf keine konfigurierbare Actor-UUID eingeführt werden.
+Es gibt kein Actor-ID- oder Actor-UUID-Secret und kein viertes Production Secret.
 
-## 7. Secret Safety
+## 9. Secret Preflight
 
-Ein späterer Workflow darf nur die Existenz der drei Variablen prüfen. Er darf keine
-Werte, Environment-Dumps, Command-Line-Argumente mit Secrets, Artifacts oder Secret-
-abhängige Cache Keys erzeugen. `env`, `printenv`, `set`, `set -x` und Debug-Ausgaben der
-Providerantwort sind ausgeschlossen.
+Unmittelbar nach dem Confirmation Guard prüft ein eigener Step ausschließlich, ob jede
+der drei Variablen nicht leer ist. Bei einem fehlenden Wert endet er mit
+`Missing required secret: <NAME>`. Er gibt keinen Wert aus und erreicht weder Checkout
+noch `npm ci` oder Provisioning.
 
-## 8. Permissions
+## 10. Permissions
 
-Der vorgesehene GitHub-Token-Contract ist ausschließlich `contents: read`. Checkout
-müsste persistierte Git-Credentials deaktivieren. Schreibrechte und OIDC sind nicht
-erforderlich.
+Der Workflow setzt nur `permissions: contents: read`. Checkout persistiert keine Git-
+Credentials. Write Permissions, OIDC und ein GitHub Environment werden nicht verwendet.
 
-## 9. Execution Steps
+## 11. Runner
 
-Nach Auflösung der STOP-Bedingungen wären die Schritte: Confirmation prüfen, Repository
-auschecken, Node 22 einrichten, `npm ci` ausführen, die Existenz der drei Secrets prüfen
-und ausschließlich `npm run provision:system-actor` starten. Der Exit-Code des Commands
-darf nicht verändert oder verschluckt werden.
+Der technische Job `provision-system-actor` läuft auf `ubuntu-latest`.
 
-Aktuell fehlt jedoch `package-lock.json` im Repository. Damit ist das verbindlich
-geforderte reproduzierbare `npm ci` nicht möglich. Ein Workflow darf nicht auf
-`npm install` ausweichen und auch nicht selbst eine Lockdatei zur Laufzeit erzeugen.
+## 12. Node/npm Contract
 
-## 10. Result Contract
+Die offizielle `actions/setup-node` Action richtet Node 22 ein. A2 validierte die
+Lockdatei mit Node `v22.22.2` und npm `11.4.2`; ein Patch-Pinning ist nicht erforderlich.
+Der npm-Cache verwendet ausschließlich `package-lock.json` als Dependency-Pfad und
+enthält keine Secret-Werte.
 
-Die geschlossenen Erfolgsresultate sind `provisioned`, `already_provisioned` und
-`verified`. Die geschlossenen Fehlerresultate umfassen `conflict`, `invalid_actor` und
-`provisioning_failed`; das Script setzt dafür einen fehlschlagenden Exit-Code.
+## 13. `npm ci`
 
-## 11. Concurrency
+Dependencies werden reproduzierbar und ausschließlich mit `npm ci` installiert. Der
+Workflow führt weder `npm install`, Updates noch Dependency-Reparaturen aus.
 
-Ein späterer Workflow muss die feste Concurrency-Gruppe
-`provision-klimaguy-system-actor` mit `cancel-in-progress: false` verwenden, damit zwei
-manuelle Läufe nicht absichtlich parallel provisionieren.
+## 14. Provisioning Command
 
-## 12. Timeout
+Der Provisioning-Step führt ausschließlich `npm run provision:system-actor` aus und
+reicht nur die drei erforderlichen Secrets als Environment weiter. Sein Exit-Code wird
+nicht verändert, verschluckt oder mit `continue-on-error` übergangen.
 
-Der spätere Job muss auf zehn Minuten begrenzt werden und auf `ubuntu-latest` laufen.
+## 15. Final Verification Contract from A2
 
-## 13. Operator Runbook
+Die finale Verification gehört vollständig zum vorhandenen Command. Nach Create oder
+Recovery folgt Registration, danach eine erneute Verification mit exaktem UUID-Match;
+erst dann entsteht `verified`. Im Workflow-YAML gibt es kein zweites Verify, keinen
+direkten RPC-Aufruf und keine alternative Verification Authority.
 
-Nach Auflösung der STOP-Bedingungen, Implementierung und Merge lautet der UI-Ablauf:
+## 16. Accepted Success Results
 
-GitHub Repository → Actions → Provision KlimaGuy System Actor → Run workflow → Branch
-`main` → `confirmation = PROVISION` → Run workflow.
+Akzeptierte Production-Ergebnisse sind ausschließlich:
 
-Danach: Run öffnen → Provisioning Step prüfen.
+- `{"status":"verified", ...}` für eine neu angelegte oder wiederaufgenommene Identity,
+- `{"status":"already_provisioned", ...}` für einen bereits vollständig verifizierten
+  Actor.
 
-Dieses Runbook ist noch **nicht ausführbar**, weil in diesem Paket aus Sicherheitsgründen
-kein Workflow angelegt wurde.
+Beide Kategorien ergeben über den Script-Contract Exit-Code 0 und damit Job Success.
 
-## 14. Expected Success Results
+## 17. Failure Results
 
-Akzeptiert werden `provisioned`, `already_provisioned` oder `verified` nur dann, wenn der
-Command vor seinem erfolgreichen Prozessende selbst den abschließenden Verification-
-Contract erfüllt. Danach gilt: System Actor Provisioning erfolgreich.
+`conflict`, `invalid_actor` und `provisioning_failed` ergeben Exit-Code 1 und Workflow
+Failure. Dann gilt **STOP**: nicht blind erneut ausführen und keine manuelle DB-Reparatur
+improvisieren. Zuerst ist die Ursache anhand der vorhandenen Authority zu untersuchen.
 
-## 15. Expected Failure Results
+## 18. Concurrency
 
-Bei `conflict`, `invalid_actor` oder `provisioning_failed` gilt: **STOP**. Der Operator
-darf den Command nicht wiederholt blind ausführen. Fehlende Secrets müssen ausschließlich
-mit `Missing required secret: <NAME>` gemeldet werden, ohne deren Inhalte auszugeben.
+Die feste Concurrency-Gruppe `provision-klimaguy-system-actor` mit
+`cancel-in-progress: false` verhindert parallele Provisioning-Läufe. Ein laufender Job
+wird nicht zugunsten eines neuen manuellen Laufs abgebrochen.
 
-## 16. Explicitly Not Implemented
+## 19. Timeout
 
-Nicht implementiert sind ein GitHub-Actions-Workflow, neue Provisioning-, Auth-, Registry-
-oder RPC-Logik, eine Migration, SQL, direkter Zugriff auf `auth.users`, Customer-,
-Project-, Conversation-, Knowledge-, Runtime- oder Initial-Prompt-Bootstrap, WhatsApp
-Wiring, Delivery, Scheduler und OpenAI. Keine historische Migration wurde verändert.
+Der Job besitzt `timeout-minutes: 10` und schlägt bei Überschreitung geschlossen fehl.
 
-## 17. Production Handoff
+## 20. Secret Safety
 
-### STOP 1: abschließende Verification fehlt im Command
+Der Workflow enthält keine Secret-Literale, loggt keine Secret-Werte und erzeugt weder
+Environment-Dumps, Shell-Traces, Artifacts noch Step Summaries. Er nutzt kein `curl`,
+kein SQL, keine direkte Auth Admin API und keine secret-abhängigen Cache Keys. Das
+bestehende Script darf nur seine geschlossene technische JSON-Resultatkategorie ausgeben.
 
-`provisionSystemActor` führt zu Beginn `boundary.verify()` aus. Falls noch keine Registry-
-Bindung existiert, erzeugt beziehungsweise übernimmt der Command die Auth Identity und
-ruft `boundary.register(authUserId)` auf. Liefert die Registrierung `provisioned`, wird
-dieses Resultat unmittelbar zurückgegeben. Es folgt kein erneuter Aufruf von
-`boundary.verify()` und damit keine abschließende Prüfung, dass Registry, Auth Row,
-App-Metadata und Profilrolle nach der Mutation gemeinsam `verified` ergeben.
+## 21. Operator Runbook
 
-Der bestehende Implementierungsvertrag verlangt zugleich nach dem einmaligen Command
-eine anschließende Verification mit dem Ergebnis `verified`. Somit erfüllt ein
-erfolgreiches `provisioned` des aktuellen Commands allein den geforderten Post-Run-
-Verification-Contract nicht. Eine zweite Verifikationsimplementierung im Workflow wäre
-eine unzulässige neue Authority. Der kleinste fehlende Contract ist daher: Der bestehende
-Operator-Command muss nach einer erfolgreichen Registrierung über seine vorhandene
-Boundary erneut `verify()` ausführen, ausschließlich ein exakt zur registrierten UUID
-passendes `verified` akzeptieren und andernfalls geschlossen fehlschlagen.
+Nach Merge erfolgt der manuelle Lauf exakt so:
 
-### STOP 2: reproduzierbarer Dependency-Install fehlt
+GitHub Repository
+→ Actions
+→ Provision KlimaGuy System Actor
+→ Run workflow
+→ Branch: main
+→ confirmation: PROVISION
+→ Run workflow
 
-Im geprüften Baseline-Commit ist keine `package-lock.json` versioniert. Der kleinste
-fehlende Deployment-Contract ist eine zum vorhandenen `package.json` gehörende,
-versionierte npm-Lockdatei, damit der vorgeschriebene Schritt `npm ci` auf GitHub Actions
-ausgeführt werden kann.
+Danach:
 
-### Nächste Freigabeprüfung
+Workflow Run öffnen
+→ provision-system-actor Job öffnen
+→ Provisioning Step öffnen
 
-Nach separater Behebung beider Contracts müssen die Authority-Tests nachweisen, dass ein
-Create-/Recovery-Pfad abschließend verifiziert und bei abweichender oder fehlgeschlagener
-Verification fail-closed endet. Erst danach darf das kleine manuelle Operator-Paket den
-Workflow mit Confirmation Guard, Secret-Preflight, minimalen Permissions, Concurrency
-und Timeout ergänzen. Production Provisioning wurde bei dieser Prüfung nicht ausgeführt.
+## 22. First Production Run
+
+Der erste echte Production-Lauf wird ausschließlich vom Product Owner nach Merge
+gestartet. Erwartet wird `{"status":"verified"}` oder die repository-konforme
+geschlossene JSON-Darstellung dieses Status. Falls der Actor bereits korrekt existiert,
+ist `{"status":"already_provisioned"}` erwartet. Beide Ergebnisse sind **PASS**, sofern
+der Job erfolgreich ist, kein nachfolgender Verification Error auftritt und kein Secret
+offengelegt wurde.
+
+## 23. Replay Run Semantics
+
+Ein Replay prüft zuerst die persistierte Authority. Ist der Actor bereits korrekt
+provisioniert, erzeugt der Command weder Auth User noch Registry Row und liefert
+`already_provisioned`. Bei `conflict`, `invalid_actor` oder `provisioning_failed` gilt
+auch im Replay **STOP**.
+
+## 24. Explicitly Not Implemented
+
+Nicht enthalten sind neue Provisioning-, Auth-, Registry-, RPC- oder Recovery-Logik,
+Migrationen, SQL, Customer-/Project-/Conversation-/Knowledge-/Runtime-Bootstrap,
+Initial Prompt, Pending Interaction, Planner Snapshot, WhatsApp Wiring, Delivery,
+Recovery Scheduler und OpenAI. Keine historische Migration wurde verändert.
+
+## 25. Handoff to System Actor Production Verification
+
+Der System Actor gilt als produktiv provisioniert, wenn der Workflow Job erfolgreich
+endet, der Command `verified` oder `already_provisioned` liefert, kein nachfolgender
+Verification Error vorliegt und kein Secret offengelegt wurde. Erst nach diesem Gate darf
+AP-16-06-05D wieder aufgenommen werden; dessen Bootstrap muss weiterhin die bestehende
+System-Actor-Authority verwenden und darf keine Actor UUID als Input akzeptieren.

@@ -1,0 +1,71 @@
+name: Provision KlimaGuy System Actor
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type PROVISION to run the one-time KlimaGuy System Actor provisioning.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: provision-klimaguy-system-actor
+  cancel-in-progress: false
+
+jobs:
+  provision-system-actor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validate confirmation
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          if [[ "$CONFIRMATION" != "PROVISION" ]]; then
+            echo "Confirmation must equal PROVISION."
+            exit 1
+          fi
+
+      - name: Validate required secrets
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SYSTEM_ACTOR_PROVISIONING_EMAIL: ${{ secrets.SYSTEM_ACTOR_PROVISIONING_EMAIL }}
+        run: |
+          if [[ -z "$NEXT_PUBLIC_SUPABASE_URL" ]]; then
+            echo "Missing required secret: NEXT_PUBLIC_SUPABASE_URL"
+            exit 1
+          fi
+          if [[ -z "$SUPABASE_SERVICE_ROLE_KEY" ]]; then
+            echo "Missing required secret: SUPABASE_SERVICE_ROLE_KEY"
+            exit 1
+          fi
+          if [[ -z "$SYSTEM_ACTOR_PROVISIONING_EMAIL" ]]; then
+            echo "Missing required secret: SYSTEM_ACTOR_PROVISIONING_EMAIL"
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Provision system actor
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SYSTEM_ACTOR_PROVISIONING_EMAIL: ${{ secrets.SYSTEM_ACTOR_PROVISIONING_EMAIL }}
+        run: npm run provision:system-actor
