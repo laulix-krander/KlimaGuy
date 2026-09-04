@@ -114,4 +114,36 @@ describe("WhatsApp webhook security and route", () => {
     expect((await createWhatsAppWebhookHandlers({appSecret:()=>secret,persist:vi.fn().mockRejectedValue(new Error("db")),triggerCycle:never}).POST(signed(envelope()))).status).toBe(500);
     expect(never).not.toHaveBeenCalled();
   });
+
+  it.each(["recorded", "duplicate"] as const)("routes %s first contact through the idempotent healing path", async (status) => {
+    const persisted={status,receipt_id:uuid(1),transport_identity_id:uuid(2),conversation_id:uuid(3),internal_message_id:uuid(4),cycle_eligible:false};
+    const triggerCycle=vi.fn(); const initializeFirstContact=vi.fn().mockResolvedValue({status:"completed",outbound_message_id:uuid(5),delivery:"started"});
+    const response=await createWhatsAppWebhookHandlers({appSecret:()=>secret,persist:vi.fn().mockResolvedValue(persisted),triggerCycle,
+      firstContactEligibility:vi.fn().mockResolvedValue({status:"healable"}),initializeFirstContact}).POST(signed(envelope()));
+    expect(response.status).toBe(200); expect(triggerCycle).not.toHaveBeenCalled();
+    expect(initializeFirstContact).toHaveBeenCalledTimes(1);
+    expect(initializeFirstContact).toHaveBeenCalledWith({conversation_id:uuid(3),request_started_at:expect.any(Number),immediate_delivery:true});
+  });
+
+  it("routes a normal eligible answer only to the existing customer-answer cycle", async () => {
+    const persisted={status:"recorded" as const,receipt_id:uuid(1),transport_identity_id:uuid(2),conversation_id:uuid(3),internal_message_id:uuid(4),cycle_eligible:true};
+    const firstContactEligibility=vi.fn(); const initializeFirstContact=vi.fn(); const triggerCycle=vi.fn();
+    await createWhatsAppWebhookHandlers({appSecret:()=>secret,persist:vi.fn().mockResolvedValue(persisted),triggerCycle,firstContactEligibility,initializeFirstContact}).POST(signed(envelope()));
+    expect(triggerCycle).toHaveBeenCalledOnce(); expect(firstContactEligibility).not.toHaveBeenCalled(); expect(initializeFirstContact).not.toHaveBeenCalled();
+  });
+
+  it("does nothing for persisted non-healable state", async () => {
+    const persisted={status:"recorded" as const,receipt_id:uuid(1),transport_identity_id:uuid(2),conversation_id:uuid(3),internal_message_id:uuid(4),cycle_eligible:false};
+    const initializeFirstContact=vi.fn(); const triggerCycle=vi.fn();
+    await createWhatsAppWebhookHandlers({appSecret:()=>secret,persist:vi.fn().mockResolvedValue(persisted),triggerCycle,
+      firstContactEligibility:vi.fn().mockResolvedValue({status:"not_applicable"}),initializeFirstContact}).POST(signed(envelope()));
+    expect(triggerCycle).not.toHaveBeenCalled(); expect(initializeFirstContact).not.toHaveBeenCalled();
+  });
+
+  it.each(["foundation", "initial_prompt", "delivery", "unexpected"])("keeps HTTP 200 after persisted first-contact %s failure", async () => {
+    const persisted={status:"recorded" as const,receipt_id:uuid(1),transport_identity_id:uuid(2),conversation_id:uuid(3),internal_message_id:uuid(4),cycle_eligible:false};
+    const response=await createWhatsAppWebhookHandlers({appSecret:()=>secret,persist:vi.fn().mockResolvedValue(persisted),
+      firstContactEligibility:vi.fn().mockResolvedValue({status:"healable"}),initializeFirstContact:vi.fn().mockRejectedValue(new Error("isolated"))}).POST(signed(envelope()));
+    expect(response.status).toBe(200); expect(await response.text()).toBe("");
+  });
 });
