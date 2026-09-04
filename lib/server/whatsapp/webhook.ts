@@ -4,6 +4,8 @@ import { parseWhatsAppWebhook } from "./parser";
 import { verifyWhatsAppChallenge, verifyWhatsAppSignature } from "./security";
 import { persistWhatsAppInboundText, triggerPersistentMessageCycle, type MessageCycleTrigger, type WhatsAppInboundPersistence } from "./ingestion";
 import { reconcileWhatsAppDeliveryStatus } from "./status-reconciliation";
+import { readProductiveFirstContactEligibility, type FirstContactEligibilityResult } from "@/lib/server/conversation/first-contact-eligibility";
+import { runProductiveFirstContactInitialization } from "@/lib/server/conversation/productive-first-contact";
 
 /** Internal security ceiling, not a claimed Meta provider limit. */
 export const WHATSAPP_WEBHOOK_MAX_BYTES = 1_048_576;
@@ -33,12 +35,16 @@ export function createWhatsAppWebhookHandlers(dependencies: {
   verifyToken?: () => string | undefined;
   appSecret?: () => string | undefined;
   reconcileStatus?: (event: import("./contracts").WhatsAppDeliveryStatus) => Promise<void>;
+  firstContactEligibility?: (conversationId: string) => Promise<FirstContactEligibilityResult>;
+  initializeFirstContact?: typeof runProductiveFirstContactInitialization;
 } = {}) {
   const persist = dependencies.persist ?? persistWhatsAppInboundText;
   const triggerCycle = dependencies.triggerCycle ?? triggerPersistentMessageCycle;
   const verifyToken = dependencies.verifyToken ?? (() => process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN);
   const appSecret = dependencies.appSecret ?? (() => process.env.WHATSAPP_META_APP_SECRET);
   const reconcileStatus=dependencies.reconcileStatus??reconcileWhatsAppDeliveryStatus;
+  const firstContactEligibility = dependencies.firstContactEligibility ?? readProductiveFirstContactEligibility;
+  const initializeFirstContact = dependencies.initializeFirstContact ?? runProductiveFirstContactInitialization;
   return {
     GET: async (request: Request): Promise<Response> => {
       const configured = verifyToken();
@@ -67,8 +73,16 @@ export function createWhatsAppWebhookHandlers(dependencies: {
         for (const item of parsed) {
           if (item.kind !== "inbound_text") continue;
           const result = await persist(item.event);
+          // Route once from the persistence result. Never re-evaluate this message after initialization.
           if (result.status === "recorded" && result.cycle_eligible) {
             try { await triggerCycle({ message_id: result.internal_message_id, request_started_at: requestStartedAt }); } catch { /* Persistence is final; recovery owns later work. */ }
+          } else if (!result.cycle_eligible) {
+            try {
+              const eligibility = await firstContactEligibility(result.conversation_id);
+              if (eligibility.status === "healable" || eligibility.status === "already_initialized") {
+                await initializeFirstContact({ conversation_id: result.conversation_id, request_started_at: requestStartedAt, immediate_delivery: true });
+              }
+            } catch { /* Persisted inbound acceptance is isolated from initialization and delivery. */ }
           }
         }
         for(const item of parsed) if(item.kind==="delivery_status") await reconcileStatus(item.event);
