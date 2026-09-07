@@ -42,6 +42,16 @@ describe("first-contact recovery route", () => {
     expect(await response.json()).toMatchObject({ discovered: 2, already_complete: 1, unexpected_error: 1 });
   });
 
+  it("keeps a controlled item failure at HTTP 200 without duplicate diagnostics", async () => {
+    const logger = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const discover = vi.fn().mockResolvedValue([{ conversation_id: uuid(1), recovery_action: "INITIAL_PROMPT_REQUIRED" }]);
+    const response = await createFirstContactRecoveryHandler({ getSecret: () => "secret", discover, run: vi.fn().mockResolvedValue({ status: "failed" }), now: () => 0 })(request("Bearer secret"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ discovered: 1, failed: 1, unexpected_error: 0 });
+    expect(logger).not.toHaveBeenCalled();
+    logger.mockRestore();
+  });
+
   it("counts every unstarted item when the monotonic start budget is exhausted", async () => {
     const run = vi.fn(); let tick = 0;
     const discover = vi.fn().mockResolvedValue([1, 2].map((n) => ({ conversation_id: uuid(n), recovery_action: "INITIAL_PROMPT_REQUIRED" as const })));

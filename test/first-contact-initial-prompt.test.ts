@@ -31,10 +31,53 @@ describe("deterministic first-contact initial prompt", () => {
     expect(rpc).toHaveBeenCalledTimes(1);
   });
 
-  it.each(["already_advanced", "not_applicable", "invalid_state"] as const)("preserves closed %s state", async status => {
+  it.each(["already_advanced", "not_applicable"] as const)("preserves controlled %s state without diagnostics", async status => {
     const rpc = vi.fn(async () => ({ data: { status }, error: null }));
     expect(await initializeFirstContactPrompt({ rpc }, CONVERSATION)).toEqual({ status });
     expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("classifies a rejected context without exposing its payload", async () => {
+    const rpc = vi.fn(async () => ({ data: { status: "invalid_state", private_value: "SECRET_CUSTOMER_MESSAGE" }, error: null }));
+    expect(await initializeFirstContactPrompt({ rpc }, CONVERSATION)).toEqual({
+      status: "invalid_state",
+      diagnostic: { diagnostic_code: "initial_context_result_rejected", stage: "initial_context", result_code: "invalid_state" },
+    });
+  });
+
+  it.each([
+    ["returned RPC error", vi.fn(async () => ({ data: null, error: { message: "SECRET_DB_ERROR_MESSAGE", details: "SECRET_DB_DETAIL", hint: "SECRET_DB_HINT", code: "SECRET_CODE" } }))],
+    ["thrown RPC error", vi.fn(async () => { throw new Error("SECRET_DB_ERROR_MESSAGE"); })],
+  ])("classifies context %s only by its boundary", async (_label, rpc) => {
+    expect(await initializeFirstContactPrompt({ rpc }, CONVERSATION)).toEqual({ status: "persistence_failed", diagnostic: { diagnostic_code: "initial_context_rpc_failed", stage: "initial_context" } });
+  });
+
+  it("classifies invalid context results", async () => {
+    expect(await initializeFirstContactPrompt({ rpc: vi.fn(async () => ({ data: { status: "eligible", conversation_id: "not-a-uuid" }, error: null })) }, CONVERSATION))
+      .toEqual({ status: "persistence_failed", diagnostic: { diagnostic_code: "initial_context_result_invalid", stage: "initial_context" } });
+  });
+
+  it.each([
+    ["assessment_failed", { assess: vi.fn(() => { throw new Error("assessment"); }) }],
+    ["planning_failed", { plan: vi.fn(() => { throw new Error("planning"); }) }],
+    ["rendering_failed", { render: vi.fn(() => { throw new Error("rendering"); }) }],
+    ["snapshot_validation_failed", { validateSnapshot: vi.fn(() => ({ success: false })) }],
+  ] as const)("classifies %s at the deepest safe domain boundary", async (diagnosticCode, dependencies) => {
+    const rpc = vi.fn(async () => ({ data: { status: "eligible", conversation_id: CONVERSATION, project_id: PROJECT, runtime_revision: 1, knowledge_state_version: 1 }, error: null }));
+    const result = await initializeFirstContactPrompt({ rpc }, CONVERSATION, new Date("2026-09-04T10:00:00.000Z"), dependencies as never);
+    expect(result).toMatchObject({ status: "planning_failed", diagnostic: { diagnostic_code: diagnosticCode } });
+  });
+
+  it.each([
+    ["commit_rpc_failed", { data: null, error: { message: "SECRET_DB_ERROR_MESSAGE" } }],
+    ["commit_result_invalid", { data: { unexpected: true }, error: null }],
+    ["commit_result_rejected", { data: { status: "invalid_state" }, error: null }],
+  ] as const)("classifies %s independently", async (diagnosticCode, commitResult) => {
+    const rpc: InitialPromptRpc["rpc"] = vi.fn(async name => name === "get_first_contact_initial_prompt_context"
+      ? { data: { status: "eligible", conversation_id: CONVERSATION, project_id: PROJECT, runtime_revision: 1, knowledge_state_version: 1 }, error: null }
+      : commitResult);
+    const result = await initializeFirstContactPrompt({ rpc }, CONVERSATION, new Date("2026-09-04T10:00:00.000Z"));
+    expect(result).toMatchObject({ diagnostic: { diagnostic_code: diagnosticCode, stage: "commit" } });
   });
 });
 
