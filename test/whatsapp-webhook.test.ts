@@ -146,4 +146,13 @@ describe("WhatsApp webhook security and route", () => {
       firstContactEligibility:vi.fn().mockResolvedValue({status:"healable"}),initializeFirstContact:vi.fn().mockRejectedValue(new Error("isolated"))}).POST(signed(envelope()));
     expect(response.status).toBe(200); expect(await response.text()).toBe("");
   });
+
+  it("does not duplicate an orchestrator-owned failure diagnostic", async () => {
+    const logger = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const response = await createWhatsAppWebhookHandlers({ appSecret: () => secret, persist: vi.fn().mockResolvedValue({ status: "recorded", conversation_id: uuid(3), cycle_eligible: false }),
+      triggerCycle: vi.fn(), firstContactEligibility: vi.fn().mockResolvedValue({ status: "healable" }), initializeFirstContact: vi.fn().mockResolvedValue({ status: "failed" }) }).POST(signed(envelope()));
+    expect(response.status).toBe(200);
+    expect(logger).not.toHaveBeenCalled();
+    logger.mockRestore();
+  });
 });
