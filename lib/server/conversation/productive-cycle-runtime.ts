@@ -2,6 +2,8 @@ import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
 import type { RecoverableCycleDependencies, RecoveryDiscoverySource } from "./recoverable-cycle-runner";
+import { createCustomerAnswerInterpreter } from "@/lib/server/ai/customer-answer-interpreter";
+import type { StructuredInferenceProvider } from "@/lib/server/ai/contracts";
 
 export type ProductiveCycleRuntime = Readonly<{
   discovery: RecoveryDiscoverySource;
@@ -22,8 +24,21 @@ export function createProductiveCycleRuntime(): ProductiveCycleRuntime {
       return { data, error };
     },
   };
+  let productiveProvider: StructuredInferenceProvider | undefined;
+  const provider: StructuredInferenceProvider = {
+    async generateStructuredInference(request) {
+      if (!productiveProvider) {
+        const { OpenAiStructuredInferenceProvider } = await import("@/lib/server/ai/providers/openai/adapter");
+        productiveProvider = new OpenAiStructuredInferenceProvider();
+      }
+      return productiveProvider.generateStructuredInference(request);
+    },
+  };
   return {
     discovery: source,
-    runner: { claim: source, read: source, commit: source },
+    runner: { claim: source, read: source, commit: source,
+      ...(process.env.AI_CUSTOMER_ANSWER_CLASSIFICATION_ENABLED === "true"
+        ? { customerAnswerInterpreter:createCustomerAnswerInterpreter(provider) }
+        : {}) },
   };
 }
