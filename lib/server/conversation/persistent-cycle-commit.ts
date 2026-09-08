@@ -4,6 +4,8 @@ import { z } from "zod";
 import type {
   PersistentCycleCommit,
   PersistentCycleHumanReview,
+  AiInferenceAttemptReservation, AiInferenceAttemptReservationResult, AiRetryDeferral, AiRetryDeferralResult,
+  PersistentCycleClaimlessCommit, PersistentCycleTechnicalHumanReview,
 } from "@/lib/actions/persistent-conversation-cycle-service";
 import { normalizedCustomerAnswerSchema } from "@/lib/domain/conversation-intelligence/answer-normalization-schemas";
 import { interpretationResultSchema, stateTransitionProposalSchema } from "@/lib/domain/conversation-intelligence/answer-interpretation-schemas";
@@ -38,7 +40,7 @@ const rpcFailureSchema = z.object({
 }).strict();
 
 export type PersistentCycleCommitRpc = {
-  rpc(name: "commit_customer_message_cycle" | "fail_customer_message_cycle" | "complete_customer_message_human_review", args: Record<string, unknown>): Promise<{ data: unknown; error: unknown }>;
+  rpc(name: "commit_customer_message_cycle" | "fail_customer_message_cycle" | "complete_customer_message_human_review" | "reserve_customer_answer_ai_inference_attempt" | "defer_customer_message_ai_retry", args: Record<string, unknown>): Promise<{ data: unknown; error: unknown }>;
 };
 
 function failed(code: z.infer<typeof rpcFailureSchema>["code"], commandId: string): PersistentCycleResult {
@@ -85,6 +87,7 @@ export async function commitCustomerMessageCycle(source: PersistentCycleCommitRp
     return failed("invalid_input", input.command_id);
   }
   const payload = {
+    knowledge_outcome: "transition_applied",
     source_message_id: identities.data.source_message_id,
     pending_interaction_id: identities.data.pending_interaction_id,
     expected_runtime_revision: identities.data.expected_runtime_revision,
@@ -121,6 +124,67 @@ export async function commitCustomerMessageCycle(source: PersistentCycleCommitRp
   return { success: true, kind: success.data.result_kind, command_id: success.data.command_id, runtime_revision: success.data.runtime_revision, knowledge_version: success.data.knowledge_version, outbound_message_id: success.data.outbound_message_id, pending_interaction_id: success.data.pending_interaction_id };
 }
 
+export async function reserveCustomerAnswerAiInferenceAttempt(source: PersistentCycleCommitRpc, input: AiInferenceAttemptReservation, execution?: CycleExecutionContext): Promise<AiInferenceAttemptReservationResult> {
+  const parsed = z.object({ command_id:uuid, source_message_id:uuid, pending_interaction_id:uuid, expected_runtime_revision:version, expected_knowledge_version:version }).strict().safeParse(input);
+  if (!parsed.success) return { success:false, code:"invalid_input" };
+  const result = await source.rpc("reserve_customer_answer_ai_inference_attempt", {
+    target_command_id:parsed.data.command_id, target_source_message_id:parsed.data.source_message_id,
+    expected_runtime_revision:parsed.data.expected_runtime_revision, expected_knowledge_version:parsed.data.expected_knowledge_version,
+    execution_owner_id:execution?.ownerId ?? null,
+  });
+  if (result.error) return { success:false, code:"command_not_found" };
+  const response = z.discriminatedUnion("success", [
+    z.object({ success:z.literal(true), code:z.literal("reserved"), command_id:uuid, attempt_number:z.union([z.literal(1),z.literal(2),z.literal(3)]) }).strict(),
+    z.object({ success:z.literal(false), code:z.enum(["invalid_input","command_not_found","command_not_claimed","ownership_lost","stale_runtime_revision","stale_knowledge_version","interaction_not_current","attempts_exhausted"]) }).passthrough(),
+  ]).safeParse(result.data);
+  if (!response.success) return { success:false, code:"command_not_found" };
+  if (!response.data.success && response.data.code === "ownership_lost") execution?.onOwnershipLost?.();
+  return response.data;
+}
+
+export async function deferCustomerMessageAiRetry(source: PersistentCycleCommitRpc, input: AiRetryDeferral, execution?: CycleExecutionContext): Promise<AiRetryDeferralResult> {
+  const parsed = z.object({ command_id:uuid, source_message_id:uuid, failure:z.enum(["timeout","transient_provider_failure"]) }).strict().safeParse(input);
+  if (!parsed.success) return { success:false, code:"invalid_input" };
+  const result = await source.rpc("defer_customer_message_ai_retry", { target_command_id:parsed.data.command_id, target_source_message_id:parsed.data.source_message_id, execution_owner_id:execution?.ownerId ?? null, failure_code:`ai_${parsed.data.failure}` });
+  const response = z.discriminatedUnion("success", [
+    z.object({ success:z.literal(true), code:z.literal("deferred"), retry_at:z.string().datetime({ offset:true }), attempt_count:z.union([z.literal(1),z.literal(2)]) }).strict(),
+    z.object({ success:z.literal(false), code:z.enum(["invalid_input","command_not_found","command_not_claimed","ownership_lost","attempts_exhausted"]) }).passthrough(),
+  ]).safeParse(result.data);
+  if (result.error || !response.success) return { success:false, code:"command_not_found" };
+  if (!response.data.success && response.data.code === "ownership_lost") execution?.onOwnershipLost?.();
+  return response.data;
+}
+
+/** Commits a successful provider-neutral classification which intentionally produced no claim. */
+export async function commitCustomerMessageCycleWithoutClaim(source: PersistentCycleCommitRpc, input: PersistentCycleClaimlessCommit, execution?: CycleExecutionContext): Promise<PersistentCycleResult> {
+  const identities = z.object({ command_id:uuid, source_message_id:uuid, pending_interaction_id:uuid, expected_runtime_revision:version, expected_knowledge_version:version, outcome:z.enum(["no_match","ambiguous"]) }).strict().safeParse({ command_id:input.command_id, source_message_id:input.source_message_id, pending_interaction_id:input.pending_interaction_id, expected_runtime_revision:input.expected_runtime_revision, expected_knowledge_version:input.expected_knowledge_version, outcome:input.outcome });
+  const cycle = input.cycle;
+  const collection = informationCollectionStateSchema.safeParse(cycle.information_collection_state);
+  const retry = conversationRetryStateSchema.safeParse(cycle.retry_state);
+  const effort = customerEffortStateSchema.safeParse(cycle.customer_effort_state);
+  const evidence = evidenceRequestStateSchema.safeParse(cycle.evidence_request_state);
+  const selectedEvidence = cycle.selected_evidence_request ? selectedEvidenceRequestSchema.safeParse(cycle.selected_evidence_request) : undefined;
+  const events = z.array(conversationCycleEventSchema).max(5).safeParse(cycle.events);
+  const nextAction = cycle.planner_result.kind === "selected_action" ? selectedNextActionSchema.safeParse(cycle.planner_result.action) : undefined;
+  const rendered = cycle.rendered_interaction ? renderedCustomerInteractionSchema.safeParse(cycle.rendered_interaction) : undefined;
+  if (!identities.success || !collection.success || !retry.success || !effort.success || !evidence.success || !events.success
+    || (selectedEvidence && !selectedEvidence.success) || (nextAction && !nextAction.success) || (rendered && !rendered.success)
+    || cycle.current_state_version !== input.expected_knowledge_version || cycle.previous_state_version !== input.expected_knowledge_version
+    || cycle.knowledge_state.state_version !== input.expected_knowledge_version) return failed("invalid_input", input.command_id);
+  const payload = { knowledge_outcome:"no_claim", source_message_id:identities.data.source_message_id, pending_interaction_id:identities.data.pending_interaction_id,
+    expected_runtime_revision:identities.data.expected_runtime_revision, expected_knowledge_version:identities.data.expected_knowledge_version,
+    cycle_status:cycle.cycle_status, current_state_version:cycle.current_state_version, information_collection_state:collection.data,
+    retry_state:retry.data, customer_effort_state:effort.data, evidence_request_state:evidence.data,
+    selected_evidence_request:selectedEvidence?.success ? selectedEvidence.data : null, rendered_evidence_request:cycle.rendered_evidence_request ?? null,
+    events:events.data, next_interaction:nextAction?.success && rendered?.success ? { selected_action:nextAction.data, rendered_interaction:rendered.data, outbound_text:composeRenderedCustomerText(rendered.data) } : null,
+    execution_owner_id:execution?.ownerId ?? null };
+  const result = await source.rpc("commit_customer_message_cycle", { target_command_id:identities.data.command_id, commit_payload:payload });
+  if (result.error) return failed("persistence_failed", input.command_id);
+  const controlled = rpcFailureSchema.safeParse(result.data); if (controlled.success) return failed(controlled.data.code, input.command_id);
+  const success = rpcSuccessSchema.safeParse(result.data);
+  return success.success ? { success:true, kind:success.data.result_kind, command_id:success.data.command_id, runtime_revision:success.data.runtime_revision, knowledge_version:success.data.knowledge_version, outbound_message_id:success.data.outbound_message_id, pending_interaction_id:success.data.pending_interaction_id } : failed("persistence_failed", input.command_id);
+}
+
 export async function failCustomerMessage(source: PersistentCycleCommitRpc, commandId: string, code: z.infer<typeof failureCode>, execution?: CycleExecutionContext): Promise<void> {
   const input = z.object({ commandId: uuid, code: failureCode }).strict().safeParse({ commandId, code });
   if (!input.success) return;
@@ -136,6 +200,18 @@ export async function completeCustomerMessageWithHumanReview(source: PersistentC
     : input.cycle_result.requires_human_review;
   if (!parsed.success || !isReview) return failed("invalid_input", input.command_id);
   const result = await source.rpc("complete_customer_message_human_review", { target_command_id: parsed.data.command_id, review_payload: { ...parsed.data, execution_owner_id: execution?.ownerId ?? null } });
+  if (result.error) return failed("persistence_failed", input.command_id);
+  const success = z.object({ success:z.literal(true), command_id:uuid, runtime_revision:version, knowledge_version:version, pending_interaction_id:uuid.nullable() }).strict().safeParse(result.data);
+  const lost = z.object({ success:z.literal(false), code:z.literal("ownership_lost") }).passthrough().safeParse(result.data);
+  if (lost.success) execution?.onOwnershipLost?.();
+  return success.success ? { success:true, kind:"human_review", command_id:success.data.command_id, runtime_revision:success.data.runtime_revision, knowledge_version:success.data.knowledge_version, outbound_message_id:null, pending_interaction_id:success.data.pending_interaction_id } : failed(lost.success ? "interaction_not_current" : "persistence_failed", input.command_id);
+}
+
+/** Provider-neutral bridge into the existing terminal human-review authority. */
+export async function completeCustomerMessageWithTechnicalHumanReview(source: PersistentCycleCommitRpc, input: PersistentCycleTechnicalHumanReview, execution?: CycleExecutionContext): Promise<PersistentCycleResult> {
+  const parsed = z.object({ command_id:uuid, source_message_id:uuid, pending_interaction_id:uuid, expected_runtime_revision:version, expected_knowledge_version:version, reason:z.enum(["ai_configuration_failure","ai_attempts_exhausted","ai_non_transient_failure"]) }).strict().safeParse(input);
+  if (!parsed.success) return failed("invalid_input", input.command_id);
+  const result = await source.rpc("complete_customer_message_human_review", { target_command_id:parsed.data.command_id, review_payload:{ command_id:parsed.data.command_id, source_message_id:parsed.data.source_message_id, pending_interaction_id:parsed.data.pending_interaction_id, expected_runtime_revision:parsed.data.expected_runtime_revision, expected_knowledge_version:parsed.data.expected_knowledge_version, technical_reason:parsed.data.reason, execution_owner_id:execution?.ownerId ?? null } });
   if (result.error) return failed("persistence_failed", input.command_id);
   const success = z.object({ success:z.literal(true), command_id:uuid, runtime_revision:version, knowledge_version:version, pending_interaction_id:uuid.nullable() }).strict().safeParse(result.data);
   const lost = z.object({ success:z.literal(false), code:z.literal("ownership_lost") }).passthrough().safeParse(result.data);

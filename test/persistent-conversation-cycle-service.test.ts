@@ -39,6 +39,8 @@ function source(value: CustomerMessageCycleAuthority) {
     claimCustomerMessage:vi.fn().mockResolvedValue({ authority:value }),
     commitCustomerMessageCycle:vi.fn().mockResolvedValue(successResult),
     completeCustomerMessageWithHumanReview:vi.fn().mockResolvedValue({ ...successResult, kind:"human_review", outbound_message_id:null, pending_interaction_id:value.pending_interaction_id }),
+    reserveCustomerAnswerAiInferenceAttempt:vi.fn(), deferCustomerMessageAiRetry:vi.fn(),
+    commitCustomerMessageCycleWithoutClaim:vi.fn(), completeCustomerMessageWithTechnicalHumanReview:vi.fn(),
     failCustomerMessage:vi.fn().mockResolvedValue(undefined),
   };
 }

@@ -16,6 +16,23 @@ export type PersistentCycleCommit = {
   command_id: string; source_message_id: string; pending_interaction_id: string; expected_runtime_revision: number; expected_knowledge_version: number;
   cycle: ConversationCycleSuccess;
 };
+export type ClaimlessConversationCycleSuccess = Omit<ConversationCycleSuccess,
+  "normalized_answer" | "interpretation" | "state_transition_proposal" | "state_transition_apply_result"
+>;
+export type PersistentCycleClaimlessCommit = Omit<PersistentCycleCommit, "cycle"> & {
+  outcome: "no_match" | "ambiguous";
+  cycle: ClaimlessConversationCycleSuccess;
+};
+export type AiInferenceAttemptReservation = Omit<PersistentCycleCommit, "cycle">;
+export type AiInferenceAttemptReservationResult =
+  | { success: true; code: "reserved"; command_id: string; attempt_number: 1 | 2 | 3 }
+  | { success: false; code: "invalid_input" | "command_not_found" | "command_not_claimed" | "ownership_lost" | "stale_runtime_revision" | "stale_knowledge_version" | "interaction_not_current" | "attempts_exhausted" };
+export type AiRetryDeferral = Pick<PersistentCycleCommit, "command_id" | "source_message_id"> & { failure: "timeout" | "transient_provider_failure" };
+export type AiRetryDeferralResult =
+  | { success: true; code: "deferred"; retry_at: string; attempt_count: 1 | 2 }
+  | { success: false; code: "invalid_input" | "command_not_found" | "command_not_claimed" | "ownership_lost" | "attempts_exhausted" };
+export type TechnicalHumanReviewReason = "ai_configuration_failure" | "ai_attempts_exhausted" | "ai_non_transient_failure";
+export type PersistentCycleTechnicalHumanReview = Omit<PersistentCycleCommit, "cycle"> & { reason: TechnicalHumanReviewReason };
 export type PersistentCycleHumanReview = {
   command_id: string; source_message_id: string; pending_interaction_id: string;
   cycle_result: (ConversationCycleFailure & Readonly<{ requires_human_review: true }>) | (ConversationCycleSuccess & Readonly<{ cycle_status: "human_review_required" }>);
@@ -25,6 +42,10 @@ export type PersistentCycleDataSource = {
   claimCustomerMessage(messageId: string): Promise<{ authority?: CustomerMessageCycleAuthority; replay?: TerminalReplay; error?: CycleFailureCode }>;
   /** One database transaction applies Knowledge transition and the complete runtime/outbound generation. */
   commitCustomerMessageCycle(payload: PersistentCycleCommit): Promise<PersistentCycleResult>;
+  reserveCustomerAnswerAiInferenceAttempt(payload: AiInferenceAttemptReservation): Promise<AiInferenceAttemptReservationResult>;
+  deferCustomerMessageAiRetry(payload: AiRetryDeferral): Promise<AiRetryDeferralResult>;
+  commitCustomerMessageCycleWithoutClaim(payload: PersistentCycleClaimlessCommit): Promise<PersistentCycleResult>;
+  completeCustomerMessageWithTechnicalHumanReview(payload: PersistentCycleTechnicalHumanReview): Promise<PersistentCycleResult>;
   /** A controlled domain outcome; it creates neither a review actor nor an approval. */
   completeCustomerMessageWithHumanReview(payload: PersistentCycleHumanReview): Promise<PersistentCycleResult>;
   failCustomerMessage(commandId: string, code: "normalization_failed" | "cycle_failed" | "persistence_failed"): Promise<void>;

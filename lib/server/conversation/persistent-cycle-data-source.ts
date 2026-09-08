@@ -12,6 +12,8 @@ import type {
 import {
   commitCustomerMessageCycle,
   completeCustomerMessageWithHumanReview,
+  completeCustomerMessageWithTechnicalHumanReview, commitCustomerMessageCycleWithoutClaim,
+  deferCustomerMessageAiRetry, reserveCustomerAnswerAiInferenceAttempt,
   failCustomerMessage,
   type PersistentCycleCommitRpc,
 } from "@/lib/server/conversation/persistent-cycle-commit";
@@ -112,6 +114,10 @@ export function createPersistentCycleDataSource(
       return loaded.success ? { authority: loaded.authority } : { error: READ_ERROR_MAP[loaded.error] };
     },
     commitCustomerMessageCycle: payload => execution ? commitCustomerMessageCycle(dependencies.commit, payload, execution) : commitCustomerMessageCycle(dependencies.commit, payload),
+    reserveCustomerAnswerAiInferenceAttempt: payload => execution ? reserveCustomerAnswerAiInferenceAttempt(dependencies.commit, payload, execution) : reserveCustomerAnswerAiInferenceAttempt(dependencies.commit, payload),
+    deferCustomerMessageAiRetry: payload => execution ? deferCustomerMessageAiRetry(dependencies.commit, payload, execution) : deferCustomerMessageAiRetry(dependencies.commit, payload),
+    commitCustomerMessageCycleWithoutClaim: payload => execution ? commitCustomerMessageCycleWithoutClaim(dependencies.commit, payload, execution) : commitCustomerMessageCycleWithoutClaim(dependencies.commit, payload),
+    completeCustomerMessageWithTechnicalHumanReview: payload => execution ? completeCustomerMessageWithTechnicalHumanReview(dependencies.commit, payload, execution) : completeCustomerMessageWithTechnicalHumanReview(dependencies.commit, payload),
     completeCustomerMessageWithHumanReview: payload => execution ? completeCustomerMessageWithHumanReview(dependencies.commit, payload, execution) : completeCustomerMessageWithHumanReview(dependencies.commit, payload),
     failCustomerMessage: (commandId, code) => execution ? failCustomerMessage(dependencies.commit, commandId, code, execution) : failCustomerMessage(dependencies.commit, commandId, code),
   };
