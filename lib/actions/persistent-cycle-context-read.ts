@@ -15,6 +15,19 @@ export const CYCLE_AUTHORITY_READ_ERRORS = [
 ] as const;
 export type CycleAuthorityReadError = typeof CYCLE_AUTHORITY_READ_ERRORS[number];
 export type CycleAuthorityReadFailureCategory = "rpc_error" | "response_validation_error" | "authority_rejected";
+export type SafeRpcDiagnostic = Readonly<{ safe_rpc_code?: string; safe_rpc_summary: string }>;
+
+const SAFE_RPC_CODE = /^[A-Z0-9]{2,16}$/;
+export function classifyContextRpcError(error: unknown): SafeRpcDiagnostic {
+  const record = error && typeof error === "object" ? error as Record<string, unknown> : {};
+  const code = typeof record.code === "string" && SAFE_RPC_CODE.test(record.code) ? record.code : undefined;
+  let safe_rpc_summary = "rpc_unknown_error";
+  if (code === "42501" || code === "401" || code === "403") safe_rpc_summary = "authorization_or_configuration_error";
+  else if (code === "PGRST202" || code === "42883") safe_rpc_summary = "function_or_schema_cache_error";
+  else if (code?.startsWith("08") || code?.startsWith("53") || code === "57P01" || /^PGRST00[0-3]$/.test(code ?? "")) safe_rpc_summary = "transient_database_or_transport_error";
+  else if (code?.startsWith("22") || code?.startsWith("42") || code === "42702") safe_rpc_summary = "database_contract_error";
+  return { ...(code ? { safe_rpc_code: code } : {}), safe_rpc_summary };
+}
 
 const errorSchema = z.object({ success: z.literal(false), code: z.enum(CYCLE_AUTHORITY_READ_ERRORS) }).strict();
 const authorityRowSchema = z.object({
@@ -42,11 +55,11 @@ export type PersistentCycleContextReadSource = {
 /** Machine-only, side-effect-free reconstruction of the exact claimed-cycle authority. */
 export async function loadCustomerMessageCycleAuthority(source: PersistentCycleContextReadSource, commandId: string): Promise<
   { success: true; authority: CustomerMessageCycleAuthority } |
-  { success: false; error: CycleAuthorityReadError; failure_category?: CycleAuthorityReadFailureCategory }
+  { success: false; error: CycleAuthorityReadError; failure_category?: CycleAuthorityReadFailureCategory; rpc_diagnostic?: SafeRpcDiagnostic }
 > {
   if (!uuid.safeParse(commandId).success) return { success: false, error: "invalid_input" };
   const result = await source.rpc("get_customer_message_cycle_context", { target_command_id: commandId });
-  if (result.error) return { success: false, error: "authority_incomplete", failure_category: "rpc_error" };
+  if (result.error) return { success: false, error: "authority_incomplete", failure_category: "rpc_error", rpc_diagnostic: classifyContextRpcError(result.error) };
   const controlledError = errorSchema.safeParse(result.data);
   if (controlledError.success) return { success: false, error: controlledError.data.code, failure_category: "authority_rejected" };
   // PostgreSQL's jsonb timestamptz representation uses a space separator and may

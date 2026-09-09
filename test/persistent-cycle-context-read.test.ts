@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { loadCustomerMessageCycleAuthority } from "@/lib/actions/persistent-cycle-context-read";
+import { classifyContextRpcError, loadCustomerMessageCycleAuthority } from "@/lib/actions/persistent-cycle-context-read";
 import { composeRenderedCustomerText, PLANNER_SNAPSHOT_SCHEMA_VERSION } from "@/lib/actions/planner-snapshot-persistence";
 import { createSyntheticConversationCycleContext } from "@/lib/domain/conversation-intelligence/conversation-cycle-fixtures";
 
@@ -68,6 +68,18 @@ describe("AP-16-06-01C cycle context read authority", () => {
     };
     const result = await loadCustomerMessageCycleAuthority({ rpc: vi.fn().mockResolvedValue({ data: postgresTime(row), error: null }) }, commandId);
     expect(result.success).toBe(true);
+  });
+
+  it.each([
+    ["42501", "authorization_or_configuration_error"],
+    ["PGRST202", "function_or_schema_cache_error"],
+    ["42702", "database_contract_error"],
+    ["08006", "transient_database_or_transport_error"],
+  ])("retains only bounded safe RPC classification for %s", async (code, summary) => {
+    const error = { code, message: "customer answer and private database detail", details: "credential" };
+    await expect(loadCustomerMessageCycleAuthority({ rpc: vi.fn().mockResolvedValue({ data: null, error }) }, commandId))
+      .resolves.toEqual({ success: false, error: "authority_incomplete", failure_category: "rpc_error", rpc_diagnostic: { safe_rpc_code: code, safe_rpc_summary: summary } });
+    expect(JSON.stringify(classifyContextRpcError(error))).not.toMatch(/customer answer|private|credential/i);
   });
 
   it("returns stable persisted reservations and never generates logical IDs", async () => {

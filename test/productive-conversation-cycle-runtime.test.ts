@@ -105,6 +105,15 @@ describe("AP-16-06-03 productive recovery", () => {
     expect(JSON.stringify(logger.error.mock.calls)).not.toMatch(/credential-value|customer answer|authorization|openai api key|whatsapp/i);
   });
 
+  it("logs safe context RPC diagnostics without raw content", async () => {
+    vi.mocked(discoverRecoverableConversationCycles).mockResolvedValueOnce([command(1)]);
+    vi.mocked(runPersistentCustomerMessageCycle).mockResolvedValueOnce({kind:"failed",diagnostic:{stage:"context_read",failure_category:"rpc_error",result_code:"persistence_failed",safe_rpc_code:"42702",safe_rpc_summary:"database_contract_error",acquisition_succeeded:true,authority_context_loaded:false,ai_attempt_reservation_reached:false,failure_persistence_succeeded:true}});
+    const logger={info:vi.fn(),error:vi.fn()};
+    await createConversationCycleRecoveryHandler({getSecret:()=>"secret",createRuntime:()=>runtime,logger,now:()=>0})(request("Bearer secret"));
+    expect(logger.error).toHaveBeenCalledWith(expect.objectContaining({event:"conversation_cycle_recovery_item_failure",safe_rpc_code:"42702",safe_rpc_summary:"database_contract_error"}));
+    expect(JSON.stringify(logger.error.mock.calls)).not.toMatch(/customer answer|credential|authorization header/i);
+  });
+
   it("does not start another command at the 45-second boundary", async () => {
     vi.mocked(discoverRecoverableConversationCycles).mockResolvedValueOnce([command(1), command(2)]);
     vi.mocked(runPersistentCustomerMessageCycle).mockResolvedValue({ kind: "completed" });

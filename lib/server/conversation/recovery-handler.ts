@@ -84,6 +84,8 @@ export function createConversationCycleRecoveryHandler(dependencies: Readonly<{
           stage: result.diagnostic?.stage ?? "unknown",
           failure_category: result.diagnostic?.failure_category ?? "unknown",
           result_code: result.diagnostic?.result_code,
+          ...(result.diagnostic?.safe_rpc_code ? { safe_rpc_code: result.diagnostic.safe_rpc_code } : {}),
+          ...(result.diagnostic?.safe_rpc_summary ? { safe_rpc_summary: result.diagnostic.safe_rpc_summary } : {}),
           acquisition_succeeded: result.diagnostic?.acquisition_succeeded ?? false,
           authority_context_loaded: result.diagnostic?.authority_context_loaded ?? false,
           ai_attempt_reservation_reached: result.diagnostic?.ai_attempt_reservation_reached ?? false,

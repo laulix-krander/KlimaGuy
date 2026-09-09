@@ -42,7 +42,7 @@ export type PersistentCycleHumanReview = {
 };
 export type PersistentCycleDataSource = {
   /** The RPC performs authorization and locks Conversation, Runtime, Pending, Knowledge, then Command. */
-  claimCustomerMessage(messageId: string): Promise<{ authority?: CustomerMessageCycleAuthority; replay?: TerminalReplay; error?: CycleFailureCode; command_id?: string; failure_stage?: "acquisition" | "context_read"; failure_category?: "rpc_error" | "response_validation_error" | "authority_rejected" }>;
+  claimCustomerMessage(messageId: string): Promise<{ authority?: CustomerMessageCycleAuthority; replay?: TerminalReplay; error?: CycleFailureCode; command_id?: string; failure_stage?: "acquisition" | "context_read"; failure_category?: "rpc_error" | "response_validation_error" | "authority_rejected"; safe_rpc_code?: string; safe_rpc_summary?: string }>;
   /** One database transaction applies Knowledge transition and the complete runtime/outbound generation. */
   commitCustomerMessageCycle(payload: PersistentCycleCommit): Promise<PersistentCycleResult>;
   reserveCustomerAnswerAiInferenceAttempt(payload: AiInferenceAttemptReservation): Promise<AiInferenceAttemptReservationResult>;
@@ -62,7 +62,7 @@ export async function processPersistentCustomerMessage(source: PersistentCycleDa
   if (claimed.replay) return { ...claimed.replay, kind: "already_processed" };
   if (claimed.error || !claimed.authority) return {
     ...failed(claimed.error ?? "persistence_failed", claimed.command_id),
-    ...(claimed.failure_stage ? { diagnostic: { stage: claimed.failure_stage, failure_category: claimed.failure_category ?? "authority_rejected" } } : {}),
+    ...(claimed.failure_stage ? { diagnostic: { stage: claimed.failure_stage, failure_category: claimed.failure_category ?? "authority_rejected", ...(claimed.safe_rpc_code ? { safe_rpc_code: claimed.safe_rpc_code } : {}), ...(claimed.safe_rpc_summary ? { safe_rpc_summary: claimed.safe_rpc_summary } : {}) } } : {}),
   };
   const a = claimed.authority;
   if (a.direction !== "inbound" || a.actor_class !== "customer" || a.message_kind !== "text") return failed("message_not_inbound_customer_text", a.command_id);

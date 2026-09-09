@@ -115,6 +115,8 @@ export function createPersistentCycleDataSource(
         error: READ_ERROR_MAP[loaded.error], command_id: command.data.command_id,
         failure_stage: "context_read" as const,
         failure_category: loaded.failure_category ?? "authority_rejected" as const,
+        ...(loaded.rpc_diagnostic?.safe_rpc_code ? { safe_rpc_code: loaded.rpc_diagnostic.safe_rpc_code } : {}),
+        ...(loaded.rpc_diagnostic?.safe_rpc_summary ? { safe_rpc_summary: loaded.rpc_diagnostic.safe_rpc_summary } : {}),
       };
     },
     commitCustomerMessageCycle: payload => execution ? commitCustomerMessageCycle(dependencies.commit, payload, execution) : commitCustomerMessageCycle(dependencies.commit, payload),

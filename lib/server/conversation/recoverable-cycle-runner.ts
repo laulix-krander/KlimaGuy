@@ -13,7 +13,7 @@ export const RECOVERABLE_CYCLE_DISCOVERY_LIMIT = 100;
 export type RecoverableCycleRunnerResult =
   | Readonly<{ kind:"completed"; command_id?:string; outbound_message_id?:string }>
   | Readonly<{ kind:"human_review" | "already_terminal" | "stale" | "busy" | "ownership_lost"; command_id?:string }>
-  | Readonly<{ kind:"failed"; command_id?:string; diagnostic?: { stage:"input" | "acquisition" | "context_read" | "execution" | "failure_persistence"; failure_category:string; result_code?:string; acquisition_succeeded:boolean; authority_context_loaded:boolean; ai_attempt_reservation_reached:boolean; failure_persistence_succeeded:boolean } }>;
+  | Readonly<{ kind:"failed"; command_id?:string; diagnostic?: { stage:"input" | "acquisition" | "context_read" | "execution" | "failure_persistence"; failure_category:string; result_code?:string; safe_rpc_code?:string; safe_rpc_summary?:string; acquisition_succeeded:boolean; authority_context_loaded:boolean; ai_attempt_reservation_reached:boolean; failure_persistence_succeeded:boolean } }>;
 
 export type RecoverableCycleDependencies = PersistentCycleDataSourceDependencies & Readonly<{
   createOwnerId?: () => string;
@@ -45,9 +45,9 @@ export async function runPersistentCustomerMessageCycle(
     if (result.code === "persistence_failed" && result.command_id && !ownershipLost) {
       const failurePersisted = await source.failCustomerMessage(result.command_id, "persistence_failed");
       if (ownershipLost) return { kind:"ownership_lost", command_id:result.command_id };
-      return { kind:"failed", command_id:result.command_id, diagnostic:{stage:failurePersisted ? result.diagnostic?.stage ?? "execution" : "failure_persistence",failure_category:failurePersisted ? result.diagnostic?.failure_category ?? "controlled_failure" : "persistence_failed",result_code:result.code,acquisition_succeeded:true,authority_context_loaded:result.diagnostic?.stage !== "context_read",ai_attempt_reservation_reached:false,failure_persistence_succeeded:failurePersisted} };
+      return { kind:"failed", command_id:result.command_id, diagnostic:{stage:failurePersisted ? result.diagnostic?.stage ?? "execution" : "failure_persistence",failure_category:failurePersisted ? result.diagnostic?.failure_category ?? "controlled_failure" : "persistence_failed",result_code:result.code,...(result.diagnostic?.safe_rpc_code ? {safe_rpc_code:result.diagnostic.safe_rpc_code}:{}),...(result.diagnostic?.safe_rpc_summary ? {safe_rpc_summary:result.diagnostic.safe_rpc_summary}:{}),acquisition_succeeded:true,authority_context_loaded:result.diagnostic?.stage !== "context_read",ai_attempt_reservation_reached:false,failure_persistence_succeeded:failurePersisted} };
     }
-    return { kind:"failed", ...(result.command_id ? {command_id:result.command_id} : {}), diagnostic:{stage:result.diagnostic?.stage ?? "execution",failure_category:result.diagnostic?.failure_category ?? "controlled_failure",result_code:result.code,acquisition_succeeded:Boolean(result.command_id),authority_context_loaded:Boolean(result.command_id) && result.diagnostic?.stage !== "context_read",ai_attempt_reservation_reached:false,failure_persistence_succeeded:false} };
+    return { kind:"failed", ...(result.command_id ? {command_id:result.command_id} : {}), diagnostic:{stage:result.diagnostic?.stage ?? "execution",failure_category:result.diagnostic?.failure_category ?? "controlled_failure",result_code:result.code,...(result.diagnostic?.safe_rpc_code ? {safe_rpc_code:result.diagnostic.safe_rpc_code}:{}),...(result.diagnostic?.safe_rpc_summary ? {safe_rpc_summary:result.diagnostic.safe_rpc_summary}:{}),acquisition_succeeded:Boolean(result.command_id),authority_context_loaded:Boolean(result.command_id) && result.diagnostic?.stage !== "context_read",ai_attempt_reservation_reached:false,failure_persistence_succeeded:false} };
   } catch {
     return ownershipLost ? { kind:"ownership_lost" } : { kind:"failed" };
   }
