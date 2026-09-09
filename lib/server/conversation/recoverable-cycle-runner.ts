@@ -52,12 +52,23 @@ export async function runPersistentCustomerMessageCycle(
 }
 
 const recoverableRow = z.object({ command_id:z.string().uuid(), source_message_id:z.string().uuid(), lease_expired_at:z.string().datetime() }).strict();
-export type RecoveryDiscoverySource = { rpc(name:"discover_recoverable_conversation_cycles", args:{ result_limit:number }):Promise<{data:unknown;error:unknown}> };
+const missingCommandRow = z.object({ source_message_id:z.string().uuid(), discovered_at:z.string().datetime() }).strict();
+export type RecoverableCycleCandidate = Readonly<{ source_message_id:string; discovery_kind:"existing_command" | "missing_command" }>;
+export type RecoveryDiscoverySource = {
+  rpc(name:"discover_recoverable_conversation_cycles" | "discover_missing_customer_answer_cycles", args:{ result_limit:number }):Promise<{data:unknown;error:unknown}>;
+};
 
 export async function discoverRecoverableConversationCycles(source:RecoveryDiscoverySource, limit=RECOVERABLE_CYCLE_DISCOVERY_LIMIT) {
   const bounded = z.number().int().min(1).max(RECOVERABLE_CYCLE_DISCOVERY_LIMIT).catch(RECOVERABLE_CYCLE_DISCOVERY_LIMIT).parse(limit);
-  const response = await source.rpc("discover_recoverable_conversation_cycles", {result_limit:bounded});
-  if (response.error) return [];
-  const parsed = z.array(recoverableRow).max(bounded).safeParse(response.data);
-  return parsed.success ? parsed.data : [];
+  const existingResponse = await source.rpc("discover_recoverable_conversation_cycles", {result_limit:bounded});
+  const missingResponse = await source.rpc("discover_missing_customer_answer_cycles", {result_limit:bounded});
+  const existing = existingResponse.error ? [] : z.array(recoverableRow).max(bounded).safeParse(existingResponse.data);
+  const missing = missingResponse.error ? [] : z.array(missingCommandRow).max(bounded).safeParse(missingResponse.data);
+  const candidates: RecoverableCycleCandidate[] = [];
+  if (!Array.isArray(existing) && existing.success) candidates.push(...existing.data.map((row) => ({source_message_id:row.source_message_id, discovery_kind:"existing_command" as const})));
+  const seen = new Set(candidates.map((candidate) => candidate.source_message_id));
+  if (!Array.isArray(missing) && missing.success) {
+    for (const row of missing.data) if (!seen.has(row.source_message_id) && candidates.length < bounded) candidates.push({source_message_id:row.source_message_id, discovery_kind:"missing_command"});
+  }
+  return candidates.slice(0, bounded);
 }

@@ -23,7 +23,7 @@ import {
 } from "@/lib/server/conversation/recovery-handler";
 
 const uuid = (n: number) => `a2000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-const command = (n: number) => ({ command_id: uuid(n), source_message_id: uuid(n + 20), lease_expired_at: "2026-09-02T12:00:00.000Z" });
+const command = (n: number) => ({ source_message_id: uuid(n + 20), discovery_kind: "existing_command" as const });
 const request = (authorization?: string, url = "https://example.invalid/api/internal/conversation-cycles/recovery") =>
   new Request(url, { method: "POST", headers: authorization ? { authorization } : undefined });
 const runtime = { discovery: { rpc: vi.fn() }, runner: { claim: { rpc: vi.fn() }, read: { rpc: vi.fn() }, commit: { rpc: vi.fn() } } };
@@ -72,7 +72,7 @@ describe("AP-16-06-03 productive recovery", () => {
     vi.mocked(runPersistentCustomerMessageCycle).mockRejectedValueOnce(new Error("private detail"));
     const response = await createConversationCycleRecoveryHandler({ getSecret: () => "secret", createRuntime: () => runtime, now: () => 0 })(request("Bearer secret"));
     const body = await response.json();
-    expect(body).toEqual({ discovered: 8, attempted: 8, completed: 1, human_review: 1, failed: 1, busy: 1, stale: 1, ownership_lost: 1, already_terminal: 1, unexpected_error: 1, budget_exhausted: false });
+    expect(body).toEqual({ discovered: 8, existing_command_discovered: 8, missing_command_discovered: 0, missing_command_bootstrap_succeeded: 0, missing_command_bootstrap_failed: 0, attempted: 8, completed: 1, human_review: 1, failed: 1, busy: 1, stale: 1, ownership_lost: 1, already_terminal: 1, unexpected_error: 1, budget_exhausted: false });
     expect(JSON.stringify(body)).not.toContain("private detail");
   });
 

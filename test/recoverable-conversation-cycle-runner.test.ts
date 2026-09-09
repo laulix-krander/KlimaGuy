@@ -38,10 +38,18 @@ describe("AP-16-06-02 recoverable conversation cycle runner",()=>{
 
   it("validates bounded content-free recovery discovery",async()=>{
     const row={command_id:commandId,source_message_id:messageId,lease_expired_at:"2026-09-02T12:00:00.000Z"};
-    const rpc=vi.fn().mockResolvedValue({data:[row],error:null});
-    await expect(discoverRecoverableConversationCycles({rpc},500)).resolves.toEqual([row]);
+    const rpc=vi.fn().mockResolvedValueOnce({data:[row],error:null}).mockResolvedValueOnce({data:[],error:null});
+    await expect(discoverRecoverableConversationCycles({rpc},500)).resolves.toEqual([{source_message_id:messageId,discovery_kind:"existing_command"}]);
     expect(rpc).toHaveBeenCalledWith("discover_recoverable_conversation_cycles",{result_limit:100});
     expect(row).not.toHaveProperty("message_text"); expect(row).not.toHaveProperty("provider_payload");
+  });
+
+  it("discovers a missing command without fabricating it and de-duplicates ordinary acquisition",async()=>{
+    const missing={source_message_id:messageId,discovered_at:"2026-09-09T12:00:00.000Z"};
+    const rpc=vi.fn().mockResolvedValueOnce({data:[],error:null}).mockResolvedValueOnce({data:[missing],error:null});
+    await expect(discoverRecoverableConversationCycles({rpc},10)).resolves.toEqual([{source_message_id:messageId,discovery_kind:"missing_command"}]);
+    expect(rpc).toHaveBeenLastCalledWith("discover_missing_customer_answer_cycles",{result_limit:10});
+    expect(rpc).not.toHaveBeenCalledWith("claim_customer_message_cycle",expect.anything());
   });
 
   it("defines atomic reclaim, fencing, legacy recovery and service-only security",async()=>{
