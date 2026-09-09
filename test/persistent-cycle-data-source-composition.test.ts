@@ -70,11 +70,11 @@ describe("AP-16-06-01F PersistentCycleDataSource composition", () => {
   it("fails closed and sanitizes claim and read errors", async () => {
     const raw = setup();
     raw.claim.rpc.mockResolvedValueOnce({ data:null, error:new Error("secret SQL detail") });
-    await expect(raw.source.claimCustomerMessage(authority().message_id)).resolves.toEqual({ error:"persistence_failed" });
+    await expect(raw.source.claimCustomerMessage(authority().message_id)).resolves.toMatchObject({ error:"persistence_failed", failure_stage:"acquisition", failure_category:"rpc_error" });
     expect(adapters.load).not.toHaveBeenCalled();
     const stale = setup();
     adapters.load.mockResolvedValueOnce({ success:false, error:"runtime_stale" });
-    await expect(stale.source.claimCustomerMessage(authority().message_id)).resolves.toEqual({ error:"stale_runtime_revision" });
+    await expect(stale.source.claimCustomerMessage(authority().message_id)).resolves.toMatchObject({ error:"stale_runtime_revision", command_id:authority().command_id, failure_stage:"context_read" });
     expect(JSON.stringify(await stale.source.claimCustomerMessage("invalid"))).not.toContain("SQL");
   });
 

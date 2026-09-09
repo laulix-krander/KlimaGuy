@@ -99,7 +99,7 @@ export function createPersistentCycleDataSource(
             lease_seconds: execution.leaseSeconds,
           })
         : await dependencies.claim.rpc("claim_customer_message_cycle", { target_message_id: messageId });
-      if (claimed.error) return { error: "persistence_failed" };
+      if (claimed.error) return { error: "persistence_failed", failure_stage: "acquisition" as const, failure_category: "rpc_error" as const };
       if (busyClaim.safeParse(claimed.data).success) return { error: "interaction_not_current" };
       const failure = failedClaim.safeParse(claimed.data);
       if (failure.success) return { error: failure.data.code };
@@ -109,9 +109,13 @@ export function createPersistentCycleDataSource(
         return terminalReplay ? { replay: terminalReplay } : { error: "interaction_not_current" };
       }
       const command = claimResult.safeParse(claimed.data);
-      if (!command.success) return { error: "persistence_failed" };
+      if (!command.success) return { error: "persistence_failed", failure_stage: "acquisition" as const, failure_category: "response_validation_error" as const };
       const loaded = await loadCustomerMessageCycleAuthority(dependencies.read, command.data.command_id);
-      return loaded.success ? { authority: loaded.authority } : { error: READ_ERROR_MAP[loaded.error] };
+      return loaded.success ? { authority: loaded.authority } : {
+        error: READ_ERROR_MAP[loaded.error], command_id: command.data.command_id,
+        failure_stage: "context_read" as const,
+        failure_category: loaded.failure_category ?? "authority_rejected" as const,
+      };
     },
     commitCustomerMessageCycle: payload => execution ? commitCustomerMessageCycle(dependencies.commit, payload, execution) : commitCustomerMessageCycle(dependencies.commit, payload),
     reserveCustomerAnswerAiInferenceAttempt: payload => execution ? reserveCustomerAnswerAiInferenceAttempt(dependencies.commit, payload, execution) : reserveCustomerAnswerAiInferenceAttempt(dependencies.commit, payload),

@@ -14,6 +14,7 @@ export const CYCLE_AUTHORITY_READ_ERRORS = [
   "snapshot_invalid", "prompt_message_mismatch", "authority_incomplete",
 ] as const;
 export type CycleAuthorityReadError = typeof CYCLE_AUTHORITY_READ_ERRORS[number];
+export type CycleAuthorityReadFailureCategory = "rpc_error" | "response_validation_error" | "authority_rejected";
 
 const errorSchema = z.object({ success: z.literal(false), code: z.enum(CYCLE_AUTHORITY_READ_ERRORS) }).strict();
 const authorityRowSchema = z.object({
@@ -40,15 +41,27 @@ export type PersistentCycleContextReadSource = {
 
 /** Machine-only, side-effect-free reconstruction of the exact claimed-cycle authority. */
 export async function loadCustomerMessageCycleAuthority(source: PersistentCycleContextReadSource, commandId: string): Promise<
-  { success: true; authority: CustomerMessageCycleAuthority } | { success: false; error: CycleAuthorityReadError }
+  { success: true; authority: CustomerMessageCycleAuthority } |
+  { success: false; error: CycleAuthorityReadError; failure_category?: CycleAuthorityReadFailureCategory }
 > {
   if (!uuid.safeParse(commandId).success) return { success: false, error: "invalid_input" };
   const result = await source.rpc("get_customer_message_cycle_context", { target_command_id: commandId });
-  if (result.error) return { success: false, error: "authority_incomplete" };
+  if (result.error) return { success: false, error: "authority_incomplete", failure_category: "rpc_error" };
   const controlledError = errorSchema.safeParse(result.data);
-  if (controlledError.success) return { success: false, error: controlledError.data.code };
-  const parsed = authorityRowSchema.safeParse(result.data);
-  if (!parsed.success) return { success: false, error: "authority_incomplete" };
+  if (controlledError.success) return { success: false, error: controlledError.data.code, failure_category: "authority_rejected" };
+  // PostgreSQL's jsonb timestamptz representation uses a space separator and may
+  // use a short UTC offset ("+00").  Normalize only timestamp-shaped strings;
+  // external authority is still validated by the existing strict Zod schemas.
+  const normalizeTimestamps = (value: unknown): unknown => {
+    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}(?::?\d{2})?)$/.test(value)) {
+      return value.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00");
+    }
+    if (Array.isArray(value)) return value.map(normalizeTimestamps);
+    if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, normalizeTimestamps(item)]));
+    return value;
+  };
+  const parsed = authorityRowSchema.safeParse(normalizeTimestamps(result.data));
+  if (!parsed.success) return { success: false, error: "authority_incomplete", failure_category: "response_validation_error" };
   const row = parsed.data;
   const snapshot = validatePlannerSnapshotRow(row.snapshot, row.pending_interaction.id);
   if (!snapshot) return { success: false, error: "snapshot_invalid" };

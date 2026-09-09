@@ -96,6 +96,15 @@ describe("AP-16-06-03 productive recovery", () => {
     expect(JSON.stringify(body)).not.toContain("private detail");
   });
 
+  it("logs a content-free classified post-discovery item failure", async () => {
+    vi.mocked(discoverRecoverableConversationCycles).mockResolvedValueOnce([command(1)]);
+    vi.mocked(runPersistentCustomerMessageCycle).mockResolvedValueOnce({kind:"failed",diagnostic:{stage:"context_read",failure_category:"response_validation_error",result_code:"persistence_failed",acquisition_succeeded:true,authority_context_loaded:false,ai_attempt_reservation_reached:false,failure_persistence_succeeded:true}});
+    const logger={info:vi.fn(),error:vi.fn()};
+    await createConversationCycleRecoveryHandler({getSecret:()=>"credential-value",createRuntime:()=>runtime,logger,now:()=>0})(request("Bearer credential-value"));
+    expect(logger.error).toHaveBeenCalledWith({event:"conversation_cycle_recovery_item_failure",stage:"context_read",failure_category:"response_validation_error",result_code:"persistence_failed",acquisition_succeeded:true,authority_context_loaded:false,ai_attempt_reservation_reached:false,failure_persistence_succeeded:true});
+    expect(JSON.stringify(logger.error.mock.calls)).not.toMatch(/credential-value|customer answer|authorization|openai api key|whatsapp/i);
+  });
+
   it("does not start another command at the 45-second boundary", async () => {
     vi.mocked(discoverRecoverableConversationCycles).mockResolvedValueOnce([command(1), command(2)]);
     vi.mocked(runPersistentCustomerMessageCycle).mockResolvedValue({ kind: "completed" });

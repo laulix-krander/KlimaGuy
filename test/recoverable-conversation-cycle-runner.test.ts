@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readFile } from "node:fs/promises";
 
 vi.mock("@/lib/actions/persistent-conversation-cycle-service", () => ({ processPersistentCustomerMessage:vi.fn() }));
-vi.mock("@/lib/server/conversation/persistent-cycle-data-source", () => ({ createPersistentCycleDataSource:vi.fn(() => ({ failCustomerMessage:vi.fn() })) }));
+const failCustomerMessage = vi.fn().mockResolvedValue(true);
+vi.mock("@/lib/server/conversation/persistent-cycle-data-source", () => ({ createPersistentCycleDataSource:vi.fn(() => ({ failCustomerMessage })) }));
 
 import { processPersistentCustomerMessage } from "@/lib/actions/persistent-conversation-cycle-service";
 import { createPersistentCycleDataSource } from "@/lib/server/conversation/persistent-cycle-data-source";
@@ -26,6 +27,18 @@ describe("AP-16-06-02 recoverable conversation cycle runner",()=>{
     vi.mocked(processPersistentCustomerMessage).mockResolvedValueOnce({success:false,kind:"failed",code:"interaction_not_current",retry_class:"human_review"});
     await expect(runPersistentCustomerMessageCycle(dependencies,{message_id:messageId})).resolves.toEqual({kind:"busy"});
     expect(processPersistentCustomerMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists and identifies a post-acquisition context-read failure",async()=>{
+    vi.mocked(processPersistentCustomerMessage).mockResolvedValueOnce({success:false,kind:"failed",code:"persistence_failed",retry_class:"retryable",command_id:commandId,diagnostic:{stage:"context_read",failure_category:"response_validation_error"}});
+    await expect(runPersistentCustomerMessageCycle(dependencies,{message_id:messageId})).resolves.toMatchObject({kind:"failed",command_id:commandId,diagnostic:{stage:"context_read",acquisition_succeeded:true,authority_context_loaded:false,failure_persistence_succeeded:true}});
+    expect(failCustomerMessage).toHaveBeenCalledWith(commandId,"persistence_failed");
+  });
+
+  it("makes a failed terminalization visible instead of claiming persistence",async()=>{
+    failCustomerMessage.mockResolvedValueOnce(false);
+    vi.mocked(processPersistentCustomerMessage).mockResolvedValueOnce({success:false,kind:"failed",code:"persistence_failed",retry_class:"retryable",command_id:commandId,diagnostic:{stage:"context_read",failure_category:"rpc_error"}});
+    await expect(runPersistentCustomerMessageCycle(dependencies,{message_id:messageId})).resolves.toMatchObject({kind:"failed",diagnostic:{stage:"failure_persistence",failure_persistence_succeeded:false}});
   });
 
   it("hands off exactly the persisted outbound identity and never invents one",async()=>{

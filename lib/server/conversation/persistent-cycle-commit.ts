@@ -185,11 +185,13 @@ export async function commitCustomerMessageCycleWithoutClaim(source: PersistentC
   return success.success ? { success:true, kind:success.data.result_kind, command_id:success.data.command_id, runtime_revision:success.data.runtime_revision, knowledge_version:success.data.knowledge_version, outbound_message_id:success.data.outbound_message_id, pending_interaction_id:success.data.pending_interaction_id } : failed("persistence_failed", input.command_id);
 }
 
-export async function failCustomerMessage(source: PersistentCycleCommitRpc, commandId: string, code: z.infer<typeof failureCode>, execution?: CycleExecutionContext): Promise<void> {
+export async function failCustomerMessage(source: PersistentCycleCommitRpc, commandId: string, code: z.infer<typeof failureCode>, execution?: CycleExecutionContext): Promise<boolean> {
   const input = z.object({ commandId: uuid, code: failureCode }).strict().safeParse({ commandId, code });
-  if (!input.success) return;
+  if (!input.success) return false;
   const result = await source.rpc("fail_customer_message_cycle", { target_command_id: input.data.commandId, failure_code: input.data.code, execution_owner_id: execution?.ownerId });
-  if (z.object({ success:z.literal(false), code:z.literal("ownership_lost") }).passthrough().safeParse(result.data).success) execution?.onOwnershipLost?.();
+  const lost = z.object({ success:z.literal(false), code:z.literal("ownership_lost") }).passthrough().safeParse(result.data);
+  if (lost.success) execution?.onOwnershipLost?.();
+  return !result.error && z.object({ success:z.literal(true), command_id:uuid }).passthrough().safeParse(result.data).success;
 }
 
 /** Separate controlled terminal boundary; no reviewer, approval, or descriptive claim is supplied. */

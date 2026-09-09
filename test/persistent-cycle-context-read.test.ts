@@ -59,6 +59,17 @@ describe("AP-16-06-01C cycle context read authority", () => {
     expect(rpc).toHaveBeenCalledOnce();
   });
 
+  it("accepts PostgreSQL jsonb timestamptz strings before strict authority validation", async () => {
+    const postgresTime = (value: unknown): unknown => {
+      if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value)) return value.replace("T", " ").replace(/Z$/, "+00");
+      if (Array.isArray(value)) return value.map(postgresTime);
+      if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, postgresTime(item)]));
+      return value;
+    };
+    const result = await loadCustomerMessageCycleAuthority({ rpc: vi.fn().mockResolvedValue({ data: postgresTime(row), error: null }) }, commandId);
+    expect(result.success).toBe(true);
+  });
+
   it("returns stable persisted reservations and never generates logical IDs", async () => {
     const rpc = vi.fn().mockResolvedValue({ data: row, error: null });
     const first = await loadCustomerMessageCycleAuthority({ rpc }, commandId);
@@ -78,11 +89,11 @@ describe("AP-16-06-01C cycle context read authority", () => {
     ["invalid actor", { source_message: { ...row.source_message, actor_class: "system" } }, "authority_incomplete"],
   ])("fails closed for %s", async (_name, override, error) => {
     const result = await loadCustomerMessageCycleAuthority({ rpc: vi.fn().mockResolvedValue({ data: { ...row, ...override }, error: null }) }, commandId);
-    expect(result).toEqual({ success: false, error });
+    expect(result).toMatchObject({ success: false, error });
   });
 
   it("fails closed without a snapshot or Answer Contract and never replans or re-renders", async () => {
-    await expect(loadCustomerMessageCycleAuthority({ rpc: vi.fn().mockResolvedValue({ data: { success: false, code: "snapshot_missing" }, error: null }) }, commandId)).resolves.toEqual({ success: false, error: "snapshot_missing" });
+    await expect(loadCustomerMessageCycleAuthority({ rpc: vi.fn().mockResolvedValue({ data: { success: false, code: "snapshot_missing" }, error: null }) }, commandId)).resolves.toMatchObject({ success: false, error: "snapshot_missing" });
     const invalidSnapshot = { ...snapshot, rendered_interaction: { ...rendered, answer_contract: undefined } };
     await expect(loadCustomerMessageCycleAuthority({ rpc: vi.fn().mockResolvedValue({ data: { ...row, snapshot: invalidSnapshot }, error: null }) }, commandId)).resolves.toEqual({ success: false, error: "snapshot_invalid" });
   });

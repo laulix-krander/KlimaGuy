@@ -42,7 +42,7 @@ export type PersistentCycleHumanReview = {
 };
 export type PersistentCycleDataSource = {
   /** The RPC performs authorization and locks Conversation, Runtime, Pending, Knowledge, then Command. */
-  claimCustomerMessage(messageId: string): Promise<{ authority?: CustomerMessageCycleAuthority; replay?: TerminalReplay; error?: CycleFailureCode }>;
+  claimCustomerMessage(messageId: string): Promise<{ authority?: CustomerMessageCycleAuthority; replay?: TerminalReplay; error?: CycleFailureCode; command_id?: string; failure_stage?: "acquisition" | "context_read"; failure_category?: "rpc_error" | "response_validation_error" | "authority_rejected" }>;
   /** One database transaction applies Knowledge transition and the complete runtime/outbound generation. */
   commitCustomerMessageCycle(payload: PersistentCycleCommit): Promise<PersistentCycleResult>;
   reserveCustomerAnswerAiInferenceAttempt(payload: AiInferenceAttemptReservation): Promise<AiInferenceAttemptReservationResult>;
@@ -51,7 +51,7 @@ export type PersistentCycleDataSource = {
   completeCustomerMessageWithTechnicalHumanReview(payload: PersistentCycleTechnicalHumanReview): Promise<PersistentCycleResult>;
   /** A controlled domain outcome; it creates neither a review actor nor an approval. */
   completeCustomerMessageWithHumanReview(payload: PersistentCycleHumanReview): Promise<PersistentCycleResult>;
-  failCustomerMessage(commandId: string, code: "normalization_failed" | "cycle_failed" | "persistence_failed"): Promise<void>;
+  failCustomerMessage(commandId: string, code: "normalization_failed" | "cycle_failed" | "persistence_failed"): Promise<boolean>;
 };
 const failed = (code: CycleFailureCode, command_id?: string): PersistentCycleResult => ({ success:false, kind:"failed", code, retry_class:classifyCycleFailure(code), ...(command_id ? { command_id } : {}) });
 
@@ -60,7 +60,10 @@ export async function processPersistentCustomerMessage(source: PersistentCycleDa
   const parsed = processCustomerMessageCommandSchema.safeParse(input); if (!parsed.success) return failed("invalid_input");
   const claimed = await source.claimCustomerMessage(parsed.data.message_id);
   if (claimed.replay) return { ...claimed.replay, kind: "already_processed" };
-  if (claimed.error || !claimed.authority) return failed(claimed.error ?? "persistence_failed");
+  if (claimed.error || !claimed.authority) return {
+    ...failed(claimed.error ?? "persistence_failed", claimed.command_id),
+    ...(claimed.failure_stage ? { diagnostic: { stage: claimed.failure_stage, failure_category: claimed.failure_category ?? "authority_rejected" } } : {}),
+  };
   const a = claimed.authority;
   if (a.direction !== "inbound" || a.actor_class !== "customer" || a.message_kind !== "text") return failed("message_not_inbound_customer_text", a.command_id);
   if (a.message_sequence <= a.prompt_sequence) return failed("message_precedes_interaction", a.command_id);
