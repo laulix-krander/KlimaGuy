@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { processPersistentCustomerMessage } from "@/lib/actions/persistent-conversation-cycle-service";
 import { createPersistentCycleDataSource, type PersistentCycleDataSourceDependencies } from "@/lib/server/conversation/persistent-cycle-data-source";
+import type { ProductiveCustomerAnswerInterpreter } from "@/lib/server/ai/customer-answer-interpreter";
 
 /** The deterministic cycle has no network inference; five minutes bounds crash ownership without requiring heartbeats. */
 export const CONVERSATION_CYCLE_LEASE_SECONDS = 5 * 60;
@@ -15,6 +16,7 @@ export type RecoverableCycleRunnerResult =
 
 export type RecoverableCycleDependencies = PersistentCycleDataSourceDependencies & Readonly<{
   createOwnerId?: () => string;
+  customerAnswerInterpreter?: ProductiveCustomerAnswerInterpreter;
 }>;
 
 /** Executes one internal message identity. Contents stay behind the C read authority. */
@@ -30,7 +32,7 @@ export async function runPersistentCustomerMessageCycle(
     onOwnershipLost:() => { ownershipLost = true; },
   });
   try {
-    const result = await processPersistentCustomerMessage(source, input);
+    const result = await processPersistentCustomerMessage(source, input, dependencies.customerAnswerInterpreter);
     if (ownershipLost) return { kind:"ownership_lost", ...(result.command_id ? {command_id:result.command_id} : {}) };
     if (result.success) {
       if (result.kind === "already_processed") return { kind:"already_terminal", command_id:result.command_id };

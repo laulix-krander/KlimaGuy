@@ -1,7 +1,7 @@
 import { applyInformationCollectionOutcome } from "./information-collection";
 import { interpretNormalizedAnswer } from "./answer-interpretation";
 import { conversationCycleContextSchema } from "./conversation-cycle-schemas";
-import type { ConversationCycleContext, ConversationCycleFailure, ConversationCycleResult, CycleErrorCode } from "./conversation-cycle-types";
+import type { ConversationCycleContext, ConversationCycleFailure, ConversationCycleResult, ConversationCycleSuccess, CycleErrorCode } from "./conversation-cycle-types";
 import { deriveConversationEvents } from "./conversation-events";
 import { applyCustomerEffortOutcome, applyRetryOutcome } from "./conversation-retry-state";
 import { buildIntermediateAssessment } from "./intermediate-assessment";
@@ -52,4 +52,16 @@ export function runConversationCycle(input:unknown):ConversationCycleResult{
  const status=selectedEvidence?"evidence_request_selected":plannerResult.kind==="selected_action"?(plannerResult.action.action_type==="request_human_review"?"human_review_required":applied.changed?"next_action_selected":"no_state_change"):plannerResult.stop.next_action_type==="request_human_review"?"human_review_required":plannerResult.stop.next_action_type==="present_intermediate_result"?"intermediate_result_ready":"collection_stopped";
  const events=deriveConversationEvents({interpretation,proposal:interpretation.proposal,apply_result:applied,event_ids:ctx.event_ids,sequence_start:ctx.event_sequence_start,occurred_at:ctx.occurred_at,correlation_id:ctx.correlation_id,result_code:status});if(!events.success)return failure("event_derivation_failed");
  return{success:true,cycle_status:status,normalized_answer:ctx.normalized_answer,interpretation,state_transition_proposal:interpretation.proposal,state_transition_apply_result:applied,previous_state_version:applied.previous_state_version,current_state_version:applied.new_state_version,knowledge_state:state,information_collection_state:collection.state,retry_state:retry.state,customer_effort_state:effort,evidence_request_state:evidenceState,evidence_availability:ctx.evidence_availability,...(selectedEvidence?{selected_evidence_request:selectedEvidence,rendered_evidence_request:renderedEvidence}:{}),missing_information:missing,readiness,assessment:assessment.data,planner_result:plannerResult,...(rendered?{rendered_interaction:rendered}:{}),events:events.events};
+}
+
+/** Runs the unchanged planner/renderer generation for a successfully processed answer that yielded no claim. */
+export function runConversationCycleWithoutClaim(input: unknown): Omit<ConversationCycleSuccess,"normalized_answer"|"interpretation"|"state_transition_proposal"|"state_transition_apply_result"> | ConversationCycleFailure {
+ const parsed=conversationCycleContextSchema.safeParse(input);if(!parsed.success)return failure("invalid_cycle_context");
+ const ctx=parsed.data as ConversationCycleContext;
+ // The internal skip-shaped input selects the existing zero-transition continuation only; it is never persisted as an interpretation.
+ const answer=ctx.normalized_answer;
+ const planning=runConversationCycle({...ctx,normalized_answer:{answer_id:answer.answer_id,project_id:answer.project_id,conversation_id:answer.conversation_id,decision_id:answer.decision_id,template_key:answer.template_key,template_version:answer.template_version,locale:answer.locale,submitted_at:answer.submitted_at,outcome:"skipped"}});
+ if(!planning.success)return planning;
+ const {normalized_answer:_answer,interpretation:_interpretation,state_transition_proposal:_proposal,state_transition_apply_result:_apply,...claimless}=planning;
+ return {...claimless,events:[]};
 }

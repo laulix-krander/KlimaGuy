@@ -55,7 +55,7 @@ export function interpretNormalizedAnswer(input: unknown): InterpretationResult 
     if (answer.outcome !== "answered") return failure("unsupported_answer_outcome");
     const answeredValue = answer.value;
     if (answeredValue.kind === "number_range") return failure("numeric_range_not_supported", { requires_replanning: true });
-    if (answeredValue.kind === "text") { const canonical=rule.canonical_values?.[answeredValue.value.trim().toLocaleLowerCase("de-DE")]; if (!canonical) return failure("unsupported_text_mapping", { requires_replanning: true }); value=canonical; value_type="string"; epistemic_status="reported"; explanations.push("customer_answer_reported"); } else {
+    if (answeredValue.kind === "text") { const allowed=new Set(Object.values(rule.canonical_values ?? {})); const canonical=context.canonical_value_override ?? rule.canonical_values?.[answeredValue.value.trim().toLocaleLowerCase("de-DE")]; if (!canonical || !allowed.has(canonical)) return failure("unsupported_text_mapping", { requires_replanning: true }); value=canonical; value_type="string"; epistemic_status="reported"; explanations.push("customer_answer_reported"); } else {
     if (answeredValue.kind !== rule.supported_normalized_kind) return failure("answer_value_type_mismatch");
     value = answeredValue.value; value_type = answeredValue.kind; epistemic_status = "reported"; explanations.push("customer_answer_reported");
     if (answeredValue.kind === "number") { approximation = answeredValue.approximation; if (approximation === "approximate") explanations.push("approximate_value_preserved"); } }
