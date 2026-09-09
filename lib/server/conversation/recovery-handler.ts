@@ -13,6 +13,10 @@ export const RECOVERY_START_BUDGET_MS = 45_000;
 
 type Summary = Record<RecoverableCycleRunnerResult["kind"], number> & {
   discovered: number;
+  existing_command_discovered: number;
+  missing_command_discovered: number;
+  missing_command_bootstrap_succeeded: number;
+  missing_command_bootstrap_failed: number;
   attempted: number;
   unexpected_error: number;
   budget_exhausted: boolean;
@@ -44,6 +48,9 @@ export function createConversationCycleRecoveryHandler(dependencies: Readonly<{
     const commands = await discoverRecoverableConversationCycles(runtime.discovery, RECOVERY_BATCH_SIZE);
     const summary: Summary = {
       discovered: commands.length, attempted: 0, completed: 0, human_review: 0,
+      existing_command_discovered: commands.filter((item) => item.discovery_kind === "existing_command").length,
+      missing_command_discovered: commands.filter((item) => item.discovery_kind === "missing_command").length,
+      missing_command_bootstrap_succeeded: 0, missing_command_bootstrap_failed: 0,
       failed: 0, busy: 0, stale: 0, ownership_lost: 0, already_terminal: 0,
       unexpected_error: 0, budget_exhausted: false,
     };
@@ -56,8 +63,13 @@ export function createConversationCycleRecoveryHandler(dependencies: Readonly<{
       try {
         const result = await runPersistentCustomerMessageCycle(runtime.runner, { message_id: command.source_message_id });
         summary[result.kind] += 1;
+        if (command.discovery_kind === "missing_command") {
+          if (result.kind === "completed" || result.kind === "human_review" || result.kind === "already_terminal") summary.missing_command_bootstrap_succeeded += 1;
+          else summary.missing_command_bootstrap_failed += 1;
+        }
       } catch {
         summary.unexpected_error += 1;
+        if (command.discovery_kind === "missing_command") summary.missing_command_bootstrap_failed += 1;
       }
     }
     return Response.json(summary, { status: 200 });
