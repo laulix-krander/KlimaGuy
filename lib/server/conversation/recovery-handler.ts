@@ -79,6 +79,16 @@ export function createConversationCycleRecoveryHandler(dependencies: Readonly<{
       try {
         const result = await runPersistentCustomerMessageCycle(runtime.runner, { message_id: command.source_message_id });
         summary[result.kind] += 1;
+        if (result.kind === "failed") logger.error({
+          event: "conversation_cycle_recovery_item_failure",
+          stage: result.diagnostic?.stage ?? "unknown",
+          failure_category: result.diagnostic?.failure_category ?? "unknown",
+          result_code: result.diagnostic?.result_code,
+          acquisition_succeeded: result.diagnostic?.acquisition_succeeded ?? false,
+          authority_context_loaded: result.diagnostic?.authority_context_loaded ?? false,
+          ai_attempt_reservation_reached: result.diagnostic?.ai_attempt_reservation_reached ?? false,
+          failure_persistence_succeeded: result.diagnostic?.failure_persistence_succeeded ?? false,
+        });
         if (command.discovery_kind === "missing_command") {
           if (result.kind === "completed" || result.kind === "human_review" || result.kind === "already_terminal") summary.missing_command_bootstrap_succeeded += 1;
           else summary.missing_command_bootstrap_failed += 1;

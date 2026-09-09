@@ -13,7 +13,7 @@ export type TechnicalRetryClass = typeof TECHNICAL_RETRY_CLASSES[number];
 
 export type PersistentCycleResult =
   | { success: true; kind: Exclude<typeof CONVERSATION_CYCLE_RESULT_KINDS[number], "failed">; command_id: string; runtime_revision: number; knowledge_version: number; outbound_message_id: string | null; pending_interaction_id: string | null }
-  | { success: false; kind: "failed"; code: CycleFailureCode; retry_class: TechnicalRetryClass; command_id?: string };
+  | { success: false; kind: "failed"; code: CycleFailureCode; retry_class: TechnicalRetryClass; command_id?: string; diagnostic?: { stage: "acquisition" | "context_read"; failure_category: "rpc_error" | "response_validation_error" | "authority_rejected" } };
 
 const CLASSIFICATION: Record<CycleFailureCode, TechnicalRetryClass> = {
   invalid_input:"terminal", unauthorized:"terminal", message_not_found:"requires_recheck", conversation_not_found:"requires_recheck", runtime_not_found:"requires_recheck", pending_interaction_not_found:"requires_recheck", message_conversation_mismatch:"terminal", message_not_inbound_customer_text:"terminal", interaction_not_current:"requires_recheck", stale_runtime_revision:"requires_recheck", stale_knowledge_version:"requires_recheck", message_precedes_interaction:"terminal", message_already_processed:"terminal", normalization_failed:"retryable", cycle_failed:"retryable", persistence_failed:"retryable", outbound_creation_failed:"retryable", runtime_invariant_failed:"human_review", conversation_not_processable:"terminal",
