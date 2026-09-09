@@ -3,7 +3,6 @@ import "server-only";
 import { createHash, timingSafeEqual } from "node:crypto";
 import {
   discoverRecoverableConversationCycles,
-  RecoveryDiscoveryError,
   runPersistentCustomerMessageCycle,
   type RecoverableCycleRunnerResult,
 } from "./recoverable-cycle-runner";
@@ -21,6 +20,9 @@ type Summary = Record<RecoverableCycleRunnerResult["kind"], number> & {
   attempted: number;
   unexpected_error: number;
   budget_exhausted: boolean;
+  recovery_degraded: boolean;
+  existing_command_discovery_failed: boolean;
+  missing_command_discovery_failed: boolean;
 };
 
 const digest = (value: string) => createHash("sha256").update(value, "utf8").digest();
@@ -48,20 +50,20 @@ export function createConversationCycleRecoveryHandler(dependencies: Readonly<{
 
     const startedAt = now();
     const runtime = createRuntime();
-    let commands;
-    try {
-      commands = await discoverRecoverableConversationCycles(runtime.discovery, RECOVERY_BATCH_SIZE);
-    } catch (error) {
-      const failure = error instanceof RecoveryDiscoveryError ? error : undefined;
+    const discovery = await discoverRecoverableConversationCycles(runtime.discovery, RECOVERY_BATCH_SIZE);
+    const failures = [];
+    if (discovery.existing_command.status === "failure") failures.push(discovery.existing_command.failure);
+    if (discovery.missing_command.status === "failure") failures.push(discovery.missing_command.failure);
+    for (const failure of failures) {
       logger.error({
         event: "conversation_cycle_recovery_discovery_failure",
-        discovery_source: failure?.discoverySource ?? "unknown",
-        failure_category: failure?.failureCategory ?? "unexpected_error",
-        safe_error_code: failure?.safeErrorCode,
-        safe_error_summary: failure?.safeErrorSummary,
+        discovery_source: failure.discoverySource,
+        failure_category: failure.failureCategory,
+        safe_error_code: failure.safeErrorCode,
+        safe_error_summary: failure.safeErrorSummary,
       });
-      return Response.json({ error: "conversation_cycle_recovery_discovery_failed" }, { status: 503 });
     }
+    const commands = discovery.candidates;
     const summary: Summary = {
       discovered: commands.length, attempted: 0, completed: 0, human_review: 0,
       existing_command_discovered: commands.filter((item) => item.discovery_kind === "existing_command").length,
@@ -69,7 +71,14 @@ export function createConversationCycleRecoveryHandler(dependencies: Readonly<{
       missing_command_bootstrap_succeeded: 0, missing_command_bootstrap_failed: 0,
       failed: 0, busy: 0, stale: 0, ownership_lost: 0, already_terminal: 0,
       unexpected_error: 0, budget_exhausted: false,
+      recovery_degraded: failures.length > 0,
+      existing_command_discovery_failed: discovery.existing_command.status === "failure",
+      missing_command_discovery_failed: discovery.missing_command.status === "failure",
     };
+    if (commands.length === 0 && failures.length > 0) {
+      logger.info({ event: "conversation_cycle_recovery_summary", ...summary });
+      return Response.json({ error:"conversation_cycle_recovery_discovery_failed", ...summary }, { status:503 });
+    }
     for (const command of commands) {
       if (now() - startedAt >= RECOVERY_START_BUDGET_MS) {
         summary.budget_exhausted = true;
@@ -100,6 +109,15 @@ export function createConversationCycleRecoveryHandler(dependencies: Readonly<{
         if (command.discovery_kind === "missing_command") summary.missing_command_bootstrap_failed += 1;
       }
     }
+    for (const failure of failures) logger.error({
+      event:"conversation_cycle_recovery_discovery_degraded",
+      failed_discovery_source:failure.discoverySource,
+      failure_category:failure.failureCategory,
+      safe_error_code:failure.safeErrorCode,
+      safe_error_summary:failure.safeErrorSummary,
+      healthy_source_candidate_count:commands.filter((candidate) => candidate.discovery_kind !== failure.discoverySource).length,
+      total_candidates_processed:summary.attempted,
+    });
     logger.info({ event: "conversation_cycle_recovery_summary", ...summary });
     return Response.json(summary, { status: 200 });
   };

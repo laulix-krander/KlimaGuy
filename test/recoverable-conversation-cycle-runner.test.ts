@@ -7,10 +7,11 @@ vi.mock("@/lib/server/conversation/persistent-cycle-data-source", () => ({ creat
 
 import { processPersistentCustomerMessage } from "@/lib/actions/persistent-conversation-cycle-service";
 import { createPersistentCycleDataSource } from "@/lib/server/conversation/persistent-cycle-data-source";
-import { CONVERSATION_CYCLE_LEASE_SECONDS, discoverRecoverableConversationCycles, RecoveryDiscoveryError, runPersistentCustomerMessageCycle } from "@/lib/server/conversation/recoverable-cycle-runner";
+import { CONVERSATION_CYCLE_LEASE_SECONDS, discoverRecoverableConversationCycles, extractSafeRecoveryRpcErrorCode, runPersistentCustomerMessageCycle } from "@/lib/server/conversation/recoverable-cycle-runner";
 
 const messageId="a1000000-0000-4000-8000-000000000001";
 const commandId="a1000000-0000-4000-8000-000000000002";
+const uuid=(n:number)=>`a1000000-0000-4000-8000-${String(n).padStart(12,"0")}`;
 const dependencies={claim:{rpc:vi.fn()},read:{rpc:vi.fn()},commit:{rpc:vi.fn()},createOwnerId:()=>"a1000000-0000-4000-8000-000000000003"};
 
 describe("AP-16-06-02 recoverable conversation cycle runner",()=>{
@@ -52,7 +53,7 @@ describe("AP-16-06-02 recoverable conversation cycle runner",()=>{
   it("validates bounded content-free recovery discovery",async()=>{
     const row={command_id:commandId,source_message_id:messageId,lease_expired_at:"2026-09-02T12:00:00.000Z"};
     const rpc=vi.fn().mockResolvedValueOnce({data:[row],error:null}).mockResolvedValueOnce({data:[],error:null});
-    await expect(discoverRecoverableConversationCycles({rpc},500)).resolves.toEqual([{source_message_id:messageId,discovery_kind:"existing_command"}]);
+    await expect(discoverRecoverableConversationCycles({rpc},500)).resolves.toMatchObject({candidates:[{source_message_id:messageId,discovery_kind:"existing_command"}],existing_command:{status:"success"},missing_command:{status:"success"}});
     expect(rpc).toHaveBeenCalledWith("discover_recoverable_conversation_cycles",{result_limit:100});
     expect(row).not.toHaveProperty("message_text"); expect(row).not.toHaveProperty("provider_payload");
   });
@@ -60,14 +61,14 @@ describe("AP-16-06-02 recoverable conversation cycle runner",()=>{
   it("discovers a missing command without fabricating it and de-duplicates ordinary acquisition",async()=>{
     const missing={source_message_id:messageId,discovered_at:"2026-09-09 12:00:00.123456+00"};
     const rpc=vi.fn().mockResolvedValueOnce({data:[],error:null}).mockResolvedValueOnce({data:[missing],error:null});
-    await expect(discoverRecoverableConversationCycles({rpc},10)).resolves.toEqual([{source_message_id:messageId,discovery_kind:"missing_command"}]);
+    await expect(discoverRecoverableConversationCycles({rpc},10)).resolves.toMatchObject({candidates:[{source_message_id:messageId,discovery_kind:"missing_command"}]});
     expect(rpc).toHaveBeenLastCalledWith("discover_missing_customer_answer_cycles",{result_limit:10});
     expect(rpc).not.toHaveBeenCalledWith("claim_customer_message_cycle",expect.anything());
   });
 
   it("treats a successful empty result as legitimate", async () => {
     const rpc=vi.fn().mockResolvedValue({data:[],error:null});
-    await expect(discoverRecoverableConversationCycles({rpc},10)).resolves.toEqual([]);
+    await expect(discoverRecoverableConversationCycles({rpc},10)).resolves.toMatchObject({candidates:[],existing_command:{status:"success"},missing_command:{status:"success"}});
   });
 
   it.each([
@@ -78,9 +79,8 @@ describe("AP-16-06-02 recoverable conversation cycle runner",()=>{
       ? [{data:null,error:{code:"42501",message:"permission denied",details:"safe detail"}}]
       : [{data:[],error:null},{data:null,error:{code:"PGRST202",message:"function mismatch"}}];
     const rpc=vi.fn(); responses.forEach((response) => rpc.mockResolvedValueOnce(response));
-    const error = await discoverRecoverableConversationCycles({rpc},10).catch((reason: unknown) => reason);
-    expect(error).toBeInstanceOf(RecoveryDiscoveryError);
-    expect(error).toMatchObject({discoverySource:kind,failureCategory:"rpc_error"});
+    const result = await discoverRecoverableConversationCycles({rpc},10);
+    expect(result[kind]).toMatchObject({status:"failure",failure:{discoverySource:kind,failureCategory:"rpc_error"}});
   });
 
   it.each([
@@ -89,10 +89,30 @@ describe("AP-16-06-02 recoverable conversation cycle runner",()=>{
   ] as const)("surfaces malformed %s responses without retaining payloads", async (kind, malformed) => {
     const rpc=vi.fn().mockResolvedValueOnce({data:kind === "existing_command" ? malformed : [],error:null});
     if (kind === "missing_command") rpc.mockResolvedValueOnce({data:malformed,error:null});
-    const error = await discoverRecoverableConversationCycles({rpc},10).catch((reason: unknown) => reason);
-    expect(error).toMatchObject({discoverySource:kind,failureCategory:"response_validation_error"});
-    expect((error as RecoveryDiscoveryError).safeErrorSummary).toContain("issues=");
-    expect((error as RecoveryDiscoveryError).safeErrorSummary).not.toContain(messageId);
+    const result = await discoverRecoverableConversationCycles({rpc},10);
+    expect(result[kind]).toMatchObject({status:"failure",failure:{discoverySource:kind,failureCategory:"response_validation_error"}});
+    const summary=result[kind].status === "failure" ? result[kind].failure.safeErrorSummary : undefined;
+    expect(summary).toContain("issues=");
+    expect(summary).not.toContain(messageId);
+  });
+
+  it("keeps healthy candidates when the other source fails, with priority, de-duplication and a global bound",async()=>{
+    const existing=Array.from({length:6},(_,index)=>({command_id:uuid(index+100),source_message_id:uuid(index+200),lease_expired_at:"2026-09-09T12:00:00Z"}));
+    const missing=[{source_message_id:existing[0].source_message_id,discovered_at:"2026-09-09T12:01:00Z"},...Array.from({length:6},(_,index)=>({source_message_id:uuid(index+300),discovered_at:"2026-09-09T12:01:00Z"}))];
+    const both=await discoverRecoverableConversationCycles({rpc:vi.fn().mockResolvedValueOnce({data:existing,error:null}).mockResolvedValueOnce({data:missing,error:null})},10);
+    expect(both.candidates).toHaveLength(10);
+    expect(both.candidates.slice(0,6).every((candidate)=>candidate.discovery_kind === "existing_command")).toBe(true);
+    expect(new Set(both.candidates.map((candidate)=>candidate.source_message_id)).size).toBe(10);
+    const degraded=await discoverRecoverableConversationCycles({rpc:vi.fn().mockResolvedValueOnce({data:existing.slice(0,1),error:null}).mockResolvedValueOnce({data:null,error:{error:{code:"PGRST202"}}})},10);
+    expect(degraded).toMatchObject({candidates:[{discovery_kind:"existing_command"}],missing_command:{status:"failure",failure:{safeErrorCode:"PGRST202"}}});
+  });
+
+  it("extracts only bounded codes from supported RPC error shapes",()=>{
+    expect(extractSafeRecoveryRpcErrorCode({code:"42501"})).toBe("42501");
+    expect(extractSafeRecoveryRpcErrorCode({error:{code:"PGRST202"}})).toBe("PGRST202");
+    expect(extractSafeRecoveryRpcErrorCode({cause:{code:"ECONNRESET"}})).toBe("ECONNRESET");
+    expect(extractSafeRecoveryRpcErrorCode({statusCode:503})).toBe("503");
+    expect(extractSafeRecoveryRpcErrorCode({code:"customer secret with spaces",message:"private"})).toBeUndefined();
   });
 
   it("defines atomic reclaim, fencing, legacy recovery and service-only security",async()=>{

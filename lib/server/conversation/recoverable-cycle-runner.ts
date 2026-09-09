@@ -72,34 +72,71 @@ export class RecoveryDiscoveryError extends Error {
     readonly safeErrorSummary?: string,
   ) { super("conversation_cycle_recovery_discovery_failed"); }
 }
+export type RecoveryDiscoverySourceResult =
+  | Readonly<{ status:"success"; candidates:readonly RecoverableCycleCandidate[] }>
+  | Readonly<{ status:"failure"; failure:RecoveryDiscoveryError }>;
+export type RecoveryDiscoveryResult = Readonly<{
+  candidates:readonly RecoverableCycleCandidate[];
+  existing_command:RecoveryDiscoverySourceResult;
+  missing_command:RecoveryDiscoverySourceResult;
+}>;
 export type RecoveryDiscoverySource = {
   rpc(name:"discover_recoverable_conversation_cycles" | "discover_missing_customer_answer_cycles", args:{ result_limit:number }):Promise<{data:unknown;error:unknown}>;
 };
 
-const safeText = (value: unknown) => typeof value === "string" ? value.slice(0, 300) : undefined;
+const safeCode = (value: unknown) => {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value).slice(0, 32);
+  return typeof value === "string" && /^[A-Za-z0-9_-]{1,32}$/.test(value) ? value : undefined;
+};
+export const extractSafeRecoveryRpcErrorCode = (error: unknown): string | undefined => {
+  if (!error || typeof error !== "object") return undefined;
+  const record = error as Record<string, unknown>;
+  const nested = record.error && typeof record.error === "object" ? record.error as Record<string, unknown> : undefined;
+  const cause = record.cause && typeof record.cause === "object" ? record.cause as Record<string, unknown> : undefined;
+  return safeCode(record.code) ?? safeCode(nested?.code) ?? safeCode(cause?.code)
+    ?? safeCode(record.status) ?? safeCode(record.statusCode);
+};
 const rpcFailure = (kind: RecoveryDiscoveryKind, error: unknown) => {
-  const record = error && typeof error === "object" ? error as Record<string, unknown> : {};
-  return new RecoveryDiscoveryError(kind, "rpc_error", safeText(record.code), "PostgREST RPC returned an error");
+  return new RecoveryDiscoveryError(kind, "rpc_error", extractSafeRecoveryRpcErrorCode(error), "PostgREST RPC returned an error");
 };
 const shape = (value: unknown) => value === null ? "null" : Array.isArray(value) ? `array(rows=${value.length})` : typeof value;
-const parseRows = <T>(kind: RecoveryDiscoveryKind, schema: z.ZodType<T>, data: unknown): T => {
+const parseRows = <T>(kind: RecoveryDiscoveryKind, schema: z.ZodType<T,z.ZodTypeDef,unknown>, data: unknown): T => {
   const parsed = schema.safeParse(data);
   if (parsed.success) return parsed.data;
   const issues = parsed.error.issues.slice(0, 5).map((issue) => `${issue.path.join(".") || "root"}:${issue.code}`).join(",");
   throw new RecoveryDiscoveryError(kind, "response_validation_error", undefined, `${shape(data)};issues=${issues}`);
 };
 
-export async function discoverRecoverableConversationCycles(source:RecoveryDiscoverySource, limit=RECOVERABLE_CYCLE_DISCOVERY_LIMIT) {
+async function discoverSource(
+  source:RecoveryDiscoverySource,
+  kind:RecoveryDiscoveryKind,
+  rpcName:"discover_recoverable_conversation_cycles" | "discover_missing_customer_answer_cycles",
+  schema:z.ZodType<readonly RecoverableCycleCandidate[],z.ZodTypeDef,unknown>,
+  bounded:number,
+):Promise<RecoveryDiscoverySourceResult> {
+  try {
+    const response = await source.rpc(rpcName, {result_limit:bounded});
+    if (response.error) return {status:"failure",failure:rpcFailure(kind,response.error)};
+    return {status:"success",candidates:parseRows<readonly RecoverableCycleCandidate[]>(kind,schema,response.data)};
+  } catch (error) {
+    return {status:"failure",failure:error instanceof RecoveryDiscoveryError ? error : rpcFailure(kind,error)};
+  }
+}
+
+export async function discoverRecoverableConversationCycles(source:RecoveryDiscoverySource, limit=RECOVERABLE_CYCLE_DISCOVERY_LIMIT):Promise<RecoveryDiscoveryResult> {
   const bounded = z.number().int().min(1).max(RECOVERABLE_CYCLE_DISCOVERY_LIMIT).catch(RECOVERABLE_CYCLE_DISCOVERY_LIMIT).parse(limit);
-  const existingResponse = await source.rpc("discover_recoverable_conversation_cycles", {result_limit:bounded});
-  if (existingResponse.error) throw rpcFailure("existing_command", existingResponse.error);
-  const existing = parseRows("existing_command", z.array(recoverableRow).max(bounded), existingResponse.data);
-  const missingResponse = await source.rpc("discover_missing_customer_answer_cycles", {result_limit:bounded});
-  if (missingResponse.error) throw rpcFailure("missing_command", missingResponse.error);
-  const missing = parseRows("missing_command", z.array(missingCommandRow).max(bounded), missingResponse.data);
+  const existing = await discoverSource(source,"existing_command","discover_recoverable_conversation_cycles",
+    z.array(recoverableRow).max(bounded).transform((rows) => rows.map((row) => ({source_message_id:row.source_message_id,discovery_kind:"existing_command" as const}))),bounded);
+  const missing = await discoverSource(source,"missing_command","discover_missing_customer_answer_cycles",
+    z.array(missingCommandRow).max(bounded).transform((rows) => rows.map((row) => ({source_message_id:row.source_message_id,discovery_kind:"missing_command" as const}))),bounded);
   const candidates: RecoverableCycleCandidate[] = [];
-  candidates.push(...existing.map((row) => ({source_message_id:row.source_message_id, discovery_kind:"existing_command" as const})));
+  if (existing.status === "success") candidates.push(...existing.candidates);
   const seen = new Set(candidates.map((candidate) => candidate.source_message_id));
-  for (const row of missing) if (!seen.has(row.source_message_id) && candidates.length < bounded) candidates.push({source_message_id:row.source_message_id, discovery_kind:"missing_command"});
-  return candidates.slice(0, bounded);
+  if (missing.status === "success") for (const candidate of missing.candidates) {
+    if (!seen.has(candidate.source_message_id) && candidates.length < bounded) {
+      candidates.push(candidate);
+      seen.add(candidate.source_message_id);
+    }
+  }
+  return {candidates:candidates.slice(0,bounded),existing_command:existing,missing_command:missing};
 }
