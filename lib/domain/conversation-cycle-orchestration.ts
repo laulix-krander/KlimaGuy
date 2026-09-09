@@ -11,9 +11,32 @@ export const continueConversationCommandSchema = z.object({ conversation_id: uui
 export type CycleFailureCode = typeof CONVERSATION_CYCLE_FAILURE_CODES[number];
 export type TechnicalRetryClass = typeof TECHNICAL_RETRY_CLASSES[number];
 
+/** Request-local, privacy-safe execution progress. It is never domain persistence payload. */
+export type CustomerAnswerCycleExecutionTrace = Readonly<{
+  interpreter_present: boolean;
+  normalization_reached: boolean;
+  normalization_succeeded: boolean;
+  ai_eligibility_evaluated: boolean;
+  ai_eligible: boolean | null;
+  ai_reservation_attempted: boolean;
+  ai_reservation_succeeded: boolean | null;
+  ai_reservation_result_code: string | null;
+  ai_reservation_attempt_number: 1 | 2 | 3 | null;
+  ai_interpreter_invoked: boolean;
+  ai_interpreter_succeeded: boolean | null;
+  ai_interpreter_outcome: "matched" | "no_match" | "ambiguous" | null;
+  ai_interpreter_failure_class: "transient_provider_failure" | "timeout" | "invalid_structured_output" | "refused" | "unsupported" | "configuration_failure" | "permanent_provider_failure" | null;
+  deterministic_cycle_branch: "with_claim" | "without_claim" | null;
+  deterministic_cycle_invoked: boolean;
+  deterministic_cycle_succeeded: boolean | null;
+  deterministic_cycle_failure_code: import("./conversation-intelligence/conversation-cycle-types").CycleErrorCode | null;
+  failure_persistence_attempted: boolean;
+  failure_persistence_succeeded: boolean | null;
+}>;
+
 export type PersistentCycleResult =
-  | { success: true; kind: Exclude<typeof CONVERSATION_CYCLE_RESULT_KINDS[number], "failed">; command_id: string; runtime_revision: number; knowledge_version: number; outbound_message_id: string | null; pending_interaction_id: string | null }
-  | { success: false; kind: "failed"; code: CycleFailureCode; retry_class: TechnicalRetryClass; command_id?: string; diagnostic?: { stage: "acquisition" | "context_read"; failure_category: "rpc_error" | "response_validation_error" | "authority_rejected"; safe_rpc_code?: string; safe_rpc_summary?: string } };
+  | { success: true; kind: Exclude<typeof CONVERSATION_CYCLE_RESULT_KINDS[number], "failed">; command_id: string; runtime_revision: number; knowledge_version: number; outbound_message_id: string | null; pending_interaction_id: string | null; execution_trace?: CustomerAnswerCycleExecutionTrace }
+  | { success: false; kind: "failed"; code: CycleFailureCode; retry_class: TechnicalRetryClass; command_id?: string; execution_trace?: CustomerAnswerCycleExecutionTrace; diagnostic?: { stage: "acquisition" | "context_read"; failure_category: "rpc_error" | "response_validation_error" | "authority_rejected"; safe_rpc_code?: string; safe_rpc_summary?: string } };
 
 const CLASSIFICATION: Record<CycleFailureCode, TechnicalRetryClass> = {
   invalid_input:"terminal", unauthorized:"terminal", message_not_found:"requires_recheck", conversation_not_found:"requires_recheck", runtime_not_found:"requires_recheck", pending_interaction_not_found:"requires_recheck", message_conversation_mismatch:"terminal", message_not_inbound_customer_text:"terminal", interaction_not_current:"requires_recheck", stale_runtime_revision:"requires_recheck", stale_knowledge_version:"requires_recheck", message_precedes_interaction:"terminal", message_already_processed:"terminal", normalization_failed:"retryable", cycle_failed:"retryable", persistence_failed:"retryable", outbound_creation_failed:"retryable", runtime_invariant_failed:"human_review", conversation_not_processable:"terminal",

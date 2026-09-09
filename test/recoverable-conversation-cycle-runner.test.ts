@@ -32,14 +32,14 @@ describe("AP-16-06-02 recoverable conversation cycle runner",()=>{
 
   it("persists and identifies a post-acquisition context-read failure",async()=>{
     vi.mocked(processPersistentCustomerMessage).mockResolvedValueOnce({success:false,kind:"failed",code:"persistence_failed",retry_class:"retryable",command_id:commandId,diagnostic:{stage:"context_read",failure_category:"response_validation_error"}});
-    await expect(runPersistentCustomerMessageCycle(dependencies,{message_id:messageId})).resolves.toMatchObject({kind:"failed",command_id:commandId,diagnostic:{stage:"context_read",acquisition_succeeded:true,authority_context_loaded:false,failure_persistence_succeeded:true}});
+    await expect(runPersistentCustomerMessageCycle(dependencies,{message_id:messageId})).resolves.toMatchObject({kind:"failed",command_id:commandId,diagnostic:{stage:"context_read",acquisition_succeeded:true,authority_context_loaded:false,execution_trace:{failure_persistence_attempted:true,failure_persistence_succeeded:true}}});
     expect(failCustomerMessage).toHaveBeenCalledWith(commandId,"persistence_failed");
   });
 
   it("makes a failed terminalization visible instead of claiming persistence",async()=>{
     failCustomerMessage.mockResolvedValueOnce(false);
     vi.mocked(processPersistentCustomerMessage).mockResolvedValueOnce({success:false,kind:"failed",code:"persistence_failed",retry_class:"retryable",command_id:commandId,diagnostic:{stage:"context_read",failure_category:"rpc_error"}});
-    await expect(runPersistentCustomerMessageCycle(dependencies,{message_id:messageId})).resolves.toMatchObject({kind:"failed",diagnostic:{stage:"failure_persistence",failure_persistence_succeeded:false}});
+    await expect(runPersistentCustomerMessageCycle(dependencies,{message_id:messageId})).resolves.toMatchObject({kind:"failed",diagnostic:{stage:"failure_persistence",execution_trace:{failure_persistence_attempted:true,failure_persistence_succeeded:false}}});
   });
 
   it("hands off exactly the persisted outbound identity and never invents one",async()=>{

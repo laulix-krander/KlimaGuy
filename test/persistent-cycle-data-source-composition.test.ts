@@ -95,7 +95,7 @@ describe("AP-16-06-01F PersistentCycleDataSource composition", () => {
 
   it("runs a deterministic service cycle through the composed success boundary", async () => {
     const value = authority(); const { source } = setup(value);
-    await expect(processPersistentCustomerMessage(source,{ message_id:value.message_id })).resolves.toEqual(success);
+    await expect(processPersistentCustomerMessage(source,{ message_id:value.message_id })).resolves.toMatchObject(success);
     expect(adapters.commit).toHaveBeenCalledOnce(); expect(adapters.fail).not.toHaveBeenCalled(); expect(adapters.review).not.toHaveBeenCalled();
   });
 

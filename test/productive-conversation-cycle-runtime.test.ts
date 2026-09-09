@@ -22,6 +22,9 @@ import {
   RECOVERY_START_BUDGET_MS,
   recoveryTokenMatches,
 } from "@/lib/server/conversation/recovery-handler";
+import type { CustomerAnswerCycleExecutionTrace } from "@/lib/domain/conversation-cycle-orchestration";
+
+const executionTrace:CustomerAnswerCycleExecutionTrace={interpreter_present:true,normalization_reached:true,normalization_succeeded:true,ai_eligibility_evaluated:true,ai_eligible:true,ai_reservation_attempted:true,ai_reservation_succeeded:true,ai_reservation_result_code:"reserved",ai_reservation_attempt_number:2,ai_interpreter_invoked:true,ai_interpreter_succeeded:true,ai_interpreter_outcome:"matched",ai_interpreter_failure_class:null,deterministic_cycle_branch:"with_claim",deterministic_cycle_invoked:true,deterministic_cycle_succeeded:false,deterministic_cycle_failure_code:"planner_failed",failure_persistence_attempted:true,failure_persistence_succeeded:true};
 
 const uuid = (n: number) => `a2000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const command = (n: number) => ({ source_message_id: uuid(n + 20), discovery_kind: "existing_command" as const });
@@ -148,16 +151,16 @@ describe("AP-16-06-03 productive recovery", () => {
 
   it("logs a content-free classified post-discovery item failure", async () => {
     vi.mocked(discoverRecoverableConversationCycles).mockResolvedValueOnce(successfulDiscovery([command(1)]));
-    vi.mocked(runPersistentCustomerMessageCycle).mockResolvedValueOnce({kind:"failed",diagnostic:{stage:"context_read",failure_category:"response_validation_error",result_code:"persistence_failed",acquisition_succeeded:true,authority_context_loaded:false,ai_attempt_reservation_reached:false,failure_persistence_succeeded:true}});
+    vi.mocked(runPersistentCustomerMessageCycle).mockResolvedValueOnce({kind:"failed",diagnostic:{stage:"context_read",failure_category:"response_validation_error",result_code:"persistence_failed",acquisition_succeeded:true,authority_context_loaded:false,execution_trace:executionTrace}});
     const logger={info:vi.fn(),error:vi.fn()};
     await createConversationCycleRecoveryHandler({getSecret:()=>"credential-value",createRuntime:()=>runtime,logger,now:()=>0})(request("Bearer credential-value"));
-    expect(logger.error).toHaveBeenCalledWith({event:"conversation_cycle_recovery_item_failure",stage:"context_read",failure_category:"response_validation_error",result_code:"persistence_failed",acquisition_succeeded:true,authority_context_loaded:false,ai_attempt_reservation_reached:false,failure_persistence_succeeded:true});
+    expect(logger.error).toHaveBeenCalledWith({event:"conversation_cycle_recovery_item_failure",stage:"context_read",failure_category:"response_validation_error",result_code:"persistence_failed",acquisition_succeeded:true,authority_context_loaded:false,...executionTrace});
     expect(JSON.stringify(logger.error.mock.calls)).not.toMatch(/credential-value|customer answer|authorization|openai api key|whatsapp/i);
   });
 
   it("logs safe context RPC diagnostics without raw content", async () => {
     vi.mocked(discoverRecoverableConversationCycles).mockResolvedValueOnce(successfulDiscovery([command(1)]));
-    vi.mocked(runPersistentCustomerMessageCycle).mockResolvedValueOnce({kind:"failed",diagnostic:{stage:"context_read",failure_category:"rpc_error",result_code:"persistence_failed",safe_rpc_code:"42702",safe_rpc_summary:"database_contract_error",acquisition_succeeded:true,authority_context_loaded:false,ai_attempt_reservation_reached:false,failure_persistence_succeeded:true}});
+    vi.mocked(runPersistentCustomerMessageCycle).mockResolvedValueOnce({kind:"failed",diagnostic:{stage:"context_read",failure_category:"rpc_error",result_code:"persistence_failed",safe_rpc_code:"42702",safe_rpc_summary:"database_contract_error",acquisition_succeeded:true,authority_context_loaded:false,execution_trace:executionTrace}});
     const logger={info:vi.fn(),error:vi.fn()};
     await createConversationCycleRecoveryHandler({getSecret:()=>"secret",createRuntime:()=>runtime,logger,now:()=>0})(request("Bearer secret"));
     expect(logger.error).toHaveBeenCalledWith(expect.objectContaining({event:"conversation_cycle_recovery_item_failure",safe_rpc_code:"42702",safe_rpc_summary:"database_contract_error"}));

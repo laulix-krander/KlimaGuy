@@ -103,8 +103,7 @@ export function createConversationCycleRecoveryHandler(dependencies: Readonly<{
           ...(result.diagnostic?.safe_rpc_summary ? { safe_rpc_summary: result.diagnostic.safe_rpc_summary } : {}),
           acquisition_succeeded: result.diagnostic?.acquisition_succeeded ?? false,
           authority_context_loaded: result.diagnostic?.authority_context_loaded ?? false,
-          ai_attempt_reservation_reached: result.diagnostic?.ai_attempt_reservation_reached ?? false,
-          failure_persistence_succeeded: result.diagnostic?.failure_persistence_succeeded ?? false,
+          ...(result.diagnostic?.execution_trace ?? {}),
         });
         if (command.discovery_kind === "missing_command") {
           if (result.kind === "completed" || result.kind === "human_review" || result.kind === "already_terminal") summary.missing_command_bootstrap_succeeded += 1;
