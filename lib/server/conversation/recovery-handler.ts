@@ -23,6 +23,7 @@ type Summary = Record<RecoverableCycleRunnerResult["kind"], number> & {
   recovery_degraded: boolean;
   existing_command_discovery_failed: boolean;
   missing_command_discovery_failed: boolean;
+  technical_rehabilitated: number;
 };
 
 const digest = (value: string) => createHash("sha256").update(value, "utf8").digest();
@@ -69,6 +70,7 @@ export function createConversationCycleRecoveryHandler(dependencies: Readonly<{
       existing_command_discovered: commands.filter((item) => item.discovery_kind === "existing_command").length,
       missing_command_discovered: commands.filter((item) => item.discovery_kind === "missing_command").length,
       missing_command_bootstrap_succeeded: 0, missing_command_bootstrap_failed: 0,
+      technical_rehabilitated: 0,
       failed: 0, busy: 0, stale: 0, ownership_lost: 0, already_terminal: 0,
       unexpected_error: 0, budget_exhausted: false,
       recovery_degraded: failures.length > 0,
@@ -88,6 +90,10 @@ export function createConversationCycleRecoveryHandler(dependencies: Readonly<{
       try {
         const result = await runPersistentCustomerMessageCycle(runtime.runner, { message_id: command.source_message_id });
         summary[result.kind] += 1;
+        if (result.technical_rehabilitation) {
+          summary.technical_rehabilitated += 1;
+          logger.info({event:"conversation_cycle_technical_failure_rehabilitated",rehabilitation_count:result.technical_rehabilitation.rehabilitation_count,previous_total_execution_attempt_count:result.technical_rehabilitation.previous_execution_attempt_count,fresh_epoch_budget:result.technical_rehabilitation.fresh_epoch_budget,reason_code:"exhausted_persistence_failure_rehabilitated"});
+        }
         if (result.kind === "failed") logger.error({
           event: "conversation_cycle_recovery_item_failure",
           stage: result.diagnostic?.stage ?? "unknown",

@@ -51,9 +51,9 @@ describe("AP-16-06-02 recoverable conversation cycle runner",()=>{
   });
 
   it("validates bounded content-free recovery discovery",async()=>{
-    const row={command_id:commandId,source_message_id:messageId,lease_expired_at:"2026-09-02T12:00:00.000Z"};
+    const row={command_id:commandId,source_message_id:messageId,lease_expired_at:"2026-09-02T12:00:00.000Z",requires_technical_rehabilitation:true};
     const rpc=vi.fn().mockResolvedValueOnce({data:[row],error:null}).mockResolvedValueOnce({data:[],error:null});
-    await expect(discoverRecoverableConversationCycles({rpc},500)).resolves.toMatchObject({candidates:[{source_message_id:messageId,discovery_kind:"existing_command"}],existing_command:{status:"success"},missing_command:{status:"success"}});
+    await expect(discoverRecoverableConversationCycles({rpc},500)).resolves.toMatchObject({candidates:[{source_message_id:messageId,discovery_kind:"existing_command",requires_technical_rehabilitation:true}],existing_command:{status:"success"},missing_command:{status:"success"}});
     expect(rpc).toHaveBeenCalledWith("discover_recoverable_conversation_cycles",{result_limit:100});
     expect(row).not.toHaveProperty("message_text"); expect(row).not.toHaveProperty("provider_payload");
   });

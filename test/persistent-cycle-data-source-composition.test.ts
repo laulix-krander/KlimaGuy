@@ -67,6 +67,15 @@ describe("AP-16-06-01F PersistentCycleDataSource composition", () => {
     expect(adapters.load).toHaveBeenCalledWith(expect.anything(), commandId);
   });
 
+  it("reports an authority-approved rehabilitation without changing AI or business processing", async () => {
+    const value=authority(); const raw=setup(value); const onTechnicalRehabilitated=vi.fn();
+    raw.claim.rpc.mockResolvedValueOnce({data:{success:true,replay:false,command_id:commandId,technical_rehabilitated:true,technical_rehabilitation_count:1,previous_execution_attempt_count:10,technical_epoch_attempt_limit:10,ai_inference_attempt_count:0},error:null});
+    const source=createPersistentCycleDataSource({claim:raw.claim,read:raw.read,commit:raw.commit},{ownerId:"92000000-0000-4000-8000-000000000001",leaseSeconds:300,onTechnicalRehabilitated});
+    await expect(source.claimCustomerMessage(value.message_id)).resolves.toEqual({authority:value});
+    expect(onTechnicalRehabilitated).toHaveBeenCalledOnce();
+    expect(onTechnicalRehabilitated).toHaveBeenCalledWith({rehabilitationCount:1,previousExecutionAttemptCount:10,freshEpochBudget:10});
+  });
+
   it("fails closed and sanitizes claim and read errors", async () => {
     const raw = setup();
     raw.claim.rpc.mockResolvedValueOnce({ data:null, error:new Error("secret SQL detail") });
