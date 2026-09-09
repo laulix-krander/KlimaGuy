@@ -24,10 +24,14 @@ const version = z.number().int().positive();
 const claimErrorCode = z.enum([
   "message_not_found", "conversation_not_processable", "message_not_inbound_customer_text",
   "pending_interaction_not_found", "stale_runtime_revision", "stale_knowledge_version",
-  "message_precedes_interaction",
+  "message_precedes_interaction", "interaction_not_current",
 ]);
 const claimResult = z.object({
   success: z.literal(true), replay: z.literal(false), command_id: uuid,
+  technical_rehabilitated: z.boolean().optional(),
+  technical_rehabilitation_count: z.number().int().min(0).max(1).optional(),
+  previous_execution_attempt_count: z.number().int().nonnegative().nullable().optional(),
+  technical_epoch_attempt_limit: z.number().int().positive().optional(),
 }).passthrough();
 const replayResult = z.object({
   success: z.literal(true), replay: z.literal(true), command_id: uuid,
@@ -46,6 +50,7 @@ export type CycleExecutionContext = Readonly<{
   ownerId: string;
   leaseSeconds: number;
   onOwnershipLost?: () => void;
+  onTechnicalRehabilitated?: (details: Readonly<{ rehabilitationCount:number; previousExecutionAttemptCount:number; freshEpochBudget:number }>) => void;
 }>;
 
 export type PersistentCycleDataSourceDependencies = {
@@ -110,6 +115,9 @@ export function createPersistentCycleDataSource(
       }
       const command = claimResult.safeParse(claimed.data);
       if (!command.success) return { error: "persistence_failed", failure_stage: "acquisition" as const, failure_category: "response_validation_error" as const };
+      if (command.data.technical_rehabilitated === true && command.data.technical_rehabilitation_count !== undefined && command.data.previous_execution_attempt_count != null && command.data.technical_epoch_attempt_limit !== undefined) {
+        execution?.onTechnicalRehabilitated?.({ rehabilitationCount:command.data.technical_rehabilitation_count, previousExecutionAttemptCount:command.data.previous_execution_attempt_count, freshEpochBudget:command.data.technical_epoch_attempt_limit });
+      }
       const loaded = await loadCustomerMessageCycleAuthority(dependencies.read, command.data.command_id);
       return loaded.success ? { authority: loaded.authority } : {
         error: READ_ERROR_MAP[loaded.error], command_id: command.data.command_id,

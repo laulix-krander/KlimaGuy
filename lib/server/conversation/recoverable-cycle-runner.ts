@@ -11,9 +11,11 @@ export const CONVERSATION_CYCLE_LEASE_SECONDS = 5 * 60;
 export const RECOVERABLE_CYCLE_DISCOVERY_LIMIT = 100;
 
 export type RecoverableCycleRunnerResult =
-  | Readonly<{ kind:"completed"; command_id?:string; outbound_message_id?:string }>
-  | Readonly<{ kind:"human_review" | "already_terminal" | "stale" | "busy" | "ownership_lost"; command_id?:string }>
-  | Readonly<{ kind:"failed"; command_id?:string; diagnostic?: { stage:"input" | "acquisition" | "context_read" | "execution" | "failure_persistence"; failure_category:string; result_code?:string; safe_rpc_code?:string; safe_rpc_summary?:string; acquisition_succeeded:boolean; authority_context_loaded:boolean; ai_attempt_reservation_reached:boolean; failure_persistence_succeeded:boolean } }>;
+  | Readonly<{ kind:"completed"; command_id?:string; outbound_message_id?:string; technical_rehabilitation?:TechnicalRehabilitation }>
+  | Readonly<{ kind:"human_review" | "already_terminal" | "stale" | "busy" | "ownership_lost"; command_id?:string; technical_rehabilitation?:TechnicalRehabilitation }>
+  | Readonly<{ kind:"failed"; command_id?:string; technical_rehabilitation?:TechnicalRehabilitation; diagnostic?: { stage:"input" | "acquisition" | "context_read" | "execution" | "failure_persistence"; failure_category:string; result_code?:string; safe_rpc_code?:string; safe_rpc_summary?:string; acquisition_succeeded:boolean; authority_context_loaded:boolean; ai_attempt_reservation_reached:boolean; failure_persistence_succeeded:boolean } }>;
+
+export type TechnicalRehabilitation = Readonly<{ rehabilitation_count:number; previous_execution_attempt_count:number; fresh_epoch_budget:number }>;
 
 export type RecoverableCycleDependencies = PersistentCycleDataSourceDependencies & Readonly<{
   createOwnerId?: () => string;
@@ -27,27 +29,30 @@ export async function runPersistentCustomerMessageCycle(
 ): Promise<RecoverableCycleRunnerResult> {
   if (!z.string().uuid().safeParse(input.message_id).success) return { kind:"failed", diagnostic:{stage:"input",failure_category:"invalid_input",result_code:"invalid_input",acquisition_succeeded:false,authority_context_loaded:false,ai_attempt_reservation_reached:false,failure_persistence_succeeded:false} };
   let ownershipLost = false;
+  let technicalRehabilitation: TechnicalRehabilitation | undefined;
   const source = createPersistentCycleDataSource(dependencies, {
     ownerId:(dependencies.createOwnerId ?? randomUUID)(),
     leaseSeconds:CONVERSATION_CYCLE_LEASE_SECONDS,
     onOwnershipLost:() => { ownershipLost = true; },
+    onTechnicalRehabilitated:(details) => { technicalRehabilitation = {rehabilitation_count:details.rehabilitationCount,previous_execution_attempt_count:details.previousExecutionAttemptCount,fresh_epoch_budget:details.freshEpochBudget}; },
   });
   try {
     const result = await processPersistentCustomerMessage(source, input, dependencies.customerAnswerInterpreter);
-    if (ownershipLost) return { kind:"ownership_lost", ...(result.command_id ? {command_id:result.command_id} : {}) };
+    const rehabilitation = technicalRehabilitation ? {technical_rehabilitation:technicalRehabilitation} : {};
+    if (ownershipLost) return { kind:"ownership_lost", ...(result.command_id ? {command_id:result.command_id} : {}), ...rehabilitation };
     if (result.success) {
-      if (result.kind === "already_processed") return { kind:"already_terminal", command_id:result.command_id };
-      if (result.kind === "human_review") return { kind:"human_review", command_id:result.command_id };
-      return { kind:"completed", command_id:result.command_id, ...(result.outbound_message_id ? {outbound_message_id:result.outbound_message_id} : {}) };
+      if (result.kind === "already_processed") return { kind:"already_terminal", command_id:result.command_id, ...rehabilitation };
+      if (result.kind === "human_review") return { kind:"human_review", command_id:result.command_id, ...rehabilitation };
+      return { kind:"completed", command_id:result.command_id, ...(result.outbound_message_id ? {outbound_message_id:result.outbound_message_id} : {}), ...(technicalRehabilitation ? {technical_rehabilitation:technicalRehabilitation}:{}) };
     }
-    if (result.code === "interaction_not_current") return { kind:"busy", ...(result.command_id ? {command_id:result.command_id} : {}) };
-    if (result.code === "stale_runtime_revision" || result.code === "stale_knowledge_version") return { kind:"stale", ...(result.command_id ? {command_id:result.command_id} : {}) };
+    if (result.code === "interaction_not_current") return { kind:"busy", ...(result.command_id ? {command_id:result.command_id} : {}), ...rehabilitation };
+    if (result.code === "stale_runtime_revision" || result.code === "stale_knowledge_version") return { kind:"stale", ...(result.command_id ? {command_id:result.command_id} : {}), ...rehabilitation };
     if (result.code === "persistence_failed" && result.command_id && !ownershipLost) {
       const failurePersisted = await source.failCustomerMessage(result.command_id, "persistence_failed");
-      if (ownershipLost) return { kind:"ownership_lost", command_id:result.command_id };
-      return { kind:"failed", command_id:result.command_id, diagnostic:{stage:failurePersisted ? result.diagnostic?.stage ?? "execution" : "failure_persistence",failure_category:failurePersisted ? result.diagnostic?.failure_category ?? "controlled_failure" : "persistence_failed",result_code:result.code,...(result.diagnostic?.safe_rpc_code ? {safe_rpc_code:result.diagnostic.safe_rpc_code}:{}),...(result.diagnostic?.safe_rpc_summary ? {safe_rpc_summary:result.diagnostic.safe_rpc_summary}:{}),acquisition_succeeded:true,authority_context_loaded:result.diagnostic?.stage !== "context_read",ai_attempt_reservation_reached:false,failure_persistence_succeeded:failurePersisted} };
+      if (ownershipLost) return { kind:"ownership_lost", command_id:result.command_id, ...rehabilitation };
+      return { kind:"failed", command_id:result.command_id, ...rehabilitation, diagnostic:{stage:failurePersisted ? result.diagnostic?.stage ?? "execution" : "failure_persistence",failure_category:failurePersisted ? result.diagnostic?.failure_category ?? "controlled_failure" : "persistence_failed",result_code:result.code,...(result.diagnostic?.safe_rpc_code ? {safe_rpc_code:result.diagnostic.safe_rpc_code}:{}),...(result.diagnostic?.safe_rpc_summary ? {safe_rpc_summary:result.diagnostic.safe_rpc_summary}:{}),acquisition_succeeded:true,authority_context_loaded:result.diagnostic?.stage !== "context_read",ai_attempt_reservation_reached:false,failure_persistence_succeeded:failurePersisted} };
     }
-    return { kind:"failed", ...(result.command_id ? {command_id:result.command_id} : {}), diagnostic:{stage:result.diagnostic?.stage ?? "execution",failure_category:result.diagnostic?.failure_category ?? "controlled_failure",result_code:result.code,...(result.diagnostic?.safe_rpc_code ? {safe_rpc_code:result.diagnostic.safe_rpc_code}:{}),...(result.diagnostic?.safe_rpc_summary ? {safe_rpc_summary:result.diagnostic.safe_rpc_summary}:{}),acquisition_succeeded:Boolean(result.command_id),authority_context_loaded:Boolean(result.command_id) && result.diagnostic?.stage !== "context_read",ai_attempt_reservation_reached:false,failure_persistence_succeeded:false} };
+    return { kind:"failed", ...(result.command_id ? {command_id:result.command_id} : {}), ...rehabilitation, diagnostic:{stage:result.diagnostic?.stage ?? "execution",failure_category:result.diagnostic?.failure_category ?? "controlled_failure",result_code:result.code,...(result.diagnostic?.safe_rpc_code ? {safe_rpc_code:result.diagnostic.safe_rpc_code}:{}),...(result.diagnostic?.safe_rpc_summary ? {safe_rpc_summary:result.diagnostic.safe_rpc_summary}:{}),acquisition_succeeded:Boolean(result.command_id),authority_context_loaded:Boolean(result.command_id) && result.diagnostic?.stage !== "context_read",ai_attempt_reservation_reached:false,failure_persistence_succeeded:false} };
   } catch {
     return ownershipLost ? { kind:"ownership_lost" } : { kind:"failed" };
   }
@@ -57,9 +62,9 @@ const postgresTimestamp = z.string().refine(
   (value) => /(?:Z|[+-]\d{2}(?::?\d{2})?)$/.test(value) && !Number.isNaN(Date.parse(value)),
   "expected a PostgreSQL timestamptz string",
 );
-const recoverableRow = z.object({ command_id:z.string().uuid(), source_message_id:z.string().uuid(), lease_expired_at:postgresTimestamp }).strict();
+const recoverableRow = z.object({ command_id:z.string().uuid(), source_message_id:z.string().uuid(), lease_expired_at:postgresTimestamp, requires_technical_rehabilitation:z.boolean().optional().default(false) }).strict();
 const missingCommandRow = z.object({ source_message_id:z.string().uuid(), discovered_at:postgresTimestamp }).strict();
-export type RecoverableCycleCandidate = Readonly<{ source_message_id:string; discovery_kind:"existing_command" | "missing_command" }>;
+export type RecoverableCycleCandidate = Readonly<{ source_message_id:string; discovery_kind:"existing_command" | "missing_command"; requires_technical_rehabilitation?:boolean }>;
 export type RecoveryDiscoveryKind = RecoverableCycleCandidate["discovery_kind"];
 export type RecoveryDiscoveryFailureCategory = "rpc_error" | "response_validation_error";
 
@@ -126,7 +131,7 @@ async function discoverSource(
 export async function discoverRecoverableConversationCycles(source:RecoveryDiscoverySource, limit=RECOVERABLE_CYCLE_DISCOVERY_LIMIT):Promise<RecoveryDiscoveryResult> {
   const bounded = z.number().int().min(1).max(RECOVERABLE_CYCLE_DISCOVERY_LIMIT).catch(RECOVERABLE_CYCLE_DISCOVERY_LIMIT).parse(limit);
   const existing = await discoverSource(source,"existing_command","discover_recoverable_conversation_cycles",
-    z.array(recoverableRow).max(bounded).transform((rows) => rows.map((row) => ({source_message_id:row.source_message_id,discovery_kind:"existing_command" as const}))),bounded);
+    z.array(recoverableRow).max(bounded).transform((rows) => rows.map((row) => ({source_message_id:row.source_message_id,discovery_kind:"existing_command" as const,requires_technical_rehabilitation:row.requires_technical_rehabilitation}))),bounded);
   const missing = await discoverSource(source,"missing_command","discover_missing_customer_answer_cycles",
     z.array(missingCommandRow).max(bounded).transform((rows) => rows.map((row) => ({source_message_id:row.source_message_id,discovery_kind:"missing_command" as const}))),bounded);
   const candidates: RecoverableCycleCandidate[] = [];
