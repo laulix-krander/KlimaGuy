@@ -14,6 +14,7 @@ import {
   discoverRecoverableConversationCycles,
   runPersistentCustomerMessageCycle,
   type RecoverableCycleRunnerResult,
+  RecoveryDiscoveryError,
 } from "@/lib/server/conversation/recoverable-cycle-runner";
 import {
   createConversationCycleRecoveryHandler,
@@ -63,6 +64,25 @@ describe("AP-16-06-03 productive recovery", () => {
     expect(vi.mocked(runPersistentCustomerMessageCycle).mock.calls.map((call) => call[1].message_id)).toEqual(rows.map(row => row.source_message_id));
     expect(maximum).toBe(1);
     expect(await response.json()).toMatchObject({ discovered: 3, attempted: 3, completed: 3, budget_exhausted: false });
+  });
+
+  it("logs aggregate summaries without message content", async () => {
+    vi.mocked(discoverRecoverableConversationCycles).mockResolvedValueOnce([]);
+    const logger={info:vi.fn(),error:vi.fn()};
+    const response=await createConversationCycleRecoveryHandler({getSecret:()=>"secret",createRuntime:()=>runtime,logger})(request("Bearer secret"));
+    expect(response.status).toBe(200);
+    expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({event:"conversation_cycle_recovery_summary",attempted:0,missing_command_discovered:0,budget_exhausted:false}));
+  });
+
+  it("returns 503 and logs only classified safe discovery diagnostics", async () => {
+    vi.mocked(discoverRecoverableConversationCycles).mockRejectedValueOnce(new RecoveryDiscoveryError("missing_command","rpc_error","42501","permission denied"));
+    const logger={info:vi.fn(),error:vi.fn()};
+    const response=await createConversationCycleRecoveryHandler({getSecret:()=>"recovery-secret",createRuntime:()=>runtime,logger})(request("Bearer recovery-secret"));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({error:"conversation_cycle_recovery_discovery_failed"});
+    expect(logger.error).toHaveBeenCalledWith({event:"conversation_cycle_recovery_discovery_failure",discovery_source:"missing_command",failure_category:"rpc_error",safe_error_code:"42501",safe_error_summary:"permission denied"});
+    expect(JSON.stringify(logger.error.mock.calls)).not.toMatch(/recovery-secret|customer text|service-role-key|openai|whatsapp/i);
+    expect(runPersistentCustomerMessageCycle).not.toHaveBeenCalled();
   });
 
   it("isolates all controlled results and unexpected exceptions", async () => {

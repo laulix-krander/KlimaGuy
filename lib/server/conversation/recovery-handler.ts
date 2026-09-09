@@ -3,6 +3,7 @@ import "server-only";
 import { createHash, timingSafeEqual } from "node:crypto";
 import {
   discoverRecoverableConversationCycles,
+  RecoveryDiscoveryError,
   runPersistentCustomerMessageCycle,
   type RecoverableCycleRunnerResult,
 } from "./recoverable-cycle-runner";
@@ -33,10 +34,12 @@ export function createConversationCycleRecoveryHandler(dependencies: Readonly<{
   getSecret?: () => string | undefined;
   createRuntime?: () => ProductiveCycleRuntime;
   now?: () => number;
+  logger?: Pick<Console, "info" | "error">;
 }> = {}) {
   const getSecret = dependencies.getSecret ?? (() => process.env.CONVERSATION_CYCLE_RECOVERY_SECRET);
   const createRuntime = dependencies.createRuntime ?? createProductiveCycleRuntime;
   const now = dependencies.now ?? (() => performance.now());
+  const logger = dependencies.logger ?? console;
 
   return async function POST(request: Request): Promise<Response> {
     const secret = getSecret();
@@ -45,7 +48,20 @@ export function createConversationCycleRecoveryHandler(dependencies: Readonly<{
 
     const startedAt = now();
     const runtime = createRuntime();
-    const commands = await discoverRecoverableConversationCycles(runtime.discovery, RECOVERY_BATCH_SIZE);
+    let commands;
+    try {
+      commands = await discoverRecoverableConversationCycles(runtime.discovery, RECOVERY_BATCH_SIZE);
+    } catch (error) {
+      const failure = error instanceof RecoveryDiscoveryError ? error : undefined;
+      logger.error({
+        event: "conversation_cycle_recovery_discovery_failure",
+        discovery_source: failure?.discoverySource ?? "unknown",
+        failure_category: failure?.failureCategory ?? "unexpected_error",
+        safe_error_code: failure?.safeErrorCode,
+        safe_error_summary: failure?.safeErrorSummary,
+      });
+      return Response.json({ error: "conversation_cycle_recovery_discovery_failed" }, { status: 503 });
+    }
     const summary: Summary = {
       discovered: commands.length, attempted: 0, completed: 0, human_review: 0,
       existing_command_discovered: commands.filter((item) => item.discovery_kind === "existing_command").length,
@@ -72,6 +88,7 @@ export function createConversationCycleRecoveryHandler(dependencies: Readonly<{
         if (command.discovery_kind === "missing_command") summary.missing_command_bootstrap_failed += 1;
       }
     }
+    logger.info({ event: "conversation_cycle_recovery_summary", ...summary });
     return Response.json(summary, { status: 200 });
   };
 }

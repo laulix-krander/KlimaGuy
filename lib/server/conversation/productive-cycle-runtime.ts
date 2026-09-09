@@ -14,7 +14,7 @@ export type ProductiveCycleRuntime = Readonly<{
 export function createProductiveCycleRuntime(): ProductiveCycleRuntime {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("conversation_cycle_configuration_error");
+  if (!url?.trim() || !key?.trim()) throw new Error("conversation_cycle_configuration_error");
   const client = createClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
   });
