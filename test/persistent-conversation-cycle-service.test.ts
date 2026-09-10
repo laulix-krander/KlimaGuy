@@ -130,6 +130,26 @@ describe("AP-16-06-01DE persistent cycle authority", () => {
     expect(data.failCustomerMessage).not.toHaveBeenCalled();
   });
 
+  it("converges exact registry and AI-matched building types before claim generation", async () => {
+    const exactAuthority=buildingAuthority("einfamilienhaus");
+    const exactSource=source(exactAuthority);
+    const exactInterpreter=vi.fn();
+    await processPersistentCustomerMessage(exactSource,{message_id:exactAuthority.message_id},exactInterpreter);
+
+    const aiAuthority=buildingAuthority("Das ist ein freistehendes Einfamilienhaus, in dem wir selbst wohnen.");
+    const aiSource=source(aiAuthority);
+    aiSource.reserveCustomerAnswerAiInferenceAttempt.mockResolvedValue({success:true,code:"reserved",command_id:aiAuthority.command_id,attempt_number:1});
+    const aiInterpreter=vi.fn().mockResolvedValue({success:true,source:"inference",proposal:{schemaVersion:1,result:"matched",canonicalValue:"single_family_house",confidence:0.97}});
+    await processPersistentCustomerMessage(aiSource,{message_id:aiAuthority.message_id},aiInterpreter);
+
+    const exactCycle=exactSource.commitCustomerMessageCycle.mock.calls[0][0].cycle;
+    const aiCycle=aiSource.commitCustomerMessageCycle.mock.calls[0][0].cycle;
+    expect(exactInterpreter).not.toHaveBeenCalled();
+    expect(exactCycle.interpretation.proposal.claim_proposals[0].value).toBe("single_family_house");
+    expect(aiCycle.interpretation.proposal.claim_proposals[0].value).toBe("single_family_house");
+    expect(aiCycle.interpretation.proposal.claim_proposals[0].value).toBe(exactCycle.interpretation.proposal.claim_proposals[0].value);
+  });
+
   it("preserves controlled reservation and failure-persistence outcomes", async () => {
     const value=buildingAuthority("ein ziemlich großes freistehendes Haus"); const data=source(value);
     data.reserveCustomerAnswerAiInferenceAttempt.mockResolvedValue({success:false,code:"command_not_claimed"});
@@ -145,6 +165,8 @@ describe("AP-16-06-01DE persistent cycle authority", () => {
     const result=await processPersistentCustomerMessage(data,{message_id:value.message_id});
     expect(result).toMatchObject({success:false,code:"cycle_failed",execution_trace:{deterministic_cycle_branch:"with_claim",deterministic_cycle_succeeded:false,failure_persistence_attempted:true,failure_persistence_succeeded:true}});
     expect(result.execution_trace?.deterministic_cycle_failure_code).toBeTruthy();
+    expect(result.execution_trace?.interpretation_failure_code).toBe("numeric_range_not_supported");
+    expect(JSON.stringify(result.execution_trace)).not.toContain("20 bis 30");
   });
 
   it("preserves the internal without-claim failure code after an ambiguous interpretation", async () => {

@@ -26,7 +26,7 @@ export function runConversationCycle(input:unknown):ConversationCycleResult{
  if(ctx.execution_status==="already_processed")return failure("cycle_already_processed");
  if(ctx.expected_state_version!==ctx.knowledge_state.state_version||ctx.interpretation_inputs.selected_action.based_on_state_version!==ctx.expected_state_version)return failure("cycle_state_version_mismatch");
  const interpretation=interpretNormalizedAnswer({...ctx.interpretation_inputs,project_id:ctx.project_id,conversation_id:ctx.conversation_id,current_state_version:ctx.expected_state_version,knowledge_state:ctx.knowledge_state,normalized_answer:ctx.normalized_answer});
- if(!interpretation.success)return interpretation.requires_human_review?failure("human_review_required"):failure("interpretation_failed");
+ if(!interpretation.success){const result=interpretation.requires_human_review?failure("human_review_required"):failure("interpretation_failed");return{...result,interpretation_failure_code:interpretation.code};}
  const applied=applyStateTransitionProposal({project_id:ctx.project_id,conversation_id:ctx.conversation_id,current_state:ctx.knowledge_state,proposal:interpretation.proposal,applied_at:ctx.occurred_at,apply_id:ctx.next_state_ids.apply_id,idempotency_status:"not_applied"});
  if(!applied.success)return applied.requires_human_review?failure("human_review_required"):failure("transition_application_failed");
  if(applied.code==="transition_already_applied")return failure("cycle_already_processed");

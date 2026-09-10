@@ -63,7 +63,7 @@ export async function processPersistentCustomerMessage(source: PersistentCycleDa
     ai_reservation_result_code:null, ai_reservation_attempt_number:null, ai_interpreter_invoked:false,
     ai_interpreter_succeeded:null, ai_interpreter_outcome:null, ai_interpreter_failure_class:null,
     deterministic_cycle_branch:null, deterministic_cycle_invoked:false, deterministic_cycle_succeeded:null,
-    deterministic_cycle_failure_code:null, failure_persistence_attempted:false, failure_persistence_succeeded:null,
+    deterministic_cycle_failure_code:null, interpretation_failure_code:null, failure_persistence_attempted:false, failure_persistence_succeeded:null,
   };
   const observed = <T extends PersistentCycleResult>(result:T):T => ({...result,execution_trace:{...trace}});
   const persistFailure = async (commandId:string, code:"normalization_failed"|"cycle_failed") => {
@@ -119,7 +119,7 @@ export async function processPersistentCustomerMessage(source: PersistentCycleDa
       trace.deterministic_cycle_branch = "without_claim"; trace.deterministic_cycle_invoked = true;
       const cycle = runConversationCycleWithoutClaim({ ...a.cycle_context, normalized_answer:normalized.normalized_answer, execution_status:"not_processed" });
       trace.deterministic_cycle_succeeded = cycle.success;
-      if (!cycle.success) { trace.deterministic_cycle_failure_code=cycle.code; await persistFailure(a.command_id,"cycle_failed"); return observed(failed("cycle_failed",a.command_id)); }
+      if (!cycle.success) { trace.deterministic_cycle_failure_code=cycle.code; trace.interpretation_failure_code=cycle.interpretation_failure_code ?? null; await persistFailure(a.command_id,"cycle_failed"); return observed(failed("cycle_failed",a.command_id)); }
       return observed(await source.commitCustomerMessageCycleWithoutClaim({ command_id:a.command_id, source_message_id:a.message_id, pending_interaction_id:a.pending_interaction_id, expected_runtime_revision:a.expected_runtime_revision, expected_knowledge_version:a.expected_knowledge_version, outcome:interpreted.proposal.result, cycle }));
     }
     const allowed = new Set(Object.values(getAnswerInterpretationRule(a.cycle_context.interpretation_inputs.selected_action.information_key)?.canonical_values ?? {}));
@@ -129,7 +129,7 @@ export async function processPersistentCustomerMessage(source: PersistentCycleDa
   trace.deterministic_cycle_branch = "with_claim"; trace.deterministic_cycle_invoked = true;
   const cycle = runConversationCycle({ ...a.cycle_context, interpretation_inputs:{...a.cycle_context.interpretation_inputs,...(canonical_value_override ? {canonical_value_override}: {})}, normalized_answer:normalized.normalized_answer, execution_status:"not_processed" });
   trace.deterministic_cycle_succeeded = cycle.success;
-  if (!cycle.success) trace.deterministic_cycle_failure_code = cycle.code;
+  if (!cycle.success) { trace.deterministic_cycle_failure_code = cycle.code; trace.interpretation_failure_code = cycle.interpretation_failure_code ?? null; }
   if (!cycle.success && cycle.requires_human_review) {
     return observed(await source.completeCustomerMessageWithHumanReview({ command_id:a.command_id, source_message_id:a.message_id, pending_interaction_id:a.pending_interaction_id, cycle_result:{ ...cycle, requires_human_review:true } }));
   }

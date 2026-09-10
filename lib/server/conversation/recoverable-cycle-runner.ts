@@ -22,7 +22,7 @@ const emptyExecutionTrace = (interpreterPresent:boolean):CustomerAnswerCycleExec
   ai_reservation_result_code:null,ai_reservation_attempt_number:null,ai_interpreter_invoked:false,
   ai_interpreter_succeeded:null,ai_interpreter_outcome:null,ai_interpreter_failure_class:null,
   deterministic_cycle_branch:null,deterministic_cycle_invoked:false,deterministic_cycle_succeeded:null,
-  deterministic_cycle_failure_code:null,failure_persistence_attempted:false,failure_persistence_succeeded:null,
+  deterministic_cycle_failure_code:null,interpretation_failure_code:null,failure_persistence_attempted:false,failure_persistence_succeeded:null,
 });
 
 export type TechnicalRehabilitation = Readonly<{ rehabilitation_count:number; previous_execution_attempt_count:number; fresh_epoch_budget:number }>;

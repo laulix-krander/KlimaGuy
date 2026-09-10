@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { classifyContextRpcError, loadCustomerMessageCycleAuthority } from "@/lib/actions/persistent-cycle-context-read";
 import { composeRenderedCustomerText, PLANNER_SNAPSHOT_SCHEMA_VERSION } from "@/lib/actions/planner-snapshot-persistence";
 import { createSyntheticConversationCycleContext } from "@/lib/domain/conversation-intelligence/conversation-cycle-fixtures";
+import { createInterpretationIdempotencyKey } from "@/lib/domain/conversation-intelligence/answer-interpretation";
 
 const ids = Array.from({ length: 30 }, (_, index) => `91000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`);
 const fixture = createSyntheticConversationCycleContext();
@@ -40,7 +41,8 @@ const row = {
   snapshot,
   cycle_context: { ...baseContext, cycle_id: command.id, correlation_id: command.correlation_id,
     occurred_at: command.execution_at, event_ids: command.event_ids, next_evidence_request_id: command.next_evidence_request_id,
-    interpretation_inputs: { ...baseContext.interpretation_inputs, selected_action: action, rendered_interaction: rendered } },
+    interpretation_inputs: { ...baseContext.interpretation_inputs, selected_action: action, rendered_interaction: rendered,
+      idempotency_key:createInterpretationIdempotencyKey(command.conversation_id,action.decision_id,messageId) } },
 };
 
 describe("AP-16-06-01C cycle context read authority", () => {
@@ -89,6 +91,12 @@ describe("AP-16-06-01C cycle context read authority", () => {
     expect(first).toEqual(second);
     expect(first.success && first.authority.cycle_context.event_ids).toEqual(command.event_ids);
     expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects a structurally valid but semantically stale interpretation idempotency key", async () => {
+    const stale={...row,cycle_context:{...row.cycle_context,interpretation_inputs:{...row.cycle_context.interpretation_inputs,idempotency_key:`answer:${messageId}`}}};
+    await expect(loadCustomerMessageCycleAuthority({rpc:vi.fn().mockResolvedValue({data:stale,error:null})},commandId))
+      .resolves.toMatchObject({success:false,error:"authority_incomplete"});
   });
 
   it.each([

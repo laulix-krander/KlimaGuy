@@ -30,6 +30,7 @@ export type CustomerAnswerCycleExecutionTrace = Readonly<{
   deterministic_cycle_invoked: boolean;
   deterministic_cycle_succeeded: boolean | null;
   deterministic_cycle_failure_code: import("./conversation-intelligence/conversation-cycle-types").CycleErrorCode | null;
+  interpretation_failure_code: import("./conversation-intelligence/answer-interpretation-types").InterpretationErrorCode | null;
   failure_persistence_attempted: boolean;
   failure_persistence_succeeded: boolean | null;
 }>;
