@@ -6,6 +6,7 @@ import type {
   PersistentCycleHumanReview,
   AiInferenceAttemptReservation, AiInferenceAttemptReservationResult, AiRetryDeferral, AiRetryDeferralResult,
   PersistentCycleClaimlessCommit, PersistentCycleTechnicalHumanReview,
+  DurableAiInferenceAuthority, DurableAiInferenceResult,
 } from "@/lib/actions/persistent-conversation-cycle-service";
 import { normalizedCustomerAnswerSchema } from "@/lib/domain/conversation-intelligence/answer-normalization-schemas";
 import { interpretationResultSchema, stateTransitionProposalSchema } from "@/lib/domain/conversation-intelligence/answer-interpretation-schemas";
@@ -40,8 +41,21 @@ const rpcFailureSchema = z.object({
 }).strict();
 
 export type PersistentCycleCommitRpc = {
-  rpc(name: "commit_customer_message_cycle" | "fail_customer_message_cycle" | "complete_customer_message_human_review" | "reserve_customer_answer_ai_inference_attempt" | "defer_customer_message_ai_retry", args: Record<string, unknown>): Promise<{ data: unknown; error: unknown }>;
+  rpc(name: "commit_customer_message_cycle" | "fail_customer_message_cycle" | "complete_customer_message_human_review" | "reserve_customer_answer_ai_inference_attempt" | "defer_customer_message_ai_retry" | "get_customer_answer_ai_inference_result" | "persist_customer_answer_ai_inference_result", args: Record<string, unknown>): Promise<{ data: unknown; error: unknown }>;
 };
+
+const durableResultSchema=z.object({success:z.literal(true),found:z.literal(true),outcome:z.enum(["matched","no_match","ambiguous"]),canonical_value:z.string().min(1).max(128).nullable(),attempt_number:z.union([z.literal(1),z.literal(2),z.literal(3)]),semantics_version:z.literal(2),schema_version:z.literal(1)}).strict();
+const durableArgs=(input:DurableAiInferenceAuthority,execution?:CycleExecutionContext)=>({target_command_id:input.command_id,target_source_message_id:input.source_message_id,target_pending_interaction_id:input.pending_interaction_id,target_conversation_id:input.conversation_id,target_project_id:input.project_id,target_decision_id:input.decision_id,expected_runtime_revision:input.expected_runtime_revision,expected_knowledge_version:input.expected_knowledge_version,target_information_key:input.information_key,execution_owner_id:execution?.ownerId ?? null});
+export async function loadCustomerAnswerAiInferenceResult(source:PersistentCycleCommitRpc,input:DurableAiInferenceAuthority,execution?:CycleExecutionContext):Promise<DurableAiInferenceResult|null>{
+  const result=await source.rpc("get_customer_answer_ai_inference_result",durableArgs(input,execution));
+  if(result.error)return null;
+  const parsed=durableResultSchema.safeParse(result.data);
+  return parsed.success?{outcome:parsed.data.outcome,canonical_value:parsed.data.canonical_value,attempt_number:parsed.data.attempt_number,semantics_version:2,schema_version:1}:null;
+}
+export async function persistCustomerAnswerAiInferenceResult(source:PersistentCycleCommitRpc,input:DurableAiInferenceAuthority & DurableAiInferenceResult,execution?:CycleExecutionContext):Promise<boolean>{
+  const result=await source.rpc("persist_customer_answer_ai_inference_result",{...durableArgs(input,execution),inference_outcome:input.outcome,canonical_value:input.canonical_value,inference_attempt_number:input.attempt_number,inference_semantics_version:input.semantics_version,result_schema_version:input.schema_version});
+  return !result.error && z.object({success:z.literal(true),code:z.enum(["persisted","replayed"])}).passthrough().safeParse(result.data).success;
+}
 
 function failed(code: z.infer<typeof rpcFailureSchema>["code"], commandId: string): PersistentCycleResult {
   const mapped = code === "ownership_lost" ? "interaction_not_current"

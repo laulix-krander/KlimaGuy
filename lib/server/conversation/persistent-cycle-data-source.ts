@@ -14,6 +14,7 @@ import {
   completeCustomerMessageWithHumanReview,
   completeCustomerMessageWithTechnicalHumanReview, commitCustomerMessageCycleWithoutClaim,
   deferCustomerMessageAiRetry, reserveCustomerAnswerAiInferenceAttempt,
+  loadCustomerAnswerAiInferenceResult,persistCustomerAnswerAiInferenceResult,
   failCustomerMessage,
   type PersistentCycleCommitRpc,
 } from "@/lib/server/conversation/persistent-cycle-commit";
@@ -129,6 +130,8 @@ export function createPersistentCycleDataSource(
     },
     commitCustomerMessageCycle: payload => execution ? commitCustomerMessageCycle(dependencies.commit, payload, execution) : commitCustomerMessageCycle(dependencies.commit, payload),
     reserveCustomerAnswerAiInferenceAttempt: payload => execution ? reserveCustomerAnswerAiInferenceAttempt(dependencies.commit, payload, execution) : reserveCustomerAnswerAiInferenceAttempt(dependencies.commit, payload),
+    loadCustomerAnswerAiInferenceResult: payload => execution ? loadCustomerAnswerAiInferenceResult(dependencies.commit,payload,execution) : loadCustomerAnswerAiInferenceResult(dependencies.commit,payload),
+    persistCustomerAnswerAiInferenceResult: payload => execution ? persistCustomerAnswerAiInferenceResult(dependencies.commit,payload,execution) : persistCustomerAnswerAiInferenceResult(dependencies.commit,payload),
     deferCustomerMessageAiRetry: payload => execution ? deferCustomerMessageAiRetry(dependencies.commit, payload, execution) : deferCustomerMessageAiRetry(dependencies.commit, payload),
     commitCustomerMessageCycleWithoutClaim: payload => execution ? commitCustomerMessageCycleWithoutClaim(dependencies.commit, payload, execution) : commitCustomerMessageCycleWithoutClaim(dependencies.commit, payload),
     completeCustomerMessageWithTechnicalHumanReview: payload => execution ? completeCustomerMessageWithTechnicalHumanReview(dependencies.commit, payload, execution) : completeCustomerMessageWithTechnicalHumanReview(dependencies.commit, payload),

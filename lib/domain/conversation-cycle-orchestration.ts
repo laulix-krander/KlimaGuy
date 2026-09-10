@@ -18,6 +18,10 @@ export type CustomerAnswerCycleExecutionTrace = Readonly<{
   normalization_succeeded: boolean;
   ai_eligibility_evaluated: boolean;
   ai_eligible: boolean | null;
+  ai_result_lookup_attempted: boolean;
+  ai_result_reused: boolean;
+  ai_result_persist_attempted: boolean;
+  ai_result_persist_succeeded: boolean | null;
   ai_reservation_attempted: boolean;
   ai_reservation_succeeded: boolean | null;
   ai_reservation_result_code: string | null;
