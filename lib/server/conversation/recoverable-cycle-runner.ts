@@ -18,7 +18,8 @@ export type RecoverableCycleRunnerResult =
 
 const emptyExecutionTrace = (interpreterPresent:boolean):CustomerAnswerCycleExecutionTrace => ({
   interpreter_present:interpreterPresent,normalization_reached:false,normalization_succeeded:false,
-  ai_eligibility_evaluated:false,ai_eligible:null,ai_reservation_attempted:false,ai_reservation_succeeded:null,
+  ai_eligibility_evaluated:false,ai_eligible:null,ai_result_lookup_attempted:false,ai_result_reused:false,
+  ai_result_persist_attempted:false,ai_result_persist_succeeded:null,ai_reservation_attempted:false,ai_reservation_succeeded:null,
   ai_reservation_result_code:null,ai_reservation_attempt_number:null,ai_interpreter_invoked:false,
   ai_interpreter_succeeded:null,ai_interpreter_outcome:null,ai_interpreter_failure_class:null,
   deterministic_cycle_branch:null,deterministic_cycle_invoked:false,deterministic_cycle_succeeded:null,

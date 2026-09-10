@@ -51,6 +51,7 @@ function source(value: CustomerMessageCycleAuthority) {
     commitCustomerMessageCycle:vi.fn().mockResolvedValue(successResult),
     completeCustomerMessageWithHumanReview:vi.fn().mockResolvedValue({ ...successResult, kind:"human_review", outbound_message_id:null, pending_interaction_id:value.pending_interaction_id }),
     reserveCustomerAnswerAiInferenceAttempt:vi.fn(), deferCustomerMessageAiRetry:vi.fn(),
+    loadCustomerAnswerAiInferenceResult:vi.fn().mockResolvedValue(null), persistCustomerAnswerAiInferenceResult:vi.fn().mockResolvedValue(true),
     commitCustomerMessageCycleWithoutClaim:vi.fn(), completeCustomerMessageWithTechnicalHumanReview:vi.fn(),
     failCustomerMessage:vi.fn().mockResolvedValue(true),
   };
@@ -128,6 +129,41 @@ describe("AP-16-06-01DE persistent cycle authority", () => {
     expect(cycle.planner_result.kind).toBe("selected_action");
     expect(cycle.rendered_interaction).toBeDefined();
     expect(data.failCustomerMessage).not.toHaveBeenCalled();
+  });
+
+  it("durably reuses the known matched result after a downstream technical failure", async () => {
+    const text="Das ist ein freistehendes Einfamilienhaus, in dem wir selbst wohnen.";
+    const valid=buildingAuthority(text);
+    const broken={...valid,cycle_context:{...valid.cycle_context,expected_state_version:valid.cycle_context.expected_state_version+1}};
+    const data=source(broken);
+    let durable: {outcome:"matched";canonical_value:string;attempt_number:1;semantics_version:2;schema_version:1}|null=null;
+    data.loadCustomerAnswerAiInferenceResult=vi.fn(async()=>durable);
+    data.persistCustomerAnswerAiInferenceResult=vi.fn(async(payload)=>{durable=payload as typeof durable;return true;});
+    data.reserveCustomerAnswerAiInferenceAttempt.mockResolvedValue({success:true,code:"reserved",command_id:valid.command_id,attempt_number:1});
+    const interpreter=vi.fn().mockResolvedValue({success:true,source:"inference",proposal:{schemaVersion:1,result:"matched",canonicalValue:"single_family_house"}});
+    const first=await processPersistentCustomerMessage(data,{message_id:valid.message_id},interpreter);
+    expect(first).toMatchObject({success:false,code:"cycle_failed",execution_trace:{ai_result_persist_succeeded:true,ai_result_reused:false}});
+    data.claimCustomerMessage.mockResolvedValue({authority:valid});
+    const second=await processPersistentCustomerMessage(data,{message_id:valid.message_id},interpreter);
+    expect(second).toMatchObject({success:true,execution_trace:{ai_result_lookup_attempted:true,ai_result_reused:true,ai_reservation_attempted:false,ai_interpreter_invoked:false,deterministic_cycle_succeeded:true}});
+    expect(data.reserveCustomerAnswerAiInferenceAttempt).toHaveBeenCalledOnce();
+    expect(interpreter).toHaveBeenCalledOnce();
+    expect(data.commitCustomerMessageCycle.mock.calls.at(-1)?.[0].cycle.knowledge_state.claims.at(-1)).toMatchObject({property_key:"building_type",value:"single_family_house"});
+  });
+
+  it.each(["no_match","ambiguous"] as const)("durably reuses claimless %s after downstream retry", async (outcome) => {
+    const valid=buildingAuthority("ein nicht eindeutig beschriebenes Haus");
+    const broken={...valid,cycle_context:{...valid.cycle_context,expected_state_version:valid.cycle_context.expected_state_version+1}};
+    const data=source(broken); let durable:unknown=null;
+    data.loadCustomerAnswerAiInferenceResult=vi.fn(async()=>durable as never);
+    data.persistCustomerAnswerAiInferenceResult=vi.fn(async(payload)=>{durable=payload;return true;});
+    data.reserveCustomerAnswerAiInferenceAttempt.mockResolvedValue({success:true,code:"reserved",command_id:valid.command_id,attempt_number:1});
+    data.commitCustomerMessageCycleWithoutClaim.mockResolvedValue(successResult);
+    const interpreter=vi.fn().mockResolvedValue({success:true,source:"inference",proposal:{schemaVersion:1,result:outcome}});
+    expect(await processPersistentCustomerMessage(data,{message_id:valid.message_id},interpreter)).toMatchObject({success:false,code:"cycle_failed"});
+    data.claimCustomerMessage.mockResolvedValue({authority:valid});
+    expect(await processPersistentCustomerMessage(data,{message_id:valid.message_id},interpreter)).toMatchObject({success:true,execution_trace:{ai_result_reused:true,ai_reservation_attempted:false,ai_interpreter_invoked:false,deterministic_cycle_branch:"without_claim"}});
+    expect(interpreter).toHaveBeenCalledOnce(); expect(data.reserveCustomerAnswerAiInferenceAttempt).toHaveBeenCalledOnce();
   });
 
   it("converges exact registry and AI-matched building types before claim generation", async () => {

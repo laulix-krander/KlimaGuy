@@ -30,6 +30,8 @@ export type AiInferenceAttemptReservation = Omit<PersistentCycleCommit, "cycle">
 export type AiInferenceAttemptReservationResult =
   | { success: true; code: "reserved"; command_id: string; attempt_number: 1 | 2 | 3 }
   | { success: false; code: "invalid_input" | "command_not_found" | "command_not_claimed" | "ownership_lost" | "stale_runtime_revision" | "stale_knowledge_version" | "interaction_not_current" | "attempts_exhausted" };
+export type DurableAiInferenceResult = Readonly<{ outcome:"matched"|"no_match"|"ambiguous"; canonical_value:string|null; attempt_number:1|2|3; semantics_version:2; schema_version:1 }>;
+export type DurableAiInferenceAuthority = AiInferenceAttemptReservation & Readonly<{ conversation_id:string; project_id:string; decision_id:string; information_key:string }>;
 export type AiRetryDeferral = Pick<PersistentCycleCommit, "command_id" | "source_message_id"> & { failure: "timeout" | "transient_provider_failure" };
 export type AiRetryDeferralResult =
   | { success: true; code: "deferred"; retry_at: string; attempt_count: 1 | 2 }
@@ -46,6 +48,8 @@ export type PersistentCycleDataSource = {
   /** One database transaction applies Knowledge transition and the complete runtime/outbound generation. */
   commitCustomerMessageCycle(payload: PersistentCycleCommit): Promise<PersistentCycleResult>;
   reserveCustomerAnswerAiInferenceAttempt(payload: AiInferenceAttemptReservation): Promise<AiInferenceAttemptReservationResult>;
+  loadCustomerAnswerAiInferenceResult?(payload: DurableAiInferenceAuthority): Promise<DurableAiInferenceResult|null>;
+  persistCustomerAnswerAiInferenceResult?(payload: DurableAiInferenceAuthority & DurableAiInferenceResult): Promise<boolean>;
   deferCustomerMessageAiRetry(payload: AiRetryDeferral): Promise<AiRetryDeferralResult>;
   commitCustomerMessageCycleWithoutClaim(payload: PersistentCycleClaimlessCommit): Promise<PersistentCycleResult>;
   completeCustomerMessageWithTechnicalHumanReview(payload: PersistentCycleTechnicalHumanReview): Promise<PersistentCycleResult>;
@@ -59,7 +63,8 @@ const failed = (code: CycleFailureCode, command_id?: string): PersistentCycleRes
 export async function processPersistentCustomerMessage(source: PersistentCycleDataSource, input: unknown, customerAnswerInterpreter?: ProductiveCustomerAnswerInterpreter): Promise<PersistentCycleResult> {
   const trace: {-readonly [K in keyof CustomerAnswerCycleExecutionTrace]:CustomerAnswerCycleExecutionTrace[K]} = {
     interpreter_present:Boolean(customerAnswerInterpreter), normalization_reached:false, normalization_succeeded:false,
-    ai_eligibility_evaluated:false, ai_eligible:null, ai_reservation_attempted:false, ai_reservation_succeeded:null,
+    ai_eligibility_evaluated:false, ai_eligible:null, ai_result_lookup_attempted:false, ai_result_reused:false,
+    ai_result_persist_attempted:false, ai_result_persist_succeeded:null, ai_reservation_attempted:false, ai_reservation_succeeded:null,
     ai_reservation_result_code:null, ai_reservation_attempt_number:null, ai_interpreter_invoked:false,
     ai_interpreter_succeeded:null, ai_interpreter_outcome:null, ai_interpreter_failure_class:null,
     deterministic_cycle_branch:null, deterministic_cycle_invoked:false, deterministic_cycle_succeeded:null,
@@ -93,6 +98,21 @@ export async function processPersistentCustomerMessage(source: PersistentCycleDa
     trace.ai_eligible = aiEligible;
   }
   if (customerAnswerInterpreter && aiEligible) {
+    const selectedAction=a.cycle_context.interpretation_inputs.selected_action;
+    const inferenceAuthority={command_id:a.command_id,source_message_id:a.message_id,pending_interaction_id:a.pending_interaction_id,expected_runtime_revision:a.expected_runtime_revision,expected_knowledge_version:a.expected_knowledge_version,conversation_id:a.conversation_id,project_id:a.project_id,decision_id:selectedAction.decision_id,information_key:selectedAction.information_key};
+    trace.ai_result_lookup_attempted=true;
+    let durable=source.loadCustomerAnswerAiInferenceResult ? await source.loadCustomerAnswerAiInferenceResult(inferenceAuthority) : null;
+    if (durable?.outcome === "matched") {
+      const allowed=new Set(Object.values(getAnswerInterpretationRule(selectedAction.information_key)?.canonical_values ?? {}));
+      if (!durable.canonical_value || !allowed.has(durable.canonical_value)) durable=null;
+    }
+    trace.ai_result_reused=durable!==null;
+    let outcome:DurableAiInferenceResult["outcome"];
+    if (durable) {
+      outcome=durable.outcome;
+      trace.ai_interpreter_outcome=outcome;
+      if (outcome === "matched") canonical_value_override=durable.canonical_value!;
+    } else {
     trace.ai_reservation_attempted = true;
     const reservation = await source.reserveCustomerAnswerAiInferenceAttempt({ command_id:a.command_id, source_message_id:a.message_id, pending_interaction_id:a.pending_interaction_id, expected_runtime_revision:a.expected_runtime_revision, expected_knowledge_version:a.expected_knowledge_version });
     trace.ai_reservation_succeeded = reservation.success;
@@ -115,16 +135,25 @@ export async function processPersistentCustomerMessage(source: PersistentCycleDa
       return observed(await review("ai_non_transient_failure"));
     }
     trace.ai_interpreter_outcome = interpreted.proposal.result;
-    if (interpreted.proposal.result !== "matched") {
+    outcome=interpreted.proposal.result;
+    let canonicalValue:string|null=null;
+    if (interpreted.proposal.result === "matched") {
+      const allowed = new Set(Object.values(getAnswerInterpretationRule(selectedAction.information_key)?.canonical_values ?? {}));
+      if (!allowed.has(interpreted.proposal.canonicalValue)) return observed(await review("ai_non_transient_failure"));
+      canonicalValue=interpreted.proposal.canonicalValue;
+    }
+    trace.ai_result_persist_attempted=true;
+    trace.ai_result_persist_succeeded=source.persistCustomerAnswerAiInferenceResult ? await source.persistCustomerAnswerAiInferenceResult({...inferenceAuthority,outcome,canonical_value:canonicalValue,attempt_number:reservation.attempt_number,semantics_version:2,schema_version:1}) : true;
+    if (!trace.ai_result_persist_succeeded) return observed(failed("persistence_failed",a.command_id));
+    canonical_value_override=canonicalValue ?? undefined;
+    }
+    if (outcome !== "matched") {
       trace.deterministic_cycle_branch = "without_claim"; trace.deterministic_cycle_invoked = true;
       const cycle = runConversationCycleWithoutClaim({ ...a.cycle_context, normalized_answer:normalized.normalized_answer, execution_status:"not_processed" });
       trace.deterministic_cycle_succeeded = cycle.success;
       if (!cycle.success) { trace.deterministic_cycle_failure_code=cycle.code; trace.interpretation_failure_code=cycle.interpretation_failure_code ?? null; await persistFailure(a.command_id,"cycle_failed"); return observed(failed("cycle_failed",a.command_id)); }
-      return observed(await source.commitCustomerMessageCycleWithoutClaim({ command_id:a.command_id, source_message_id:a.message_id, pending_interaction_id:a.pending_interaction_id, expected_runtime_revision:a.expected_runtime_revision, expected_knowledge_version:a.expected_knowledge_version, outcome:interpreted.proposal.result, cycle }));
+      return observed(await source.commitCustomerMessageCycleWithoutClaim({ command_id:a.command_id, source_message_id:a.message_id, pending_interaction_id:a.pending_interaction_id, expected_runtime_revision:a.expected_runtime_revision, expected_knowledge_version:a.expected_knowledge_version, outcome, cycle }));
     }
-    const allowed = new Set(Object.values(getAnswerInterpretationRule(a.cycle_context.interpretation_inputs.selected_action.information_key)?.canonical_values ?? {}));
-    if (!allowed.has(interpreted.proposal.canonicalValue)) return observed(await review("ai_non_transient_failure"));
-    canonical_value_override = interpreted.proposal.canonicalValue;
   }
   trace.deterministic_cycle_branch = "with_claim"; trace.deterministic_cycle_invoked = true;
   const cycle = runConversationCycle({ ...a.cycle_context, interpretation_inputs:{...a.cycle_context.interpretation_inputs,...(canonical_value_override ? {canonical_value_override}: {})}, normalized_answer:normalized.normalized_answer, execution_status:"not_processed" });
