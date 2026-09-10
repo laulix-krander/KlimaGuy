@@ -115,6 +115,21 @@ describe("AP-16-06-01DE persistent cycle authority", () => {
     expect(interpreter).toHaveBeenCalledOnce();
   });
 
+  it("completes the known building_type answer through AI canonical revalidation and the deterministic claim path", async () => {
+    const value=buildingAuthority("Das ist ein freistehendes Einfamilienhaus, in dem wir selbst wohnen.");
+    const data=source(value);
+    data.reserveCustomerAnswerAiInferenceAttempt.mockResolvedValue({success:true,code:"reserved",command_id:value.command_id,attempt_number:1});
+    const interpreter=vi.fn().mockResolvedValue({success:true,source:"inference",proposal:{schemaVersion:1,result:"matched",canonicalValue:"single_family_house",confidence:0.97}});
+    const result=await processPersistentCustomerMessage(data,{message_id:value.message_id},interpreter);
+    expect(result).toMatchObject({...successResult,execution_trace:{ai_eligible:true,ai_reservation_succeeded:true,ai_interpreter_outcome:"matched",deterministic_cycle_branch:"with_claim",deterministic_cycle_succeeded:true}});
+    expect(data.commitCustomerMessageCycle).toHaveBeenCalledOnce();
+    const cycle=data.commitCustomerMessageCycle.mock.calls[0][0].cycle;
+    expect(cycle.knowledge_state.claims.at(-1)).toMatchObject({property_key:"building_type",value:"single_family_house",epistemic_status:"reported"});
+    expect(cycle.planner_result.kind).toBe("selected_action");
+    expect(cycle.rendered_interaction).toBeDefined();
+    expect(data.failCustomerMessage).not.toHaveBeenCalled();
+  });
+
   it("preserves controlled reservation and failure-persistence outcomes", async () => {
     const value=buildingAuthority("ein ziemlich großes freistehendes Haus"); const data=source(value);
     data.reserveCustomerAnswerAiInferenceAttempt.mockResolvedValue({success:false,code:"command_not_claimed"});
