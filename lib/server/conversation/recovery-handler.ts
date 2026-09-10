@@ -24,6 +24,8 @@ type Summary = Record<RecoverableCycleRunnerResult["kind"], number> & {
   existing_command_discovery_failed: boolean;
   missing_command_discovery_failed: boolean;
   technical_rehabilitated: number;
+  legacy_human_review_rehabilitation_candidates: number;
+  legacy_human_review_rehabilitation_succeeded: number;
 };
 
 const digest = (value: string) => createHash("sha256").update(value, "utf8").digest();
@@ -71,6 +73,8 @@ export function createConversationCycleRecoveryHandler(dependencies: Readonly<{
       missing_command_discovered: commands.filter((item) => item.discovery_kind === "missing_command").length,
       missing_command_bootstrap_succeeded: 0, missing_command_bootstrap_failed: 0,
       technical_rehabilitated: 0,
+      legacy_human_review_rehabilitation_candidates: commands.filter((item) => item.legacy_human_review_rehabilitation_candidate).length,
+      legacy_human_review_rehabilitation_succeeded: 0,
       failed: 0, busy: 0, stale: 0, ownership_lost: 0, already_terminal: 0,
       unexpected_error: 0, budget_exhausted: false,
       recovery_degraded: failures.length > 0,
@@ -93,6 +97,17 @@ export function createConversationCycleRecoveryHandler(dependencies: Readonly<{
         if (result.technical_rehabilitation) {
           summary.technical_rehabilitated += 1;
           logger.info({event:"conversation_cycle_technical_failure_rehabilitated",rehabilitation_count:result.technical_rehabilitation.rehabilitation_count,previous_total_execution_attempt_count:result.technical_rehabilitation.previous_execution_attempt_count,fresh_epoch_budget:result.technical_rehabilitation.fresh_epoch_budget,reason_code:"exhausted_persistence_failure_rehabilitated"});
+        }
+        if (command.legacy_human_review_rehabilitation_candidate || result.legacy_human_review_rehabilitation) {
+          const rehabilitation = result.legacy_human_review_rehabilitation;
+          if (rehabilitation?.succeeded) summary.legacy_human_review_rehabilitation_succeeded += 1;
+          logger.info({
+            event:"conversation_cycle_legacy_human_review_rehabilitation",
+            legacy_human_review_rehabilitation_candidate:Boolean(command.legacy_human_review_rehabilitation_candidate),
+            legacy_human_review_rehabilitation_attempted:rehabilitation?.attempted ?? false,
+            legacy_human_review_rehabilitation_succeeded:rehabilitation?.succeeded ?? false,
+            legacy_human_review_rehabilitation_result_code:rehabilitation?.result_code ?? "not_attempted",
+          });
         }
         if (result.kind === "failed") logger.error({
           event: "conversation_cycle_recovery_item_failure",

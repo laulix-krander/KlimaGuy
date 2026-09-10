@@ -33,6 +33,9 @@ const claimResult = z.object({
   technical_rehabilitation_count: z.number().int().min(0).max(1).optional(),
   previous_execution_attempt_count: z.number().int().nonnegative().nullable().optional(),
   technical_epoch_attempt_limit: z.number().int().positive().optional(),
+  legacy_human_review_rehabilitation_attempted: z.boolean().optional(),
+  legacy_human_review_rehabilitation_succeeded: z.boolean().optional(),
+  legacy_human_review_rehabilitation_result_code: z.string().max(64).optional(),
 }).passthrough();
 const replayResult = z.object({
   success: z.literal(true), replay: z.literal(true), command_id: uuid,
@@ -52,6 +55,7 @@ export type CycleExecutionContext = Readonly<{
   leaseSeconds: number;
   onOwnershipLost?: () => void;
   onTechnicalRehabilitated?: (details: Readonly<{ rehabilitationCount:number; previousExecutionAttemptCount:number; freshEpochBudget:number }>) => void;
+  onLegacyHumanReviewRehabilitation?: (details: Readonly<{ attempted:boolean; succeeded:boolean; resultCode:string }>) => void;
 }>;
 
 export type PersistentCycleDataSourceDependencies = {
@@ -118,6 +122,13 @@ export function createPersistentCycleDataSource(
       if (!command.success) return { error: "persistence_failed", failure_stage: "acquisition" as const, failure_category: "response_validation_error" as const };
       if (command.data.technical_rehabilitated === true && command.data.technical_rehabilitation_count !== undefined && command.data.previous_execution_attempt_count != null && command.data.technical_epoch_attempt_limit !== undefined) {
         execution?.onTechnicalRehabilitated?.({ rehabilitationCount:command.data.technical_rehabilitation_count, previousExecutionAttemptCount:command.data.previous_execution_attempt_count, freshEpochBudget:command.data.technical_epoch_attempt_limit });
+      }
+      if (command.data.legacy_human_review_rehabilitation_attempted === true) {
+        execution?.onLegacyHumanReviewRehabilitation?.({
+          attempted:true,
+          succeeded:command.data.legacy_human_review_rehabilitation_succeeded === true,
+          resultCode:command.data.legacy_human_review_rehabilitation_result_code ?? "unknown",
+        });
       }
       const loaded = await loadCustomerMessageCycleAuthority(dependencies.read, command.data.command_id);
       return loaded.success ? { authority: loaded.authority } : {

@@ -12,9 +12,9 @@ export const CONVERSATION_CYCLE_LEASE_SECONDS = 5 * 60;
 export const RECOVERABLE_CYCLE_DISCOVERY_LIMIT = 100;
 
 export type RecoverableCycleRunnerResult =
-  | Readonly<{ kind:"completed"; command_id?:string; outbound_message_id?:string; technical_rehabilitation?:TechnicalRehabilitation }>
-  | Readonly<{ kind:"human_review" | "already_terminal" | "stale" | "busy" | "ownership_lost"; command_id?:string; technical_rehabilitation?:TechnicalRehabilitation }>
-  | Readonly<{ kind:"failed"; command_id?:string; technical_rehabilitation?:TechnicalRehabilitation; diagnostic?: { stage:"input" | "acquisition" | "context_read" | "execution" | "failure_persistence"; failure_category:string; result_code?:string; safe_rpc_code?:string; safe_rpc_summary?:string; acquisition_succeeded:boolean; authority_context_loaded:boolean; execution_trace:CustomerAnswerCycleExecutionTrace } }>;
+  | Readonly<{ kind:"completed"; command_id?:string; outbound_message_id?:string; technical_rehabilitation?:TechnicalRehabilitation; legacy_human_review_rehabilitation?:LegacyHumanReviewRehabilitation }>
+  | Readonly<{ kind:"human_review" | "already_terminal" | "stale" | "busy" | "ownership_lost"; command_id?:string; technical_rehabilitation?:TechnicalRehabilitation; legacy_human_review_rehabilitation?:LegacyHumanReviewRehabilitation }>
+  | Readonly<{ kind:"failed"; command_id?:string; technical_rehabilitation?:TechnicalRehabilitation; legacy_human_review_rehabilitation?:LegacyHumanReviewRehabilitation; diagnostic?: { stage:"input" | "acquisition" | "context_read" | "execution" | "failure_persistence"; failure_category:string; result_code?:string; safe_rpc_code?:string; safe_rpc_summary?:string; acquisition_succeeded:boolean; authority_context_loaded:boolean; execution_trace:CustomerAnswerCycleExecutionTrace } }>;
 
 const emptyExecutionTrace = (interpreterPresent:boolean):CustomerAnswerCycleExecutionTrace => ({
   interpreter_present:interpreterPresent,normalization_reached:false,normalization_succeeded:false,
@@ -27,6 +27,7 @@ const emptyExecutionTrace = (interpreterPresent:boolean):CustomerAnswerCycleExec
 });
 
 export type TechnicalRehabilitation = Readonly<{ rehabilitation_count:number; previous_execution_attempt_count:number; fresh_epoch_budget:number }>;
+export type LegacyHumanReviewRehabilitation = Readonly<{ attempted:boolean; succeeded:boolean; result_code:string }>;
 
 export type RecoverableCycleDependencies = PersistentCycleDataSourceDependencies & Readonly<{
   createOwnerId?: () => string;
@@ -41,16 +42,18 @@ export async function runPersistentCustomerMessageCycle(
   if (!z.string().uuid().safeParse(input.message_id).success) return { kind:"failed", diagnostic:{stage:"input",failure_category:"invalid_input",result_code:"invalid_input",acquisition_succeeded:false,authority_context_loaded:false,execution_trace:emptyExecutionTrace(Boolean(dependencies.customerAnswerInterpreter))} };
   let ownershipLost = false;
   let technicalRehabilitation: TechnicalRehabilitation | undefined;
+  let legacyHumanReviewRehabilitation: LegacyHumanReviewRehabilitation | undefined;
   const source = createPersistentCycleDataSource(dependencies, {
     ownerId:(dependencies.createOwnerId ?? randomUUID)(),
     leaseSeconds:CONVERSATION_CYCLE_LEASE_SECONDS,
     onOwnershipLost:() => { ownershipLost = true; },
     onTechnicalRehabilitated:(details) => { technicalRehabilitation = {rehabilitation_count:details.rehabilitationCount,previous_execution_attempt_count:details.previousExecutionAttemptCount,fresh_epoch_budget:details.freshEpochBudget}; },
+    onLegacyHumanReviewRehabilitation:(details) => { legacyHumanReviewRehabilitation = {attempted:details.attempted,succeeded:details.succeeded,result_code:details.resultCode}; },
   });
   try {
     const result = await processPersistentCustomerMessage(source, input, dependencies.customerAnswerInterpreter);
     const executionTrace = result.execution_trace ?? emptyExecutionTrace(Boolean(dependencies.customerAnswerInterpreter));
-    const rehabilitation = technicalRehabilitation ? {technical_rehabilitation:technicalRehabilitation} : {};
+    const rehabilitation = {...(technicalRehabilitation ? {technical_rehabilitation:technicalRehabilitation} : {}),...(legacyHumanReviewRehabilitation ? {legacy_human_review_rehabilitation:legacyHumanReviewRehabilitation} : {})};
     if (ownershipLost) return { kind:"ownership_lost", ...(result.command_id ? {command_id:result.command_id} : {}), ...rehabilitation };
     if (result.success) {
       if (result.kind === "already_processed") return { kind:"already_terminal", command_id:result.command_id, ...rehabilitation };
@@ -75,9 +78,9 @@ const postgresTimestamp = z.string().refine(
   (value) => /(?:Z|[+-]\d{2}(?::?\d{2})?)$/.test(value) && !Number.isNaN(Date.parse(value)),
   "expected a PostgreSQL timestamptz string",
 );
-const recoverableRow = z.object({ command_id:z.string().uuid(), source_message_id:z.string().uuid(), lease_expired_at:postgresTimestamp, requires_technical_rehabilitation:z.boolean().optional().default(false) }).strict();
+const recoverableRow = z.object({ command_id:z.string().uuid(), source_message_id:z.string().uuid(), lease_expired_at:postgresTimestamp, requires_technical_rehabilitation:z.boolean().optional().default(false), legacy_human_review_rehabilitation_candidate:z.boolean().optional().default(false) }).strict();
 const missingCommandRow = z.object({ source_message_id:z.string().uuid(), discovered_at:postgresTimestamp }).strict();
-export type RecoverableCycleCandidate = Readonly<{ source_message_id:string; discovery_kind:"existing_command" | "missing_command"; requires_technical_rehabilitation?:boolean }>;
+export type RecoverableCycleCandidate = Readonly<{ source_message_id:string; discovery_kind:"existing_command" | "missing_command"; requires_technical_rehabilitation?:boolean; legacy_human_review_rehabilitation_candidate?:boolean }>;
 export type RecoveryDiscoveryKind = RecoverableCycleCandidate["discovery_kind"];
 export type RecoveryDiscoveryFailureCategory = "rpc_error" | "response_validation_error";
 
@@ -144,7 +147,7 @@ async function discoverSource(
 export async function discoverRecoverableConversationCycles(source:RecoveryDiscoverySource, limit=RECOVERABLE_CYCLE_DISCOVERY_LIMIT):Promise<RecoveryDiscoveryResult> {
   const bounded = z.number().int().min(1).max(RECOVERABLE_CYCLE_DISCOVERY_LIMIT).catch(RECOVERABLE_CYCLE_DISCOVERY_LIMIT).parse(limit);
   const existing = await discoverSource(source,"existing_command","discover_recoverable_conversation_cycles",
-    z.array(recoverableRow).max(bounded).transform((rows) => rows.map((row) => ({source_message_id:row.source_message_id,discovery_kind:"existing_command" as const,requires_technical_rehabilitation:row.requires_technical_rehabilitation}))),bounded);
+    z.array(recoverableRow).max(bounded).transform((rows) => rows.map((row) => ({source_message_id:row.source_message_id,discovery_kind:"existing_command" as const,requires_technical_rehabilitation:row.requires_technical_rehabilitation,legacy_human_review_rehabilitation_candidate:row.legacy_human_review_rehabilitation_candidate}))),bounded);
   const missing = await discoverSource(source,"missing_command","discover_missing_customer_answer_cycles",
     z.array(missingCommandRow).max(bounded).transform((rows) => rows.map((row) => ({source_message_id:row.source_message_id,discovery_kind:"missing_command" as const}))),bounded);
   const candidates: RecoverableCycleCandidate[] = [];
