@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { conversationCycleContextSchema } from "@/lib/domain/conversation-intelligence/conversation-cycle-schemas";
+import { createInterpretationIdempotencyKey } from "@/lib/domain/conversation-intelligence/answer-interpretation";
 import { validatePlannerSnapshotRow } from "@/lib/actions/planner-snapshot-persistence";
 import type { CustomerMessageCycleAuthority } from "@/lib/actions/persistent-conversation-cycle-service";
 
@@ -95,7 +96,8 @@ export async function loadCustomerMessageCycleAuthority(source: PersistentCycleC
     || context.planner_decision_id !== command.planner_decision_id || context.next_evidence_request_id !== command.next_evidence_request_id
     || context.event_sequence_start !== command.event_sequence_start || JSON.stringify(context.event_ids) !== JSON.stringify(command.event_ids)
     || context.interpretation_inputs.selected_action.decision_id !== snapshot.selected_action.decision_id
-    || context.interpretation_inputs.rendered_interaction.decision_id !== snapshot.rendered_interaction.decision_id) return { success: false, error: "authority_incomplete" };
+    || context.interpretation_inputs.rendered_interaction.decision_id !== snapshot.rendered_interaction.decision_id
+    || context.interpretation_inputs.idempotency_key !== createInterpretationIdempotencyKey(command.conversation_id, snapshot.selected_action.decision_id, message.id)) return { success: false, error: "authority_incomplete" };
   return { success: true, authority: {
     command_id: command.id, conversation_id: command.conversation_id, project_id: command.project_id,
     message_id: message.id, message_sequence: message.sequence, message_text: message.text,
