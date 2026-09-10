@@ -19,6 +19,7 @@ import {
   type PersistentCycleCommitRpc,
 } from "@/lib/server/conversation/persistent-cycle-commit";
 import type { CycleFailureCode, PersistentCycleResult } from "@/lib/domain/conversation-cycle-orchestration";
+import { classifyAcquisitionRpcError } from "@/lib/server/conversation/acquisition-rpc-diagnostics";
 
 const uuid = z.string().uuid();
 const version = z.number().int().positive();
@@ -109,7 +110,7 @@ export function createPersistentCycleDataSource(
             lease_seconds: execution.leaseSeconds,
           })
         : await dependencies.claim.rpc("claim_customer_message_cycle", { target_message_id: messageId });
-      if (claimed.error) return { error: "persistence_failed", failure_stage: "acquisition" as const, failure_category: "rpc_error" as const };
+      if (claimed.error) return { error: "persistence_failed", failure_stage: "acquisition" as const, failure_category: "rpc_error" as const, ...classifyAcquisitionRpcError(claimed.error) };
       if (busyClaim.safeParse(claimed.data).success) return { error: "interaction_not_current" };
       const failure = failedClaim.safeParse(claimed.data);
       if (failure.success) return { error: failure.data.code };

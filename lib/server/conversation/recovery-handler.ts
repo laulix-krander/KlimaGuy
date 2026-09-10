@@ -100,13 +100,14 @@ export function createConversationCycleRecoveryHandler(dependencies: Readonly<{
         }
         if (command.legacy_human_review_rehabilitation_candidate || result.legacy_human_review_rehabilitation) {
           const rehabilitation = result.legacy_human_review_rehabilitation;
+          const acquisitionFailed = result.kind === "failed" && result.diagnostic?.stage === "acquisition";
           if (rehabilitation?.succeeded) summary.legacy_human_review_rehabilitation_succeeded += 1;
           logger.info({
             event:"conversation_cycle_legacy_human_review_rehabilitation",
             legacy_human_review_rehabilitation_candidate:Boolean(command.legacy_human_review_rehabilitation_candidate),
-            legacy_human_review_rehabilitation_attempted:rehabilitation?.attempted ?? false,
+            legacy_human_review_rehabilitation_attempted:rehabilitation?.attempted ?? (Boolean(command.legacy_human_review_rehabilitation_candidate) && acquisitionFailed),
             legacy_human_review_rehabilitation_succeeded:rehabilitation?.succeeded ?? false,
-            legacy_human_review_rehabilitation_result_code:rehabilitation?.result_code ?? "not_attempted",
+            legacy_human_review_rehabilitation_result_code:rehabilitation?.result_code ?? (acquisitionFailed ? "acquisition_rpc_error" : "not_attempted"),
           });
         }
         if (result.kind === "failed") logger.error({
@@ -116,6 +117,7 @@ export function createConversationCycleRecoveryHandler(dependencies: Readonly<{
           result_code: result.diagnostic?.result_code,
           ...(result.diagnostic?.safe_rpc_code ? { safe_rpc_code: result.diagnostic.safe_rpc_code } : {}),
           ...(result.diagnostic?.safe_rpc_summary ? { safe_rpc_summary: result.diagnostic.safe_rpc_summary } : {}),
+          ...(result.diagnostic?.safe_db_stage ? { safe_db_stage: result.diagnostic.safe_db_stage } : {}),
           acquisition_succeeded: result.diagnostic?.acquisition_succeeded ?? false,
           authority_context_loaded: result.diagnostic?.authority_context_loaded ?? false,
           ...(result.diagnostic?.execution_trace ?? {}),
