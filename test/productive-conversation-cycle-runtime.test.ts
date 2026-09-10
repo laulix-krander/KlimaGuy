@@ -92,6 +92,17 @@ describe("AP-16-06-03 productive recovery", () => {
     expect(JSON.stringify(logger.info.mock.calls)).not.toMatch(/message_id|customer|payload|credential|authorization|openai|whatsapp/i);
   });
 
+  it("logs the D-18 candidate and successful rehabilitation result without message content", async () => {
+    const candidate={...command(1),legacy_human_review_rehabilitation_candidate:true};
+    vi.mocked(discoverRecoverableConversationCycles).mockResolvedValueOnce(successfulDiscovery([candidate]));
+    vi.mocked(runPersistentCustomerMessageCycle).mockResolvedValueOnce({kind:"completed",legacy_human_review_rehabilitation:{attempted:true,succeeded:true,result_code:"rehabilitated"}});
+    const logger={info:vi.fn(),error:vi.fn()};
+    const response=await createConversationCycleRecoveryHandler({getSecret:()=>"secret",createRuntime:()=>runtime,logger,now:()=>0})(request("Bearer secret"));
+    expect(await response.json()).toMatchObject({legacy_human_review_rehabilitation_candidates:1,legacy_human_review_rehabilitation_succeeded:1});
+    expect(logger.info).toHaveBeenCalledWith({event:"conversation_cycle_legacy_human_review_rehabilitation",legacy_human_review_rehabilitation_candidate:true,legacy_human_review_rehabilitation_attempted:true,legacy_human_review_rehabilitation_succeeded:true,legacy_human_review_rehabilitation_result_code:"rehabilitated"});
+    expect(JSON.stringify(logger.info.mock.calls)).not.toMatch(/message_id|customer text|payload|credential|authorization/i);
+  });
+
   it("returns 503 and logs only classified safe discovery diagnostics", async () => {
     const failure=new RecoveryDiscoveryError("missing_command","rpc_error","42501","permission denied");
     vi.mocked(discoverRecoverableConversationCycles).mockResolvedValueOnce({candidates:[],existing_command:{status:"success",candidates:[]},missing_command:{status:"failure",failure}});
@@ -145,7 +156,7 @@ describe("AP-16-06-03 productive recovery", () => {
     vi.mocked(runPersistentCustomerMessageCycle).mockRejectedValueOnce(new Error("private detail"));
     const response = await createConversationCycleRecoveryHandler({ getSecret: () => "secret", createRuntime: () => runtime, now: () => 0 })(request("Bearer secret"));
     const body = await response.json();
-    expect(body).toEqual({ discovered: 8, existing_command_discovered: 8, missing_command_discovered: 0, missing_command_bootstrap_succeeded: 0, missing_command_bootstrap_failed: 0, technical_rehabilitated:0, attempted: 8, completed: 1, human_review: 1, failed: 1, busy: 1, stale: 1, ownership_lost: 1, already_terminal: 1, unexpected_error: 1, budget_exhausted: false, recovery_degraded:false, existing_command_discovery_failed:false, missing_command_discovery_failed:false });
+    expect(body).toEqual({ discovered: 8, existing_command_discovered: 8, missing_command_discovered: 0, missing_command_bootstrap_succeeded: 0, missing_command_bootstrap_failed: 0, technical_rehabilitated:0, legacy_human_review_rehabilitation_candidates:0, legacy_human_review_rehabilitation_succeeded:0, attempted: 8, completed: 1, human_review: 1, failed: 1, busy: 1, stale: 1, ownership_lost: 1, already_terminal: 1, unexpected_error: 1, budget_exhausted: false, recovery_degraded:false, existing_command_discovery_failed:false, missing_command_discovery_failed:false });
     expect(JSON.stringify(body)).not.toContain("private detail");
   });
 
