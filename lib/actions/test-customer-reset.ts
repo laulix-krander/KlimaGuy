@@ -20,5 +20,6 @@ export async function previewTestCustomerReset(input: TestCustomerResetInput): P
 }
 
 export async function commitTestCustomerReset(input: TestCustomerResetInput & { preview_receipt: string }): Promise<TestCustomerResetResult> {
-  return operateTestCustomerReset(input, "commit", await source(), input.preview_receipt);
+  const { preview_receipt, ...identity } = input;
+  return operateTestCustomerReset(identity, "commit", await source(), preview_receipt);
 }
