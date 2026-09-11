@@ -13,6 +13,11 @@ export type TechnicalRetryClass = typeof TECHNICAL_RETRY_CLASSES[number];
 
 /** Request-local, privacy-safe execution progress. It is never domain persistence payload. */
 export type CustomerAnswerCycleExecutionTrace = Readonly<{
+  answer_context_lookup_attempted: boolean;
+  answer_context_reused: boolean;
+  answer_context_bootstrap_attempted: boolean;
+  answer_context_bootstrap_succeeded: boolean | null;
+  answer_context_source: "direct_current_binding" | "legacy_original_binding" | "rehabilitated_original_lineage" | null;
   interpreter_present: boolean;
   normalization_reached: boolean;
   normalization_succeeded: boolean;

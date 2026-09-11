@@ -14,6 +14,9 @@ export type CustomerMessageCycleAuthority = {
   message_text: string; message_occurred_at: string; direction: "inbound"; actor_class: "customer"; message_kind: "text";
   prompt_sequence: number; pending_interaction_id: string; expected_runtime_revision: number; expected_knowledge_version: number;
   rendered_interaction: RenderedCustomerInteraction; cycle_context: Omit<ConversationCycleContext, "normalized_answer" | "execution_status">;
+  answer_context_source: "direct_current_binding" | "legacy_original_binding" | "rehabilitated_original_lineage";
+  answer_context_reused: boolean;
+  answer_context_bootstrap_succeeded: boolean;
 };
 export type PersistentCycleCommit = {
   command_id: string; source_message_id: string; pending_interaction_id: string; expected_runtime_revision: number; expected_knowledge_version: number;
@@ -62,6 +65,8 @@ const failed = (code: CycleFailureCode, command_id?: string): PersistentCycleRes
 /** Trusted server-only orchestration. The caller supplies only an immutable internal Message identity. */
 export async function processPersistentCustomerMessage(source: PersistentCycleDataSource, input: unknown, customerAnswerInterpreter?: ProductiveCustomerAnswerInterpreter): Promise<PersistentCycleResult> {
   const trace: {-readonly [K in keyof CustomerAnswerCycleExecutionTrace]:CustomerAnswerCycleExecutionTrace[K]} = {
+    answer_context_lookup_attempted:true, answer_context_reused:false, answer_context_bootstrap_attempted:true,
+    answer_context_bootstrap_succeeded:null, answer_context_source:null,
     interpreter_present:Boolean(customerAnswerInterpreter), normalization_reached:false, normalization_succeeded:false,
     ai_eligibility_evaluated:false, ai_eligible:null, ai_result_lookup_attempted:false, ai_result_reused:false,
     ai_result_persist_attempted:false, ai_result_persist_succeeded:null, ai_reservation_attempted:false, ai_reservation_succeeded:null,
@@ -83,6 +88,9 @@ export async function processPersistentCustomerMessage(source: PersistentCycleDa
     ...(claimed.failure_stage ? { diagnostic: { stage: claimed.failure_stage, failure_category: claimed.failure_category ?? "authority_rejected", ...(claimed.safe_rpc_code ? { safe_rpc_code: claimed.safe_rpc_code } : {}), ...(claimed.safe_rpc_summary ? { safe_rpc_summary: claimed.safe_rpc_summary } : {}), ...(claimed.safe_db_stage ? { safe_db_stage: claimed.safe_db_stage } : {}) } } : {}),
   };
   const a = claimed.authority;
+  trace.answer_context_reused = a.answer_context_reused;
+  trace.answer_context_bootstrap_succeeded = a.answer_context_bootstrap_succeeded;
+  trace.answer_context_source = a.answer_context_source;
   if (a.direction !== "inbound" || a.actor_class !== "customer" || a.message_kind !== "text") return failed("message_not_inbound_customer_text", a.command_id);
   if (a.message_sequence <= a.prompt_sequence) return failed("message_precedes_interaction", a.command_id);
   const raw = { answer_id:a.message_id, project_id:a.project_id, conversation_id:a.conversation_id, decision_id:a.rendered_interaction.decision_id, template_key:a.rendered_interaction.template_key, template_version:a.rendered_interaction.template_version, locale:a.rendered_interaction.locale, submitted_at:a.message_occurred_at, raw_value:{ kind:"text" as const, value:a.message_text } };

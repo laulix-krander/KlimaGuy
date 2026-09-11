@@ -37,7 +37,7 @@ function authority(messageText = "25 m²", review = false): CustomerMessageCycle
   context = { ...context, interpretation_inputs:{ ...context.interpretation_inputs, source_message_id:messageId,
     idempotency_key:createInterpretationIdempotencyKey(context.conversation_id, context.interpretation_inputs.selected_action.decision_id, messageId) } };
   const { normalized_answer: _answer, execution_status: _status, ...cycle_context } = context;
-  return { command_id:commandId, conversation_id:context.conversation_id, project_id:context.project_id,
+  return { answer_context_source:"direct_current_binding", answer_context_reused:true, answer_context_bootstrap_succeeded:true, command_id:commandId, conversation_id:context.conversation_id, project_id:context.project_id,
     message_id:messageId, message_sequence:2, message_text:messageText, message_occurred_at:context.occurred_at,
     direction:"inbound", actor_class:"customer", message_kind:"text", prompt_sequence:1,
     pending_interaction_id:"91000000-0000-4000-8000-000000000020", expected_runtime_revision:1,
