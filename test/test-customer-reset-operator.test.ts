@@ -9,6 +9,14 @@ const actionAdapter = vi.hoisted(() => ({
   verifyPreviewReceipt: vi.fn(async () => true),
 }));
 
+const supabaseAdapter = vi.hoisted(() => ({
+  rpc: vi.fn(),
+}));
+
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: vi.fn(() => ({ rpc: supabaseAdapter.rpc })),
+}));
+
 vi.mock("@/lib/server/test-customer-reset-adapter", () => ({
   resetTestTransportCustomer: actionAdapter.reset,
   issueTestResetPreviewReceipt: actionAdapter.issuePreviewReceipt,
@@ -31,6 +39,27 @@ const counts = { customers: 1, conversations: 1, projects: 1, messages: 2, runti
 function source(overrides: Partial<TestCustomerResetSource> = {}): TestCustomerResetSource { return { getUser: vi.fn(async () => ({ id: "actor" })), getProfile: vi.fn(async () => ({ role: "admin" })), reset: vi.fn(async ({ dry_run }) => ({ ...counts, dry_run })), issuePreviewReceipt: vi.fn(async () => "signed-preview"), verifyPreviewReceipt: vi.fn(async () => true), ...overrides }; }
 
 describe("safe test customer reset operator", () => {
+  it("logs only safe RPC diagnostics, preserves the generic error, and returns successful results unchanged", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "service-role-secret");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { resetTestTransportCustomer } = await vi.importActual<typeof import("@/lib/server/test-customer-reset-adapter")>("@/lib/server/test-customer-reset-adapter");
+    const rpcError = { code: "P0001", message: "commit failed", details: "database detail", hint: "database hint" };
+
+    supabaseAdapter.rpc.mockResolvedValueOnce({ data: null, error: rpcError });
+    await expect(resetTestTransportCustomer({ ...identity, dry_run: false })).rejects.toThrow("test_reset_rpc_failed");
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith("test_customer_reset_rpc_error", rpcError);
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(identity.sender_scope);
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(identity.external_identity);
+
+    supabaseAdapter.rpc.mockResolvedValueOnce({ data: counts, error: null });
+    await expect(resetTestTransportCustomer({ ...identity, dry_run: true })).resolves.toBe(counts);
+    expect(consoleError).toHaveBeenCalledTimes(1);
+
+    consoleError.mockRestore();
+    vi.unstubAllEnvs();
+  });
   it("rejects anonymous and non-admin callers before reset", async () => {
     const anonymous = source({ getUser: vi.fn(async () => null) });
     expect(await operateTestCustomerReset(identity, "preview", anonymous)).toMatchObject({ success: false, code: "not_authenticated" }); expect(anonymous.reset).not.toHaveBeenCalled();
