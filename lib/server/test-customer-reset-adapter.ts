@@ -27,7 +27,15 @@ export async function resetTestTransportCustomer(input: TestCustomerResetInput &
     target_confirmation: "RESET TEST CUSTOMER",
     dry_run: input.dry_run,
   });
-  if (error) throw new Error("test_reset_rpc_failed");
+  if (error) {
+    console.error("test_customer_reset_rpc_error", {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+    });
+    throw new Error("test_reset_rpc_failed");
+  }
   return data as TestCustomerResetCounts;
 }
 
