@@ -34,6 +34,13 @@ describe("Admin-Navigation", () => {
     expect(screen.queryByRole("link", { name: "Conversation Simulator" })).toBeNull();
   });
 
+  it("zeigt ausschließlich Admins den Testkunden-Reset", () => {
+    const { rerender } = render(<Nav role="admin" />);
+    expect(screen.getByRole("link", { name: "Testkunden-Reset" }).getAttribute("href")).toBe("/admin/test-customer-reset");
+    rerender(<Nav role="reviewer" />);
+    expect(screen.queryByRole("link", { name: "Testkunden-Reset" })).toBeNull();
+  });
+
   it("verlinkt die Medien-Inventur mit der vorhandenen Adminroute", () => {
     render(<Nav role="admin" />);
 
