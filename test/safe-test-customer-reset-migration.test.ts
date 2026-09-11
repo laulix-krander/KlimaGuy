@@ -1,9 +1,15 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const migrationName = "202609110004_reset_test_customer_production_fk_graph.sql";
+const migrationName = "202609110005_fix_reset_snapshot_pending_cycle.sql";
 const sql = readFileSync(`${process.cwd()}/supabase/migrations/${migrationName}`, "utf8");
 const mutationSql = sql.slice(sql.indexOf("set constraints all deferred"));
+
+const sqlPosition = (statement: string) => {
+  const result = sql.indexOf(statement);
+  expect(result, `missing statement: ${statement}`).toBeGreaterThanOrEqual(0);
+  return result;
+};
 
 const position = (statement: string) => {
   const result = mutationSql.indexOf(statement);
@@ -17,12 +23,35 @@ const expectBefore = (child: string, parent: string) => {
 };
 
 describe("production-FK-aware test customer reset migration", () => {
-  it("handles the real deferred pending/snapshot cycle instead of pretending it is linear", () => {
-    expect(sql).toContain("set constraints all deferred");
-    expect(sql).toContain("pending_snapshot_fk");
-    expect(sql).toContain("snapshot_pending_interaction_fk");
-    expect(sql).toContain("delete from public.conversation_interaction_snapshots");
-    expect(sql).toContain("delete from public.conversation_pending_interactions");
+  it("breaks the nullable side and recovery self-references in dependency order", () => {
+    const dryRunReturn = sqlPosition("if dry_run then return result; end if;");
+    const pendingDetachment = position("update public.conversation_pending_interactions");
+    const snapshotDetachment = position("update public.conversation_interaction_snapshots");
+    const snapshotDelete = position("delete from public.conversation_interaction_snapshots");
+    const pendingDelete = position("delete from public.conversation_pending_interactions");
+
+    expect(dryRunReturn).toBeLessThan(sql.indexOf("update public.conversation_pending_interactions"));
+    expect(pendingDetachment).toBeLessThan(snapshotDelete);
+    expect(snapshotDetachment).toBeLessThan(snapshotDelete);
+    expect(pendingDetachment).toBeLessThan(pendingDelete);
+    expect(snapshotDelete).toBeLessThan(pendingDelete);
+    expect(sql).toContain("set snapshot_id=null, recovery_of_pending_interaction_id=null");
+    expect(sql).toContain("set recovery_of_snapshot_id=null");
+    expect(sql).not.toMatch(/set\s+pending_interaction_id\s*=\s*null/i);
+    expect(sql).not.toMatch(/alter\s+(?:table[\s\S]*?)?column\s+pending_interaction_id\s+drop\s+not\s+null/i);
+  });
+
+  it("deletes external children before detaching the cycle", () => {
+    const pendingDetachment = position("update public.conversation_pending_interactions");
+    for (const child of [
+      "customer_answer_execution_contexts",
+      "customer_answer_ai_inference_results",
+      "conversation_runtime_states",
+      "conversation_cycle_commands",
+    ]) {
+      expect(position(`delete from public.${child}`), `${child} must precede cycle detachment`)
+        .toBeLessThan(pendingDetachment);
+    }
   });
 
   it("removes AI leaves and cycle commands before all referenced runtime parents", () => {
@@ -95,6 +124,11 @@ describe("production-FK-aware test customer reset migration", () => {
     expect(sql).toContain("update public.transport_webhook_receipts set internal_message_id=null");
     expect(sql).not.toContain("delete from public.transport_webhook_receipts");
     expectBefore("transport_delivery_commands", "conversation_messages");
+  });
+
+  it("deletes snapshots and pending interactions before messages", () => {
+    expectBefore("conversation_interaction_snapshots", "conversation_messages");
+    expectBefore("conversation_pending_interactions", "conversation_messages");
   });
 
   it("does not reference missing or stale production relations", () => {
