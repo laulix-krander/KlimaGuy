@@ -17,6 +17,8 @@ export type RecoverableCycleRunnerResult =
   | Readonly<{ kind:"failed"; command_id?:string; technical_rehabilitation?:TechnicalRehabilitation; legacy_human_review_rehabilitation?:LegacyHumanReviewRehabilitation; diagnostic?: { stage:"input" | "acquisition" | "context_read" | "execution" | "failure_persistence"; failure_category:string; result_code?:string; safe_rpc_code?:string; safe_rpc_summary?:string; safe_db_stage?:string; acquisition_succeeded:boolean; authority_context_loaded:boolean; execution_trace:CustomerAnswerCycleExecutionTrace } }>;
 
 const emptyExecutionTrace = (interpreterPresent:boolean):CustomerAnswerCycleExecutionTrace => ({
+  answer_context_lookup_attempted:false,answer_context_reused:false,answer_context_bootstrap_attempted:false,
+  answer_context_bootstrap_succeeded:null,answer_context_source:null,
   interpreter_present:interpreterPresent,normalization_reached:false,normalization_succeeded:false,
   ai_eligibility_evaluated:false,ai_eligible:null,ai_result_lookup_attempted:false,ai_result_reused:false,
   ai_result_persist_attempted:false,ai_result_persist_succeeded:null,ai_reservation_attempted:false,ai_reservation_succeeded:null,

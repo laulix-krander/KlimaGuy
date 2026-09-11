@@ -33,6 +33,9 @@ export function classifyContextRpcError(error: unknown): SafeRpcDiagnostic {
 const errorSchema = z.object({ success: z.literal(false), code: z.enum(CYCLE_AUTHORITY_READ_ERRORS) }).strict();
 const authorityRowSchema = z.object({
   success: z.literal(true),
+  answer_context_source: z.enum(["direct_current_binding", "legacy_original_binding", "rehabilitated_original_lineage"]).default("direct_current_binding"),
+  answer_context_reused: z.boolean().default(true),
+  answer_context_bootstrap_succeeded: z.literal(true).default(true),
   command: z.object({ id: uuid, conversation_id: uuid, project_id: uuid, source_message_id: uuid,
     pending_interaction_id: uuid, expected_runtime_revision: version, expected_knowledge_version: version,
     execution_at: z.string().datetime({ offset: true }), correlation_id: uuid, interpretation_id: uuid,
@@ -50,16 +53,16 @@ const authorityRowSchema = z.object({
 }).strict();
 
 export type PersistentCycleContextReadSource = {
-  rpc(name: "get_customer_message_cycle_context", args: { target_command_id: string }): Promise<{ data: unknown; error: unknown }>;
+  rpc(name: "get_customer_answer_execution_context", args: { target_command_id: string }): Promise<{ data: unknown; error: unknown }>;
 };
 
-/** Machine-only, side-effect-free reconstruction of the exact claimed-cycle authority. */
+/** Loads captured historical input authority plus separately checked current mutation authority. */
 export async function loadCustomerMessageCycleAuthority(source: PersistentCycleContextReadSource, commandId: string): Promise<
   { success: true; authority: CustomerMessageCycleAuthority } |
   { success: false; error: CycleAuthorityReadError; failure_category?: CycleAuthorityReadFailureCategory; rpc_diagnostic?: SafeRpcDiagnostic }
 > {
   if (!uuid.safeParse(commandId).success) return { success: false, error: "invalid_input" };
-  const result = await source.rpc("get_customer_message_cycle_context", { target_command_id: commandId });
+  const result = await source.rpc("get_customer_answer_execution_context", { target_command_id: commandId });
   if (result.error) return { success: false, error: "authority_incomplete", failure_category: "rpc_error", rpc_diagnostic: classifyContextRpcError(result.error) };
   const controlledError = errorSchema.safeParse(result.data);
   if (controlledError.success) return { success: false, error: controlledError.data.code, failure_category: "authority_rejected" };
@@ -105,6 +108,8 @@ export async function loadCustomerMessageCycleAuthority(source: PersistentCycleC
     message_kind: message.message_kind, prompt_sequence: snapshot.outbound_message_sequence,
     pending_interaction_id: pending.id, expected_runtime_revision: command.expected_runtime_revision,
     expected_knowledge_version: command.expected_knowledge_version, rendered_interaction: snapshot.rendered_interaction,
-    cycle_context: context,
+    cycle_context: context, answer_context_source: row.answer_context_source,
+    answer_context_reused: row.answer_context_reused,
+    answer_context_bootstrap_succeeded: row.answer_context_bootstrap_succeeded,
   } };
 }
