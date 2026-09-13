@@ -1,5 +1,6 @@
 import "server-only";
 
+import { conversationStatusSchema } from "@/lib/domain/conversation-authority";
 import { roleSchema } from "@/lib/domain/schemas";
 import { z } from "zod";
 
@@ -8,55 +9,48 @@ const identitySchema = z.object({
   external_identity: z.string().trim().min(1).max(255),
 }).strict();
 
-export const testCustomerResetCountsSchema = z.object({
-  customers: z.number().int().nonnegative(),
-  conversations: z.number().int().nonnegative(),
-  projects: z.number().int().nonnegative(),
-  messages: z.number().int().nonnegative(),
-  runtime_states: z.number().int().nonnegative(),
-  pending_interactions: z.number().int().nonnegative(),
-  snapshots: z.number().int().nonnegative(),
-  cycle_commands: z.number().int().nonnegative(),
-  ai_results: z.number().int().nonnegative(),
-  answer_contexts: z.number().int().nonnegative(),
-  provider_receipts_retained: z.number().int().nonnegative(),
-  dry_run: z.boolean(),
-}).passthrough();
+export const testCustomerLifecycleSchema = z.object({
+  identity_id: z.string().uuid(),
+  customer_id: z.string().uuid().nullable(),
+  binding_id: z.string().uuid().nullable(),
+  binding_revision: z.number().int().positive().nullable(),
+  conversation_id: z.string().uuid().nullable(),
+  conversation_revision: z.number().int().positive().nullable(),
+  conversation_status: conversationStatusSchema.nullable(),
+  project_id: z.string().uuid().nullable(),
+}).strict();
 
-export type TestCustomerResetCounts = z.infer<typeof testCustomerResetCountsSchema>;
+export type TestCustomerLifecycle = z.infer<typeof testCustomerLifecycleSchema>;
 export type TestCustomerResetInput = z.infer<typeof identitySchema>;
 export type TestCustomerResetResult =
-  | { success: true; phase: "preview"; counts: TestCustomerResetCounts; preview_receipt: string }
-  | { success: true; phase: "commit"; counts: TestCustomerResetCounts }
-  | { success: false; code: "not_authenticated" | "not_authorized" | "invalid_input" | "preview_required" | "configuration_missing" | "reset_failed"; error: string };
+  | { success: true; phase: "preview"; lifecycle: TestCustomerLifecycle; preview_receipt: string }
+  | { success: true; phase: "commit"; lifecycle: TestCustomerLifecycle; closed: boolean }
+  | { success: false; code: "not_authenticated" | "not_authorized" | "invalid_input" | "identity_not_found" | "preview_required" | "configuration_missing" | "reset_failed"; error: string };
 
 export type TestCustomerResetSource = {
   getUser(): Promise<{ id: string } | null>;
   getProfile(userId: string): Promise<{ role: unknown } | null>;
-  reset(input: TestCustomerResetInput & { dry_run: boolean }): Promise<unknown>;
-  issuePreviewReceipt(input: TestCustomerResetInput): Promise<string>;
-  verifyPreviewReceipt(receipt: string, input: TestCustomerResetInput): Promise<boolean>;
+  resolve(input: TestCustomerResetInput): Promise<unknown>;
+  close(lifecycle: TestCustomerLifecycle): Promise<unknown>;
+  issuePreviewReceipt(lifecycle: TestCustomerLifecycle): Promise<string>;
+  verifyPreviewReceipt(receipt: string, lifecycle: TestCustomerLifecycle): Promise<boolean>;
 };
 
 const messages = {
   not_authenticated: "Bitte melde dich an, um den Operator zu verwenden.",
   not_authorized: "Der Zugriff ist nur für Administratoren erlaubt.",
   invalid_input: "Die Transport-Identität ist ungültig.",
-  preview_required: "Vor dem endgültigen Reset ist eine passende, aktuelle Vorschau erforderlich.",
+  identity_not_found: "Für diese Angaben wurde keine WhatsApp-Testidentität gefunden.",
+  preview_required: "Die Vorschau ist nicht mehr aktuell. Bitte prüfe den aktuellen Zustand erneut.",
   configuration_missing: "Der Reset-Operator ist serverseitig nicht vollständig konfiguriert.",
-  reset_failed: "Der sichere Testkunden-Reset konnte nicht ausgeführt werden.",
+  reset_failed: "Die aktuelle Unterhaltung konnte nicht geschlossen werden. Bitte erneut prüfen.",
 } as const;
 
 function failure(code: keyof typeof messages): TestCustomerResetResult {
   return { success: false, code, error: messages[code] };
 }
 
-export async function operateTestCustomerReset(
-  rawInput: unknown,
-  phase: "preview" | "commit",
-  source: TestCustomerResetSource,
-  previewReceipt?: string,
-): Promise<TestCustomerResetResult> {
+export async function operateTestCustomerReset(rawInput: unknown, phase: "preview" | "commit", source: TestCustomerResetSource, previewReceipt?: string): Promise<TestCustomerResetResult> {
   const input = identitySchema.safeParse(rawInput);
   if (!input.success) return failure("invalid_input");
   try {
@@ -65,15 +59,19 @@ export async function operateTestCustomerReset(
     const profile = await source.getProfile(user.id);
     const role = roleSchema.safeParse(profile?.role);
     if (!role.success || role.data !== "admin") return failure("not_authorized");
-    if (phase === "commit" && (!previewReceipt || !await source.verifyPreviewReceipt(previewReceipt, input.data))) {
-      return failure("preview_required");
-    }
-    const counts = testCustomerResetCountsSchema.parse(await source.reset({ ...input.data, dry_run: phase === "preview" }));
-    if (counts.dry_run !== (phase === "preview")) return failure("reset_failed");
+
+    const resolved = await source.resolve(input.data);
+    if (resolved === null) return failure("identity_not_found");
+    const lifecycle = testCustomerLifecycleSchema.parse(resolved);
     if (phase === "preview") {
-      return { success: true, phase, counts, preview_receipt: await source.issuePreviewReceipt(input.data) };
+      return { success: true, phase, lifecycle, preview_receipt: await source.issuePreviewReceipt(lifecycle) };
     }
-    return { success: true, phase, counts };
+    if (!previewReceipt || !await source.verifyPreviewReceipt(previewReceipt, lifecycle)) return failure("preview_required");
+    if (lifecycle.conversation_status === null || lifecycle.conversation_status === "closed") {
+      return { success: true, phase, lifecycle, closed: false };
+    }
+    const closedLifecycle = testCustomerLifecycleSchema.parse(await source.close(lifecycle));
+    return { success: true, phase, lifecycle: closedLifecycle, closed: true };
   } catch (error) {
     if (error instanceof Error && error.message === "test_reset_configuration_missing") return failure("configuration_missing");
     return failure("reset_failed");
