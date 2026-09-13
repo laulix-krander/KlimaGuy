@@ -1,7 +1,7 @@
 "use server";
 
 import { operateTestCustomerReset, type TestCustomerResetInput, type TestCustomerResetResult, type TestCustomerResetSource } from "./test-customer-reset-service";
-import { issueTestResetPreviewReceipt, resetTestTransportCustomer, verifyTestResetPreviewReceipt } from "@/lib/server/test-customer-reset-adapter";
+import { closeTestCustomerConversation, issueTestResetPreviewReceipt, resolveTestCustomerLifecycle, verifyTestResetPreviewReceipt } from "@/lib/server/test-customer-reset-adapter";
 import { createClient } from "@/lib/supabase/server";
 
 async function source(): Promise<TestCustomerResetSource> {
@@ -9,7 +9,8 @@ async function source(): Promise<TestCustomerResetSource> {
   return {
     async getUser() { const { data, error } = await supabase.auth.getUser(); if (error) throw error; return data.user ? { id: data.user.id } : null; },
     async getProfile(userId) { const { data, error } = await supabase.from("profiles").select("role").eq("id", userId).maybeSingle(); if (error) throw error; return data; },
-    reset: resetTestTransportCustomer,
+    resolve: resolveTestCustomerLifecycle,
+    close: (lifecycle) => closeTestCustomerConversation(supabase, lifecycle),
     issuePreviewReceipt: issueTestResetPreviewReceipt,
     verifyPreviewReceipt: verifyTestResetPreviewReceipt,
   };
