@@ -42,7 +42,7 @@ export type RecoverableWhatsAppDeliveryDependencies = {
   revalidate(commandId: string, ownerId: string): Promise<{ status: "valid" | "blocked" | "ownership_lost" | "not_authorized" }>;
   readConfiguration(): { accessToken?: string; phoneNumberId?: string; graphApiVersion?: string };
   failPreDispatch(commandId: string, ownerId: string): Promise<{ status: "completed" | "ownership_lost" | "dispatch_possible" | "invalid_result" | "not_authorized" }>;
-  authorize(commandId: string, ownerId: string, dispatchToken: string): Promise<Dispatch | { status: "already_authorized" | "attempts_exhausted" | "ownership_lost" | "not_authorized" }>;
+  authorize(commandId: string, ownerId: string, dispatchToken: string): Promise<Dispatch | { status: "already_authorized" | "attempts_exhausted" | "ownership_lost" | "lifecycle_blocked" | "not_authorized" }>;
   send(input: { destination: string; text: string; phoneNumberId: string; accessToken: string; graphApiVersion: "v25.0" }): Promise<WhatsAppSendResult>;
   complete(commandId: string, ownerId: string, dispatch: Dispatch, result: WhatsAppSendResult): Promise<CompletionStatus>;
   finalizeAmbiguous(commandId: string): Promise<{ status: "finalized" | "safe_to_run" | "busy" | "already_terminal" | "provider_binding_exists" | "not_eligible" | "inconsistent_attempt" | "not_authorized" }>;
@@ -93,6 +93,7 @@ export async function runRecoverableWhatsAppDelivery(work: RecoverableWhatsAppDe
     if (dispatch.status === "ownership_lost") return { status: "ownership_lost" };
     if (dispatch.status === "attempts_exhausted") return { status: "attempts_exhausted" };
     if (dispatch.status === "already_authorized") return { status: "ambiguous" };
+    if (dispatch.status === "lifecycle_blocked") return { status: "terminal_failed" };
     if (dispatch.status !== "authorized") return { status: "failed" };
     dispatchStarted = true;
 

@@ -56,9 +56,65 @@ describe("AP-16-06-04D recoverable WhatsApp delivery runner", () => {
     expect(result.status).toBe(status === "ownership_lost" ? "ownership_lost" : status === "blocked" ? "terminal_failed" : "failed"); expect(deps.send).not.toHaveBeenCalled();
   });
 
-  it.each([["already_authorized", "ambiguous"], ["attempts_exhausted", "attempts_exhausted"], ["ownership_lost", "ownership_lost"], ["not_authorized", "failed"]] as const)("maps dispatch %s without a provider call", async (status, expected) => {
+  it.each([["already_authorized", "ambiguous"], ["attempts_exhausted", "attempts_exhausted"], ["ownership_lost", "ownership_lost"], ["lifecycle_blocked", "terminal_failed"], ["not_authorized", "failed"]] as const)("maps dispatch %s without a provider call", async (status, expected) => {
     const deps = dependencies({ authorize: vi.fn().mockResolvedValue({ status }) });
     expect((await runRecoverableWhatsAppDelivery({ outbound_message_id: id(9) }, deps)).status).toBe(expected); expect(deps.send).not.toHaveBeenCalled();
+  });
+
+  it("blocks a provider call when close wins after pickup and revalidation", async () => {
+    let open = true;
+    const deps = dependencies({
+      revalidate: vi.fn(async () => ({ status: "valid" as const })),
+      readConfiguration: () => {
+        open = false;
+        return { accessToken: "secret", phoneNumberId: "phone-id", graphApiVersion: "v25.0" };
+      },
+      authorize: vi.fn(async () => open ? dispatch : { status: "lifecycle_blocked" as const }),
+    });
+
+    expect(await runRecoverableWhatsAppDelivery({ outbound_message_id: id(9) }, deps)).toEqual({ status: "terminal_failed" });
+    expect(deps.authorize).toHaveBeenCalledOnce();
+    expect(deps.send).not.toHaveBeenCalled();
+  });
+
+  it("treats authorization-first as in progress until the historical attempt completes", async () => {
+    let releaseProvider!: () => void;
+    let providerStarted!: () => void;
+    const started = new Promise<void>((resolve) => { providerStarted = resolve; });
+    const providerBarrier = new Promise<void>((resolve) => { releaseProvider = resolve; });
+    let unfinishedAttempt = false;
+    let closed = false;
+    const close = () => {
+      if (unfinishedAttempt) return "conversation_dispatch_in_progress" as const;
+      closed = true;
+      return "closed" as const;
+    };
+    const deps = dependencies({
+      authorize: vi.fn(async () => {
+        if (closed) return { status: "lifecycle_blocked" as const };
+        unfinishedAttempt = true;
+        return dispatch;
+      }),
+      send: vi.fn(async () => {
+        providerStarted();
+        await providerBarrier;
+        return success;
+      }),
+      complete: vi.fn(async () => {
+        unfinishedAttempt = false;
+        return { status: "completed" as const };
+      }),
+    });
+
+    const delivery = runRecoverableWhatsAppDelivery({ outbound_message_id: id(9) }, deps);
+    await started;
+    expect(close()).toBe("conversation_dispatch_in_progress");
+    expect(closed).toBe(false);
+    releaseProvider();
+    expect(await delivery).toEqual({ status: "sent" });
+    expect(close()).toBe("closed");
+    expect(deps.send).toHaveBeenCalledOnce();
+    expect(deps.complete).toHaveBeenCalledOnce();
   });
 
   it.each([
