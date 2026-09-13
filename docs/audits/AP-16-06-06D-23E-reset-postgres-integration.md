@@ -2,9 +2,9 @@
 
 ## Status and decision
 
-**Integration status: PENDING. Migration 0006: PENDING.**
+**Integration status: FAIL. Migration 0006: NO-GO.**
 
-This change supplies the isolated real-PostgreSQL acceptance harness required by D-23D. At the time this audit was written, Codex could not observe a completed GitHub Actions run. Consequently, none of the engine assertions is represented as accepted evidence and no PASS is manufactured. There is no migration 0006, production RPC change, application change, deployment, or Production access in this PR.
+The first real-PostgreSQL GitHub Actions run failed during fixture construction, before the credibility gate or any of assertions 1–20. The integration result is therefore FAIL, the known 0005 reproduction and D-23D algorithm remain untested, and migration 0006 is NO-GO. There is no migration 0006, production RPC change, application change, deployment, or Production access in this PR.
 
 ## PostgreSQL and CI identity
 
@@ -13,7 +13,29 @@ This change supplies the isolated real-PostgreSQL acceptance harness required by
 - Dedicated job/check: `reset-postgres-integration` / `PostgreSQL 16 / D-23D closed reset`.
 - Command: `psql --set=ON_ERROR_STOP=1 --file=test/integration/reset-postgres/reset-postgres-integration.sql`.
 - Isolation: the workflow invokes only this SQL harness. It neither invokes the repository Vitest suite nor depends on `test/openai-structured-inference-adapter.test.ts`.
-- Workflow run evidence: **not available at audit authoring time**.
+- Observed workflow result: **FAIL** during the first `seed_fixture` call.
+
+## Observed fixture-construction failure
+
+PostgreSQL 16.4 reported:
+
+```text
+ERROR: cannot ALTER TABLE "conversation_pending_interactions"
+because it has pending trigger events
+
+SQL statement:
+alter table conversation_pending_interactions
+enable trigger pending_interaction_guard
+
+PL/pgSQL function:
+seed_fixture(integer,text,text)
+```
+
+The failure happened before the known-0005 credibility gate, the D-23D reset algorithm, and assertions 1–20. No assertion is credited as PASS.
+
+The false fixture assumption was that a user trigger could be re-enabled on `conversation_pending_interactions` while deferred FK trigger events for that relation remained queued. The smallest correction does not touch the D-23D algorithm or any constraint: `seed_fixture` now supplies each future `snapshot_id` in the pending row's original `INSERT`. Because `pending_snapshot_fk` is deferred, PostgreSQL may validate those references after the corresponding snapshots have been inserted. The guarded pending-row `UPDATE` and its fixture-only disable/enable pair are no longer necessary. The separate knowledge-transition trigger toggle remains limited to the non-deferred knowledge cycle it supports and is not the relation holding the deferred snapshot/pending events.
+
+Corrected workflow rerun result: **not yet observed**. Until that rerun completes, the exact latest authoritative CI result remains the failure above.
 
 ## Schema source and fixture strategy
 
@@ -42,7 +64,7 @@ where conversation_id = uid('conversation', 1);
 
 The harness accepts only `unique_violation` and explicitly verifies SQLSTATE `23505`. The named conflicting index is `one_original_snapshot_per_outbound`. Any unexpected success or different failure aborts the script before the proposed reset validation.
 
-Observed result: **PENDING** until the dedicated GitHub Actions job completes.
+Observed result: **NOT RUN**. The failed job never reached this gate.
 
 ## Acceptance assertions
 
@@ -75,4 +97,4 @@ Observed result: **PENDING** until the dedicated GitHub Actions job completes.
 
 ## Final decision
 
-**PENDING for migration 0006.** A green completed `PostgreSQL 16 / D-23D closed reset` job is required before this can become GO. A failing real-engine assertion makes migration 0006 NO-GO and must be recorded as evidence rather than patched outside a new reviewed design decision.
+**NO-GO for migration 0006.** The latest completed `PostgreSQL 16 / D-23D closed reset` job failed before validation began. The fixture-only correction must be rerun in the same dedicated job. Only a completed run in which all 20 assertions pass may change this decision to GO; any later engine failure must instead be recorded at the exact failing statement without silently changing the D-23D algorithm.

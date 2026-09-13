@@ -114,7 +114,6 @@ create procedure seed_fixture(fixture int, scope text, external_id text)
 language plpgsql as $$
 begin
   set constraints all deferred;
-  alter table conversation_pending_interactions disable trigger pending_interaction_guard;
   alter table project_knowledge_state_transitions disable trigger project_knowledge_transitions_append_only;
   insert into customers values(uid('customer',fixture));
   insert into projects values(uid('project',fixture),uid('customer',fixture));
@@ -128,14 +127,15 @@ begin
   insert into conversation_project_assignments values(uid('assignment',fixture),uid('conversation',fixture),uid('project',fixture));
   insert into conversation_state_commands values(uid('state-command',fixture),uid('conversation',fixture));
 
-  insert into conversation_pending_interactions(id,conversation_id,project_id,prompt_message_id) values
-    (uid('pending-original',fixture),uid('conversation',fixture),uid('project',fixture),uid('message-original',fixture));
-  insert into conversation_pending_interactions(id,conversation_id,project_id,prompt_message_id,recovery_of_pending_interaction_id) values
-    (uid('pending-recovery',fixture),uid('conversation',fixture),uid('project',fixture),uid('message-original',fixture),uid('pending-original',fixture));
+  -- The snapshot FK is deferred, so both pending rows can point at their future
+  -- snapshots at INSERT time. No guarded UPDATE or trigger toggle is needed.
+  insert into conversation_pending_interactions(id,conversation_id,project_id,prompt_message_id,snapshot_id) values
+    (uid('pending-original',fixture),uid('conversation',fixture),uid('project',fixture),uid('message-original',fixture),uid('snapshot-original',fixture));
+  insert into conversation_pending_interactions(id,conversation_id,project_id,prompt_message_id,snapshot_id,recovery_of_pending_interaction_id) values
+    (uid('pending-recovery',fixture),uid('conversation',fixture),uid('project',fixture),uid('message-original',fixture),uid('snapshot-recovery',fixture),uid('pending-original',fixture));
   insert into conversation_interaction_snapshots values
     (uid('snapshot-original',fixture),uid('conversation',fixture),uid('project',fixture),uid('pending-original',fixture),uid('message-original',fixture),null),
     (uid('snapshot-recovery',fixture),uid('conversation',fixture),uid('project',fixture),uid('pending-recovery',fixture),uid('message-original',fixture),uid('snapshot-original',fixture));
-  update conversation_pending_interactions set snapshot_id=case id when uid('pending-original',fixture) then uid('snapshot-original',fixture) else uid('snapshot-recovery',fixture) end where conversation_id=uid('conversation',fixture);
 
   insert into conversation_information_collection values(uid('information',fixture),uid('conversation',fixture),uid('project',fixture));
   insert into conversation_retry_states values(uid('retry',fixture),uid('conversation',fixture),uid('project',fixture));
@@ -184,7 +184,6 @@ begin
   insert into project_offer_commands values(uid('offer-command',fixture),uid('project',fixture),uid('offer',fixture));
   insert into project_execution_commands values(uid('execution-command',fixture),uid('project',fixture),uid('execution',fixture));
   insert into project_notes values(uid('note',fixture),uid('project',fixture));
-  alter table conversation_pending_interactions enable trigger pending_interaction_guard;
   alter table project_knowledge_state_transitions enable trigger project_knowledge_transitions_append_only;
 end$$;
 
