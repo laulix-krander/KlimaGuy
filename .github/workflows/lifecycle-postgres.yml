@@ -1,0 +1,48 @@
+name: KlimaGuy Lifecycle PostgreSQL Integration
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  logical-lifecycle:
+    name: PostgreSQL 16 / logical lifecycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: klimaguy_lifecycle
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d klimaguy_lifecycle"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/klimaguy_lifecycle
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+      - name: Run lifecycle proof and capture catalog evidence
+        run: ./test/postgres/run-lifecycle-proof.sh 2>&1 | tee lifecycle-postgres-evidence.txt
+      - name: Upload lifecycle catalog and assertion evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: klimaguy-lifecycle-postgres-evidence
+          path: lifecycle-postgres-evidence.txt
+          if-no-files-found: error
