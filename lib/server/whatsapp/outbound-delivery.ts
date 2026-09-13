@@ -17,7 +17,7 @@ const acquiredSchema = z.discriminatedUnion("status", [
 const revalidationSchema = z.object({ status: z.enum(["valid", "blocked", "ownership_lost", "not_authorized"]) }).strict();
 const dispatchSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("authorized"), delivery_command_id: uuid, attempt_number: z.number().int().min(1).max(3), dispatch_token: uuid, dispatch_started_at: z.string().datetime({ offset: true }) }).strict(),
-  z.object({ status: z.enum(["already_authorized", "attempts_exhausted", "ownership_lost", "not_authorized"]) }).strict(),
+  z.object({ status: z.enum(["already_authorized", "attempts_exhausted", "ownership_lost", "lifecycle_blocked", "not_authorized"]) }).strict(),
 ]);
 const completionSchema = z.object({ status: z.enum(["completed", "ownership_lost", "stale_attempt", "invalid_result", "binding_conflict", "not_authorized"]) }).strict();
 const preDispatchSchema = z.object({ status: z.enum(["completed", "ownership_lost", "dispatch_possible", "invalid_result", "not_authorized"]) }).strict();
