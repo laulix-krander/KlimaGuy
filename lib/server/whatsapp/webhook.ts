@@ -6,6 +6,8 @@ import { persistWhatsAppInboundText, triggerPersistentMessageCycle, type Message
 import { reconcileWhatsAppDeliveryStatus } from "./status-reconciliation";
 import { readProductiveFirstContactEligibility, type FirstContactEligibilityResult } from "@/lib/server/conversation/first-contact-eligibility";
 import { runProductiveFirstContactInitialization } from "@/lib/server/conversation/productive-first-contact";
+import { resolveProductiveConversationEngine, type ConversationEngineResolver } from "@/lib/server/conversation/conversation-engine-routing";
+import { dispatchMvpConversation, type MvpConversationDispatch } from "@/lib/server/conversation/mvp-conversation-dispatch";
 
 /** Internal security ceiling, not a claimed Meta provider limit. */
 export const WHATSAPP_WEBHOOK_MAX_BYTES = 1_048_576;
@@ -37,6 +39,8 @@ export function createWhatsAppWebhookHandlers(dependencies: {
   reconcileStatus?: (event: import("./contracts").WhatsAppDeliveryStatus) => Promise<void>;
   firstContactEligibility?: (conversationId: string) => Promise<FirstContactEligibilityResult>;
   initializeFirstContact?: typeof runProductiveFirstContactInitialization;
+  resolveEngine?: ConversationEngineResolver;
+  dispatchMvp?: MvpConversationDispatch;
 } = {}) {
   const persist = dependencies.persist ?? persistWhatsAppInboundText;
   const triggerCycle = dependencies.triggerCycle ?? triggerPersistentMessageCycle;
@@ -45,6 +49,8 @@ export function createWhatsAppWebhookHandlers(dependencies: {
   const reconcileStatus=dependencies.reconcileStatus??reconcileWhatsAppDeliveryStatus;
   const firstContactEligibility = dependencies.firstContactEligibility ?? readProductiveFirstContactEligibility;
   const initializeFirstContact = dependencies.initializeFirstContact ?? runProductiveFirstContactInitialization;
+  const resolveEngine = dependencies.resolveEngine ?? resolveProductiveConversationEngine;
+  const dispatchMvp = dependencies.dispatchMvp ?? dispatchMvpConversation;
   return {
     GET: async (request: Request): Promise<Response> => {
       const configured = verifyToken();
@@ -73,10 +79,20 @@ export function createWhatsAppWebhookHandlers(dependencies: {
         for (const item of parsed) {
           if (item.kind !== "inbound_text") continue;
           const result = await persist(item.event);
-          // Route once from the persistence result. Never re-evaluate this message after initialization.
-          if (result.status === "recorded" && result.cycle_eligible) {
+          // Dedupe is authoritative: duplicates never resolve or invoke an engine.
+          if (result.status === "duplicate") continue;
+          const ownership = await resolveEngine({
+            conversation_id: result.conversation_id,
+            provider: item.event.provider,
+            sender_scope: item.event.sender_scope,
+            external_identity: item.event.external_sender_identity,
+          });
+          if (ownership.engine_owner === "mvp") {
+            try { await dispatchMvp({ conversation_id: result.conversation_id, message_id: result.internal_message_id, first_contact: !result.cycle_eligible }); }
+            catch { /* Persistence is final; the future MVP recovery path owns retries. */ }
+          } else if (result.cycle_eligible) {
             try { await triggerCycle({ message_id: result.internal_message_id, request_started_at: requestStartedAt }); } catch { /* Persistence is final; recovery owns later work. */ }
-          } else if (!result.cycle_eligible) {
+          } else {
             try {
               const eligibility = await firstContactEligibility(result.conversation_id);
               if (eligibility.status === "healable" || eligibility.status === "already_initialized") {
