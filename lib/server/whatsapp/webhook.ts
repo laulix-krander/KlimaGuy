@@ -13,6 +13,24 @@ import { persistWhatsAppInboundImage, runWhatsAppImageIngestion, type WhatsAppIm
 /** Internal security ceiling, not a claimed Meta provider limit. */
 export const WHATSAPP_WEBHOOK_MAX_BYTES = 1_048_576;
 
+const SAFE_MVP_DISPATCH_ERROR_CODES = new Set([
+  "mvp_first_contact_foundation_failed",
+  "mvp_turn_configuration_failed",
+  "mvp_turn_persistence_failed",
+  "mvp_turn_media_invalid",
+  "mvp_turn_stale",
+  "mvp_turn_provider_failed",
+  "mvp_turn_invalid_provider_output",
+  "mvp_turn_commit_failed",
+]);
+
+function logMvpDispatchFailure(error: unknown): void {
+  const code = error instanceof Error && SAFE_MVP_DISPATCH_ERROR_CODES.has(error.message)
+    ? error.message
+    : "mvp_dispatch_failed";
+  console.error("mvp_dispatch_failed", { operation: "dispatch_mvp_conversation", code });
+}
+
 async function readBoundedBody(request: Request): Promise<Uint8Array | null> {
   const declared = request.headers.get("content-length");
   if (declared && (!/^\d+$/.test(declared) || Number(declared) > WHATSAPP_WEBHOOK_MAX_BYTES)) return null;
@@ -92,7 +110,10 @@ export function createWhatsAppWebhookHandlers(dependencies: {
               const ingestion=await ingestImage({commandId:result.ingestion_command_id});
               if(ingestion.kind==="completed") {
                 const ownership=await resolveEngine({conversation_id:result.conversation_id,provider:item.event.provider,sender_scope:item.event.sender_scope,external_identity:item.event.external_sender_identity});
-                if(ownership.engine_owner==="mvp") await dispatchMvp({conversation_id:result.conversation_id,message_id:result.internal_message_id,first_contact:false});
+                if(ownership.engine_owner==="mvp") {
+                  try { await dispatchMvp({conversation_id:result.conversation_id,message_id:result.internal_message_id,first_contact:false}); }
+                  catch (error) { logMvpDispatchFailure(error); }
+                }
               }
             } catch { /* Receipt, message and pending command remain durable for bounded recovery. */ }
             continue;
@@ -109,7 +130,7 @@ export function createWhatsAppWebhookHandlers(dependencies: {
           });
           if (ownership.engine_owner === "mvp") {
             try { await dispatchMvp({ conversation_id: result.conversation_id, message_id: result.internal_message_id, first_contact: !result.cycle_eligible }); }
-            catch { /* Persistence is final; the future MVP recovery path owns retries. */ }
+            catch (error) { logMvpDispatchFailure(error); }
           } else if (result.cycle_eligible) {
             try { await triggerCycle({ message_id: result.internal_message_id, request_started_at: requestStartedAt }); } catch { /* Persistence is final; recovery owns later work. */ }
           } else {

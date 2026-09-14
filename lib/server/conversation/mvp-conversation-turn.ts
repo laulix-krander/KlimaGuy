@@ -2,7 +2,8 @@ import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { mvpAiTurnInputObjectSchema, mvpAiTurnInputSchema, mvpAiTurnResultSchema, type MvpAiTurnInput, type MvpAiTurnResult } from "@/lib/domain/mvp-ai-turn";
+import { mvpAiTurnInputObjectSchema, mvpAiTurnInputSchema, mvpAiTurnResultSchema, mvpQualificationStatusSchema, type MvpAiTurnInput, type MvpAiTurnResult } from "@/lib/domain/mvp-ai-turn";
+import { MVP_PROJECT_FACT_KEYS, mvpProjectFactKeySchema } from "@/lib/domain/mvp-project-facts";
 import type { MvpAiTurnProvider } from "@/lib/server/ai/mvp-turn-provider";
 import { OpenAiMvpTurnProvider } from "@/lib/server/ai/providers/openai/mvp-turn-adapter";
 import { getProjectFacts, type ProjectFactsRpc } from "@/lib/server/project-facts/project-facts";
@@ -22,8 +23,15 @@ const acquiredSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("not_applicable") }).strict(),
   z.object({ status: z.literal("invalid_message") }).strict(),
 ]);
-const committedSchema = z.discriminatedUnion("status", [
-  z.object({ status: z.literal("completed"), outbound_message_id: uuid }).strict(),
+const completedCommitBase = { status: z.literal("completed"), outbound_message_id: uuid } as const;
+const committedSchema = z.union([
+  z.object(completedCommitBase).strict(),
+  z.object({
+    ...completedCommitBase,
+    qualification_status: mvpQualificationStatusSchema,
+    handoff: z.enum(["none", "technical_review", "human_review_required", "missing_facts"]),
+    missing_facts: z.array(mvpProjectFactKeySchema).max(MVP_PROJECT_FACT_KEYS.length),
+  }).strict(),
   z.object({ status: z.literal("stale") }).strict(),
 ]);
 

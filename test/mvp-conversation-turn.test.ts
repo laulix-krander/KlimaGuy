@@ -18,7 +18,7 @@ const valid = { reply_text: "Danke! Wo kann das Außengerät stehen?", facts_pat
 
 function harness(output: unknown = valid) {
   let facts: MvpProjectFact[] = [{ key: "room_type", value: "living_room" }];
-  const acquire = vi.fn().mockResolvedValue(context); const commit = vi.fn(async (_turn, result) => {
+  const acquire = vi.fn().mockResolvedValue(context); const commit = vi.fn(async (_turn, result): Promise<unknown> => {
     facts = [...facts.filter((old) => !result.facts_patch.some((next: MvpProjectFact) => next.key === old.key)), ...result.facts_patch];
     return { status: "completed", outbound_message_id: id(10) };
   });
@@ -66,6 +66,34 @@ describe("MVP conversation turn", () => {
     expect(h.facts()).toContainEqual({ key: "room_area_sqm", value: 28 });
     await runMvpConversationTurn(id(2), id(1), h);
     expect(h.provider.generateTurn).toHaveBeenLastCalledWith(expect.objectContaining({ persisted_facts: expect.arrayContaining([{ key: "room_area_sqm", value: 28 }]) }));
+  });
+
+  it("accepts both fresh Step-11 completion metadata and minimal idempotent replay", async () => {
+    const fresh = harness();
+    fresh.commit.mockResolvedValue({
+      status: "completed", outbound_message_id: id(10), qualification_status: "in_progress",
+      handoff: "none", missing_facts: ["outdoor_unit_position"],
+    });
+    await expect(runMvpConversationTurn(id(2), id(1), fresh)).resolves.toMatchObject({
+      status: "completed", outbound_message_id: id(10),
+    });
+
+    const replay = harness();
+    replay.commit.mockResolvedValue({ status: "completed", outbound_message_id: id(10) });
+    await expect(runMvpConversationTurn(id(2), id(1), replay)).resolves.toMatchObject({
+      status: "completed", outbound_message_id: id(10),
+    });
+  });
+
+  it.each([
+    { status: "completed", outbound_message_id: id(10), qualification_status: "invented", handoff: "none", missing_facts: [] },
+    { status: "completed", outbound_message_id: id(10), qualification_status: "in_progress", handoff: "automatic_offer", missing_facts: [] },
+    { status: "completed", outbound_message_id: id(10), qualification_status: "in_progress", handoff: "none", missing_facts: ["price"] },
+    { status: "completed", outbound_message_id: id(10), qualification_status: "in_progress", handoff: "none" },
+  ])("rejects malformed extended Step-11 completion responses", async (response) => {
+    const h = harness(); h.commit.mockResolvedValue(response);
+    await expect(runMvpConversationTurn(id(2), id(1), h)).rejects.toThrow("mvp_turn_commit_failed");
+    expect(h.fail).toHaveBeenCalledWith(id(9), "commit_failed");
   });
 
   it.each([
