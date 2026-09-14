@@ -6,6 +6,7 @@ import { mvpAiTurnResultSchema, type MvpAiTurnInput } from "@/lib/domain/mvp-ai-
 import type { MvpAiTurnProvider } from "../../mvp-turn-provider";
 import { readOpenAiEnvironment, readOpenAiProviderConfig, type OpenAiEnvironment } from "./config";
 import { OPENAI_MVP_TURN_INSTRUCTIONS } from "./mvp-turn-instructions";
+import { mvpOpenAiTurnOutputSchema } from "./mvp-turn-output-schema";
 
 type MvpOpenAiClient = Pick<OpenAI, "responses">;
 
@@ -34,10 +35,10 @@ export class OpenAiMvpTurnProvider implements MvpAiTurnProvider {
           { type: "input_text", text: JSON.stringify({ ...input, ready_media: input.ready_media.map(({ image_data: _imageData, ...media }) => media) }) },
           ...input.ready_media.map((media) => ({ type: "input_image" as const, image_url: media.image_data, detail: "auto" as const })),
         ] }],
-        text: { format: zodTextFormat(mvpAiTurnResultSchema, "klimaguy_mvp_turn") },
+        text: { format: zodTextFormat(mvpOpenAiTurnOutputSchema, "klimaguy_mvp_turn") },
       });
       if (response.status !== undefined && response.status !== "completed") throw new Error("incomplete");
-      return response.output_parsed;
+      return mvpAiTurnResultSchema.parse(response.output_parsed);
     } catch (error) {
       throw new MvpOpenAiTurnError("mvp_openai_turn_failed", { cause: error });
     }
