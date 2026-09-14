@@ -122,7 +122,15 @@ export function createWhatsAppWebhookHandlers(dependencies: {
           }
         }
         for(const item of parsed) if(item.kind==="delivery_status") await reconcileStatus(item.event);
-      } catch { return new Response(null, { status: 500 }); }
+      } catch (error) {
+        const code = error instanceof Error && [
+          "message_persistence_failed",
+          "conversation_engine_resolution_failed",
+          "conversation_engine_configuration_error",
+        ].includes(error.message) ? error.message : "whatsapp_webhook_processing_failed";
+        console.error("whatsapp_webhook_failed", { operation: "process_authenticated_webhook", code });
+        return new Response(null, { status: 500 });
+      }
       return new Response(null, { status: 200 });
     },
   };

@@ -66,8 +66,17 @@ export async function finalizeExpiredWhatsAppDeliveryAmbiguous(commandId: string
   return recoverySchema.parse(await rpc("finalize_expired_whatsapp_delivery_ambiguous", { target_delivery_command_id: uuid.parse(commandId) }, "delivery_recovery_failed"));
 }
 
-export async function discoverRecoverableWhatsAppDeliveries(limit = WHATSAPP_DELIVERY_RECOVERY_LIMIT): Promise<RecoverableDelivery[]> {
-  return discoverySchema.parse(await rpc("discover_recoverable_whatsapp_deliveries", { target_limit: Math.min(Math.max(Math.trunc(limit), 0), WHATSAPP_DELIVERY_RECOVERY_LIMIT) }, "delivery_discovery_failed"));
+export async function discoverRecoverableWhatsAppDeliveries(
+  limit: number = WHATSAPP_DELIVERY_RECOVERY_LIMIT,
+  source: { rpc(name: "discover_recoverable_whatsapp_deliveries", args: Record<string, unknown>): PromiseLike<{ data: unknown; error: unknown }> } = client(),
+): Promise<RecoverableDelivery[]> {
+  const { data, error } = await source.rpc("discover_recoverable_whatsapp_deliveries", {
+    target_limit: Math.min(Math.max(Math.trunc(limit), 0), WHATSAPP_DELIVERY_RECOVERY_LIMIT),
+  });
+  if (error) throw new Error("delivery_discovery_failed");
+  const parsed = discoverySchema.safeParse(data);
+  if (!parsed.success) throw new Error("delivery_discovery_failed");
+  return parsed.data;
 }
 
 export function createProductiveRecoverableWhatsAppDeliveryDependencies(): RecoverableWhatsAppDeliveryDependencies {
