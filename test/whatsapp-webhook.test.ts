@@ -35,8 +35,12 @@ describe("WhatsApp edge parser", () => {
     expect(parseWhatsAppWebhook(value).filter((x) => x.kind === "inbound_text")).toHaveLength(3);
   });
 
-  it.each(["image", "audio", "document", "video", "sticker"])("deferred %s ohne Download", (type) => {
+  it.each(["audio", "document", "video", "sticker"])("deferred %s ohne Download", (type) => {
     expect(parseWhatsAppWebhook(envelope([{from:"1",id:"x",timestamp:"1",type}]))[0]).toMatchObject({ kind:"media_deferred", media_type:type });
+  });
+
+  it("canonicalisiert ein Bild mit optionaler Caption und Meta-MIME",()=>{
+    expect(parseWhatsAppWebhook(envelope([{from:"491234",id:"wamid.image",timestamp:"1787565600",type:"image",image:{id:"media-1",caption:"Außengerät",mime_type:"image/jpeg"}}]))).toEqual([{kind:"inbound_image",event:{provider:"whatsapp",provider_message_id:"wamid.image",provider_media_id:"media-1",external_sender_identity:"491234",sender_scope:"business-1",provider_occurred_at:"2026-08-24T10:00:00.000Z",message_type:"image",caption:"Außengerät",declared_mime_type:"image/jpeg"}}]);
   });
 
   it("klassifiziert Status, Non-Message, unbekannte Typen und malformed kontrolliert", () => {
@@ -72,6 +76,15 @@ describe("WhatsApp webhook security and route", () => {
     const h = createHandlers({ appSecret:()=>secret, persist, triggerCycle });
     expect((await h.POST(signed(envelope(), "sha256="+"0".repeat(64)))).status).toBe(401);
     expect(persist).not.toHaveBeenCalled(); expect(triggerCycle).not.toHaveBeenCalled();
+  });
+
+  it("dedupliziert Bilder vor Download und verarbeitet akzeptierte Bilder genau einmal",async()=>{
+    const recorded={status:"recorded" as const,receipt_id:uuid(1),conversation_id:uuid(2),internal_message_id:uuid(3),ingestion_command_id:uuid(4),cycle_eligible:false as const};
+    const duplicate={...recorded,status:"duplicate" as const}; const persistImage=vi.fn().mockResolvedValueOnce(recorded).mockResolvedValueOnce(duplicate); const ingestImage=vi.fn();
+    const handler=createHandlers({appSecret:()=>secret,persistImage,ingestImage,firstContactEligibility:vi.fn().mockResolvedValue({status:"already_initialized"}),initializeFirstContact:vi.fn()});
+    const image=envelope([{from:"1",id:"i",timestamp:"1787565600",type:"image",image:{id:"m",mime_type:"image/jpeg"}}]);
+    expect((await handler.POST(signed(image))).status).toBe(200); expect((await handler.POST(signed(image))).status).toBe(200);
+    expect(persistImage).toHaveBeenCalledTimes(2);expect(ingestImage).toHaveBeenCalledOnce();expect(ingestImage).toHaveBeenCalledWith({commandId:uuid(4)});
   });
 
   it("persistiert Multi-Message und triggert AP-16-03 nur mit message_id", async () => {

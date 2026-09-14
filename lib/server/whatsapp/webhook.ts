@@ -8,6 +8,7 @@ import { readProductiveFirstContactEligibility, type FirstContactEligibilityResu
 import { runProductiveFirstContactInitialization } from "@/lib/server/conversation/productive-first-contact";
 import { resolveProductiveConversationEngine, type ConversationEngineResolver } from "@/lib/server/conversation/conversation-engine-routing";
 import { dispatchMvpConversation, type MvpConversationDispatch } from "@/lib/server/conversation/mvp-conversation-dispatch";
+import { persistWhatsAppInboundImage, runWhatsAppImageIngestion, type WhatsAppImagePersistence } from "./media-ingestion";
 
 /** Internal security ceiling, not a claimed Meta provider limit. */
 export const WHATSAPP_WEBHOOK_MAX_BYTES = 1_048_576;
@@ -41,6 +42,8 @@ export function createWhatsAppWebhookHandlers(dependencies: {
   initializeFirstContact?: typeof runProductiveFirstContactInitialization;
   resolveEngine?: ConversationEngineResolver;
   dispatchMvp?: MvpConversationDispatch;
+  persistImage?: WhatsAppImagePersistence;
+  ingestImage?: typeof runWhatsAppImageIngestion;
 } = {}) {
   const persist = dependencies.persist ?? persistWhatsAppInboundText;
   const triggerCycle = dependencies.triggerCycle ?? triggerPersistentMessageCycle;
@@ -51,6 +54,8 @@ export function createWhatsAppWebhookHandlers(dependencies: {
   const initializeFirstContact = dependencies.initializeFirstContact ?? runProductiveFirstContactInitialization;
   const resolveEngine = dependencies.resolveEngine ?? resolveProductiveConversationEngine;
   const dispatchMvp = dependencies.dispatchMvp ?? dispatchMvpConversation;
+  const persistImage=dependencies.persistImage??persistWhatsAppInboundImage;
+  const ingestImage=dependencies.ingestImage??runWhatsAppImageIngestion;
   return {
     GET: async (request: Request): Promise<Response> => {
       const configured = verifyToken();
@@ -77,6 +82,17 @@ export function createWhatsAppWebhookHandlers(dependencies: {
       if (parsed.some((event) => event.kind === "malformed")) return new Response(null, { status: 400 });
       try {
         for (const item of parsed) {
+          if(item.kind==="inbound_image"){
+            const result=await persistImage(item.event);
+            if(result.status==="duplicate")continue;
+            // Reuse the current First Contact authority to create Project N when the image starts a lifecycle.
+            try {
+              const eligibility=await firstContactEligibility(result.conversation_id);
+              if(eligibility.status==="healable"||eligibility.status==="already_initialized")await initializeFirstContact({conversation_id:result.conversation_id,request_started_at:requestStartedAt,immediate_delivery:true});
+              await ingestImage({commandId:result.ingestion_command_id});
+            } catch { /* Receipt, message and pending command remain durable for bounded recovery. */ }
+            continue;
+          }
           if (item.kind !== "inbound_text") continue;
           const result = await persist(item.event);
           // Dedupe is authoritative: duplicates never resolve or invoke an engine.

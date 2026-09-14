@@ -13,8 +13,17 @@ export const whatsappInboundTextSchema = z.object({
 }).strict();
 
 export type WhatsAppInboundText = z.infer<typeof whatsappInboundTextSchema>;
+export const whatsappInboundImageSchema = z.object({
+  provider: z.literal("whatsapp"), provider_message_id: z.string().min(1).max(512),
+  provider_media_id: z.string().min(1).max(512), external_sender_identity: z.string().min(1).max(255),
+  sender_scope: z.string().min(1).max(255), provider_occurred_at: z.string().datetime({ offset: true }),
+  message_type: z.literal("image"), caption: z.string().min(1).max(20_000).optional(),
+  declared_mime_type: z.string().min(1).max(255).optional(),
+}).strict();
+export type WhatsAppInboundImage = z.infer<typeof whatsappInboundImageSchema>;
 export type WhatsAppParsedEvent =
   | { kind: "inbound_text"; event: WhatsAppInboundText }
+  | { kind: "inbound_image"; event: WhatsAppInboundImage }
   | { kind: "delivery_status"; event: WhatsAppDeliveryStatus }
   | { kind: "media_deferred"; media_type: "image" | "document" | "audio" | "video" | "sticker" }
   | { kind: "unsupported_message_type"; message_type: string }
