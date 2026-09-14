@@ -37,7 +37,7 @@ export const mvpAiTurnInputObjectSchema = z.object({
   persisted_facts: z.array(mvpProjectFactSchema).max(MVP_PROJECT_FACT_KEYS.length),
   inbound: z.object({
     message_id: uuid,
-    text: z.string().trim().min(1).max(4_000),
+    text: z.string().trim().min(1).max(4_000).nullable(),
   }).strict(),
   transcript: z.array(z.object({
     message_id: uuid,
@@ -50,6 +50,7 @@ export const mvpAiTurnInputObjectSchema = z.object({
     category: z.enum(MVP_REQUIRED_PHOTO_CATEGORIES),
     mime_type: z.enum(["image/jpeg", "image/png", "image/webp"]),
     caption: z.string().trim().min(1).max(1_000).nullable(),
+    image_data: z.string().regex(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/),
   }).strict()).max(20),
 }).strict();
 

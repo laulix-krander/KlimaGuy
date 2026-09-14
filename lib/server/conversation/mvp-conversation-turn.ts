@@ -8,10 +8,15 @@ import { OpenAiMvpTurnProvider } from "@/lib/server/ai/providers/openai/mvp-turn
 import { getProjectFacts, type ProjectFactsRpc } from "@/lib/server/project-facts/project-facts";
 
 const uuid = z.string().uuid();
+const acquiredMediaSchema = z.object({ media_id: uuid, category: mvpAiTurnInputObjectSchema.shape.ready_media.element.shape.category,
+  mime_type: mvpAiTurnInputObjectSchema.shape.ready_media.element.shape.mime_type,
+  caption: mvpAiTurnInputObjectSchema.shape.ready_media.element.shape.caption,
+  storage_bucket: z.literal("project-media"), storage_path: z.string().min(1).max(1_024),
+  file_size_bytes: z.number().int().positive().max(15_000_000) }).strict();
 const acquiredSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("acquired"), turn_id: uuid, turn: mvpAiTurnInputObjectSchema.shape.turn,
     project: mvpAiTurnInputObjectSchema.shape.project, inbound: mvpAiTurnInputObjectSchema.shape.inbound,
-    transcript: mvpAiTurnInputObjectSchema.shape.transcript, ready_media: mvpAiTurnInputObjectSchema.shape.ready_media }).strict(),
+    transcript: mvpAiTurnInputObjectSchema.shape.transcript, ready_media: z.array(acquiredMediaSchema).max(20) }).strict(),
   z.object({ status: z.literal("busy"), turn_id: uuid, outbound_message_id: uuid.nullable() }).strict(),
   z.object({ status: z.literal("completed"), turn_id: uuid, outbound_message_id: uuid.nullable() }).strict(),
   z.object({ status: z.literal("not_applicable") }).strict(),
@@ -26,6 +31,8 @@ export type MvpTurnStore = ProjectFactsRpc & {
   acquire(conversationId: string, inboundMessageId: string): Promise<unknown>;
   commit(turnId: string, result: MvpAiTurnResult): Promise<unknown>;
   fail(turnId: string, code: "provider_failure" | "invalid_provider_output" | "commit_failed"): Promise<void>;
+  loadMedia(bucket: string, path: string): Promise<Uint8Array>;
+  revalidate(turnId: string): Promise<boolean>;
 };
 
 export type MvpTurnRunResult = Readonly<
@@ -48,9 +55,19 @@ export async function runMvpConversationTurn(
   if (acquired.status === "busy" || acquired.status === "completed") return { status: "duplicate" };
 
   const persistedFacts = await getProjectFacts(dependencies.store, acquired.turn.project_id);
+  const readyMedia = await Promise.all(acquired.ready_media.map(async (media) => {
+    const bytes = await dependencies.store.loadMedia(media.storage_bucket, media.storage_path);
+    if (bytes.byteLength !== media.file_size_bytes) throw new MvpConversationTurnError("mvp_turn_media_invalid");
+    return { media_id: media.media_id, category: media.category, mime_type: media.mime_type,
+      caption: media.caption, image_data: `data:${media.mime_type};base64,${Buffer.from(bytes).toString("base64")}` };
+  }));
+  if (!await dependencies.store.revalidate(acquired.turn_id)) {
+    await dependencies.store.fail(acquired.turn_id, "commit_failed");
+    throw new MvpConversationTurnError("mvp_turn_stale");
+  }
   const input: MvpAiTurnInput = mvpAiTurnInputSchema.parse({
     turn: acquired.turn, project: acquired.project, persisted_facts: persistedFacts,
-    inbound: acquired.inbound, transcript: acquired.transcript, ready_media: acquired.ready_media,
+    inbound: acquired.inbound, transcript: acquired.transcript, ready_media: readyMedia,
   });
   let untrusted: unknown;
   try { untrusted = await dependencies.provider.generateTurn(input); }
@@ -92,6 +109,8 @@ export function createProductiveMvpTurnStore(): MvpTurnStore {
       target_reply_text: result.reply_text, target_qualification_status: result.qualification_status,
       target_needs_human: result.needs_human, target_human_reason: result.human_reason }),
     fail: async (turnId, code) => { await call("fail_mvp_ai_turn", { target_turn_id: turnId, target_failure_code: code }); },
+    loadMedia: async (bucket, path) => { const { data, error } = await client.storage.from(bucket).download(path); if (error) throw new MvpConversationTurnError("mvp_turn_media_unavailable"); return new Uint8Array(await data.arrayBuffer()); },
+    revalidate: async (turnId) => { const value = await call("revalidate_mvp_ai_turn", { target_turn_id: turnId }); return value === true; },
   };
 }
 
