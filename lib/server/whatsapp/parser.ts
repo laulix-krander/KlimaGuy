@@ -1,6 +1,6 @@
 import "server-only";
 
-import { whatsappDeliveryStatusSchema, whatsappInboundTextSchema, type WhatsAppParsedEvent } from "./contracts";
+import { whatsappDeliveryStatusSchema, whatsappInboundImageSchema, whatsappInboundTextSchema, type WhatsAppParsedEvent } from "./contracts";
 
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -41,6 +41,15 @@ export function parseWhatsAppWebhook(payload: unknown): WhatsAppParsedEvent[] {
       }
       for (const message of messages) {
         if (!record(message) || !scope || typeof message.type !== "string") { results.push({ kind: "malformed" }); continue; }
+        if (message.type === "image") {
+          const image = message.image;
+          const parsed = whatsappInboundImageSchema.safeParse({
+            provider:"whatsapp", provider_message_id:message.id, provider_media_id:record(image)?image.id:undefined,
+            external_sender_identity:message.from, sender_scope:scope, provider_occurred_at:timestamp(message.timestamp),
+            message_type:"image", caption:record(image)?image.caption:undefined, declared_mime_type:record(image)?image.mime_type:undefined,
+          });
+          results.push(parsed.success ? {kind:"inbound_image",event:parsed.data} : {kind:"malformed"}); continue;
+        }
         if (mediaTypes.has(message.type)) {
           results.push({ kind: "media_deferred", media_type: message.type as "image" | "document" | "audio" | "video" | "sticker" }); continue;
         }
