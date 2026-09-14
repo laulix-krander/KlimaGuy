@@ -23,12 +23,32 @@ function harness(output: unknown = valid) {
     return { status: "completed", outbound_message_id: id(10) };
   });
   const fail = vi.fn().mockResolvedValue(undefined);
-  const store: MvpTurnStore = { acquire, commit, fail, rpc: vi.fn(async (name) => ({ data: name === "get_mvp_project_facts" ? facts : null, error: null })) };
+  const store: MvpTurnStore = { acquire, commit, fail, loadMedia: vi.fn(), revalidate: vi.fn().mockResolvedValue(true), rpc: vi.fn(async (name) => ({ data: name === "get_mvp_project_facts" ? facts : null, error: null })) };
   const provider: MvpAiTurnProvider = { generateTurn: vi.fn().mockResolvedValue(output) };
   return { store, provider, acquire, commit, fail, facts: () => facts };
 }
 
 describe("MVP conversation turn", () => {
+  it("loads actual private image bytes and supplies them only to the acquired turn", async () => {
+    const h = harness();
+    h.acquire.mockResolvedValue({ ...context, inbound: { message_id: id(1), text: null }, ready_media: [{
+      media_id: id(20), category: "room_overview", mime_type: "image/jpeg", caption: null,
+      storage_bucket: "project-media", storage_path: `projects/${id(4)}/image.jpg`, file_size_bytes: 3,
+    }] });
+    vi.mocked(h.store.loadMedia).mockResolvedValue(new Uint8Array([0xff, 0xd8, 0xff]));
+    await runMvpConversationTurn(id(2), id(1), h);
+    expect(h.store.loadMedia).toHaveBeenCalledWith("project-media", `projects/${id(4)}/image.jpg`);
+    expect(h.provider.generateTurn).toHaveBeenCalledWith(expect.objectContaining({ ready_media: [expect.objectContaining({
+      media_id: id(20), image_data: "data:image/jpeg;base64,/9j/",
+    })] }));
+  });
+
+  it("stops before Vision inference when lifecycle revalidation fails", async () => {
+    const h = harness(); vi.mocked(h.store.revalidate).mockResolvedValue(false);
+    await expect(runMvpConversationTurn(id(2), id(1), h)).rejects.toThrow("mvp_turn_stale");
+    expect(h.provider.generateTurn).not.toHaveBeenCalled(); expect(h.commit).not.toHaveBeenCalled();
+  });
+
   it("loads canonical facts and only the acquired current-Conversation transcript", async () => {
     const h = harness(); await runMvpConversationTurn(id(2), id(1), h);
     expect(h.provider.generateTurn).toHaveBeenCalledOnce();

@@ -89,7 +89,11 @@ export function createWhatsAppWebhookHandlers(dependencies: {
             try {
               const eligibility=await firstContactEligibility(result.conversation_id);
               if(eligibility.status==="healable"||eligibility.status==="already_initialized")await initializeFirstContact({conversation_id:result.conversation_id,request_started_at:requestStartedAt,immediate_delivery:true});
-              await ingestImage({commandId:result.ingestion_command_id});
+              const ingestion=await ingestImage({commandId:result.ingestion_command_id});
+              if(ingestion.kind==="completed") {
+                const ownership=await resolveEngine({conversation_id:result.conversation_id,provider:item.event.provider,sender_scope:item.event.sender_scope,external_identity:item.event.external_sender_identity});
+                if(ownership.engine_owner==="mvp") await dispatchMvp({conversation_id:result.conversation_id,message_id:result.internal_message_id,first_contact:false});
+              }
             } catch { /* Receipt, message and pending command remain durable for bounded recovery. */ }
             continue;
           }

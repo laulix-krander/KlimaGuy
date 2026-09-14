@@ -30,7 +30,10 @@ export class OpenAiMvpTurnProvider implements MvpAiTurnProvider {
       const response = await this.client.responses.parse({
         model: configured.config.model,
         instructions: OPENAI_MVP_TURN_INSTRUCTIONS,
-        input: JSON.stringify(input),
+        input: [{ role: "user", content: [
+          { type: "input_text", text: JSON.stringify({ ...input, ready_media: input.ready_media.map(({ image_data: _imageData, ...media }) => media) }) },
+          ...input.ready_media.map((media) => ({ type: "input_image" as const, image_url: media.image_data, detail: "auto" as const })),
+        ] }],
         text: { format: zodTextFormat(mvpAiTurnResultSchema, "klimaguy_mvp_turn") },
       });
       if (response.status !== undefined && response.status !== "completed") throw new Error("incomplete");
