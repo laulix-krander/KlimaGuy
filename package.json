@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:mvp-release-gate": "bash scripts/run-mvp-release-gate.sh",
     "provision:system-actor": "node --no-warnings --experimental-strip-types scripts/provision-system-actor.ts"
   },
   "dependencies": {
