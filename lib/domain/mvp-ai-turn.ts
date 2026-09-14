@@ -22,7 +22,7 @@ export const MVP_HUMAN_ESCALATION_REASONS = [
 
 const uuid = z.string().uuid();
 
-export const mvpAiTurnInputSchema = z.object({
+export const mvpAiTurnInputObjectSchema = z.object({
   turn: z.object({
     inbound_message_id: uuid,
     conversation_id: uuid,
@@ -51,7 +51,9 @@ export const mvpAiTurnInputSchema = z.object({
     mime_type: z.enum(["image/jpeg", "image/png", "image/webp"]),
     caption: z.string().trim().min(1).max(1_000).nullable(),
   }).strict()).max(20),
-}).strict().superRefine((input, context) => {
+}).strict();
+
+export const mvpAiTurnInputSchema = mvpAiTurnInputObjectSchema.superRefine((input, context) => {
   if (input.inbound.message_id !== input.turn.inbound_message_id) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["inbound", "message_id"], message: "inbound_message_mismatch" });
   }
