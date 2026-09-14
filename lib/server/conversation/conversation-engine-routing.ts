@@ -8,6 +8,7 @@ import {
   type ConversationEngineOwner,
   type ConversationRoutingIdentity,
 } from "@/lib/domain/conversation-engine";
+import { classifyRuntimeRpcError } from "./runtime-rpc-diagnostics";
 
 const resultSchema = z.object({
   conversation_id: z.string().uuid(),
@@ -32,7 +33,13 @@ export async function resolveConversationEngine(
     target_external_identity: input.external_identity,
     proposed_owner: proposedOwner,
   });
-  if (error) throw new Error("conversation_engine_resolution_failed");
+  if (error) {
+    console.error("conversation_engine_rpc_failed", {
+      operation: "resolve_conversation_engine_owner",
+      ...classifyRuntimeRpcError(error),
+    });
+    throw new Error("conversation_engine_resolution_failed");
+  }
   const parsed = resultSchema.safeParse(data);
   if (!parsed.success) throw new Error("conversation_engine_resolution_failed");
   return parsed.data;

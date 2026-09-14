@@ -2,6 +2,7 @@ import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { classifyRuntimeRpcError } from "./runtime-rpc-diagnostics";
 
 export const FIRST_CONTACT_RECOVERY_BATCH_SIZE = 10;
 const itemSchema = z.object({
@@ -19,9 +20,18 @@ function client() {
 }
 
 /** Exactly one bounded, content-free service-role discovery call. */
-export async function discoverRecoverableFirstContacts(limit = FIRST_CONTACT_RECOVERY_BATCH_SIZE): Promise<FirstContactRecoveryItem[]> {
+export async function discoverRecoverableFirstContacts(
+  limit = FIRST_CONTACT_RECOVERY_BATCH_SIZE,
+  source: { rpc(name: "discover_recoverable_first_contacts", args: Record<string, unknown>): PromiseLike<{ data: unknown; error: unknown }> } = client(),
+): Promise<FirstContactRecoveryItem[]> {
   const bounded = Math.min(Math.max(Math.trunc(limit), 0), FIRST_CONTACT_RECOVERY_BATCH_SIZE);
-  const { data, error } = await client().rpc("discover_recoverable_first_contacts", { target_limit: bounded });
-  if (error) throw new Error("first_contact_recovery_discovery_failed");
+  const { data, error } = await source.rpc("discover_recoverable_first_contacts", { target_limit: bounded });
+  if (error) {
+    console.error("first_contact_recovery_rpc_failed", {
+      operation: "discover_recoverable_first_contacts",
+      ...classifyRuntimeRpcError(error),
+    });
+    throw new Error("first_contact_recovery_discovery_failed");
+  }
   return discoverySchema.parse(data);
 }

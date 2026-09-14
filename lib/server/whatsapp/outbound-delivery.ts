@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { sendWhatsAppText, type WhatsAppSendResult } from "./outbound-adapter";
 import { runRecoverableWhatsAppDelivery, type RecoverableWhatsAppDeliveryDependencies } from "./recoverable-delivery-runner";
+import { classifyRuntimeRpcError } from "@/lib/server/conversation/runtime-rpc-diagnostics";
 
 export const WHATSAPP_DELIVERY_LEASE_SECONDS = 60 as const;
 export const WHATSAPP_DELIVERY_RECOVERY_LIMIT = 5 as const;
@@ -73,7 +74,13 @@ export async function discoverRecoverableWhatsAppDeliveries(
   const { data, error } = await source.rpc("discover_recoverable_whatsapp_deliveries", {
     target_limit: Math.min(Math.max(Math.trunc(limit), 0), WHATSAPP_DELIVERY_RECOVERY_LIMIT),
   });
-  if (error) throw new Error("delivery_discovery_failed");
+  if (error) {
+    console.error("whatsapp_delivery_discovery_rpc_failed", {
+      operation: "discover_recoverable_whatsapp_deliveries",
+      ...classifyRuntimeRpcError(error),
+    });
+    throw new Error("delivery_discovery_failed");
+  }
   const parsed = discoverySchema.safeParse(data);
   if (!parsed.success) throw new Error("delivery_discovery_failed");
   return parsed.data;
