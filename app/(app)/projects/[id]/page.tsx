@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, Badge } from "@/components/ui";
 import { humanReviewDisplay, optionalFieldDisplay, projectClassDisplay, projectSummaryDisplay } from "@/lib/domain/display";
-import { canBindProjectMediaAsEvidence, canChangeProjectClass, canChangeProjectStatus, canCreateProjectNote, canEditAnyProjectNote, canEditOwnProjectNote, canEditProjectCoreFields, canEditProjectSummary, canChangeHumanReview, canReserveProjectMediaUpload, canSoftDeleteAnyProjectNote, canSoftDeleteOwnProjectNote } from "@/lib/domain/permissions";
+import { canBindProjectMediaAsEvidence, canChangeProjectClass, canChangeProjectStatus, canCreateProjectNote, canEditAnyProjectNote, canEditOwnProjectNote, canEditProjectCoreFields, canEditProjectSummary, canChangeHumanReview, canManageProjectOffers, canReserveProjectMediaUpload, canSoftDeleteAnyProjectNote, canSoftDeleteOwnProjectNote } from "@/lib/domain/permissions";
 import { projectIdSchema, roleSchema } from "@/lib/domain/schemas";
 import { statusToLabel } from "@/lib/domain/mappers";
 import type { ProjectClass, ProjectStatus } from "@/lib/domain/types";
@@ -20,6 +20,7 @@ import { getProjectMediaGallery } from "@/lib/actions/project-media-gallery";
 import { ProjectMediaGallery } from "./project-media-gallery";
 import { getProjectEvidence } from "@/lib/actions/project-evidence-read";
 import { bindProjectMediaEvidenceForProjectAction } from "@/lib/actions/project-evidence-binding";
+import { ProjectOfferHandoff } from "./project-offer-handoff";
 
 
 function formatDate(value: string): string {
@@ -127,6 +128,11 @@ export default async function ProjectDetailPage({ params, searchParams }: { para
           </div>
         ) : null}
       </Card>
+      {(project.status === "technical_review" || project.status === "human_review") ? <ProjectOfferHandoff
+        mayCreate={parsedRole.success && canManageProjectOffers(parsedRole.data)}
+        projectId={project.id}
+        status={project.status}
+      /> : null}
       {mayUploadProjectMedia ? (
         <Card>
           <div className="mb-4">
