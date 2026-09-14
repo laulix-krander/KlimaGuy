@@ -170,6 +170,27 @@ describe("WhatsApp webhook security and route", () => {
     expect(triggerCycle).not.toHaveBeenCalled(); expect(initializeFirstContact).not.toHaveBeenCalled();
   });
 
+  it("lets a new text after logical reset reach MVP dispatch without a webhook 500", async () => {
+    const persisted={status:"recorded" as const,receipt_id:uuid(1),transport_identity_id:uuid(2),conversation_id:uuid(3),internal_message_id:uuid(4),cycle_eligible:false};
+    const resolveEngine=vi.fn().mockResolvedValue({conversation_id:uuid(3),engine_owner:"mvp"});
+    const dispatchMvp=vi.fn();
+    const response=await createHandlers({appSecret:()=>secret,persist:vi.fn().mockResolvedValue(persisted),resolveEngine,dispatchMvp}).POST(signed(envelope()));
+    expect(response.status).toBe(200);
+    expect(resolveEngine).toHaveBeenCalledOnce();
+    expect(dispatchMvp).toHaveBeenCalledWith({conversation_id:uuid(3),message_id:uuid(4),first_contact:true});
+  });
+
+  it("logs only a safe operation and internal code when engine resolution fails", async () => {
+    const logger=vi.spyOn(console,"error").mockImplementation(()=>undefined);
+    const persisted={status:"recorded" as const,receipt_id:uuid(1),transport_identity_id:uuid(2),conversation_id:uuid(3),internal_message_id:uuid(4),cycle_eligible:false};
+    const response=await createHandlers({appSecret:()=>secret,persist:vi.fn().mockResolvedValue(persisted),resolveEngine:vi.fn().mockRejectedValue(new Error("conversation_engine_resolution_failed"))}).POST(signed(envelope()));
+    expect(response.status).toBe(500);
+    expect(logger).toHaveBeenCalledWith("whatsapp_webhook_failed",{operation:"process_authenticated_webhook",code:"conversation_engine_resolution_failed"});
+    expect(JSON.stringify(logger.mock.calls)).not.toContain("491234");
+    expect(JSON.stringify(logger.mock.calls)).not.toContain("Grüße");
+    logger.mockRestore();
+  });
+
   it("does not resolve or dispatch either engine for a duplicate webhook", async () => {
     const duplicate={status:"duplicate" as const,receipt_id:uuid(1),transport_identity_id:uuid(2),conversation_id:uuid(3),internal_message_id:uuid(4),cycle_eligible:false};
     const resolveEngine=vi.fn(); const dispatchMvp=vi.fn(); const triggerCycle=vi.fn(); const initializeFirstContact=vi.fn();
