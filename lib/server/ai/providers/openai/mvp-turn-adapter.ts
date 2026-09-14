@@ -2,7 +2,7 @@ import "server-only";
 
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
-import { mvpAiTurnResultSchema, type MvpAiTurnInput } from "@/lib/domain/mvp-ai-turn";
+import type { MvpAiTurnInput } from "@/lib/domain/mvp-ai-turn";
 import type { MvpAiTurnProvider } from "../../mvp-turn-provider";
 import { readOpenAiEnvironment, readOpenAiProviderConfig, type OpenAiEnvironment } from "./config";
 import { OPENAI_MVP_TURN_INSTRUCTIONS } from "./mvp-turn-instructions";
@@ -38,7 +38,7 @@ export class OpenAiMvpTurnProvider implements MvpAiTurnProvider {
         text: { format: zodTextFormat(mvpOpenAiTurnOutputSchema, "klimaguy_mvp_turn") },
       });
       if (response.status !== undefined && response.status !== "completed") throw new Error("incomplete");
-      return mvpAiTurnResultSchema.parse(response.output_parsed);
+      return response.output_parsed;
     } catch (error) {
       throw new MvpOpenAiTurnError("mvp_openai_turn_failed", { cause: error });
     }

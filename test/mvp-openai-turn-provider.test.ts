@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+import { zodTextFormat } from "openai/helpers/zod";
 import { OpenAiMvpTurnProvider } from "../lib/server/ai/providers/openai/mvp-turn-adapter";
 import { mvpAiTurnInputSchema, mvpAiTurnResultSchema } from "../lib/domain/mvp-ai-turn";
+import {
+  mvpOpenAiFactSchema,
+  mvpOpenAiTurnOutputSchema,
+} from "../lib/server/ai/providers/openai/mvp-turn-output-schema";
+import { MVP_BUILDING_TYPES } from "../lib/domain/mvp-project-facts";
 
 function containsEmptySchema(value: unknown): boolean {
   if (Array.isArray(value)) return value.some(containsEmptySchema);
@@ -27,17 +33,46 @@ describe("dedicated MVP OpenAI provider", () => {
 
     await provider.generateTurn(mvpAiTurnInputSchema.parse({ turn: { inbound_message_id: "00000000-0000-4000-8000-000000000001", conversation_id: "00000000-0000-4000-8000-000000000002", expected_conversation_revision: 1, binding_id: "00000000-0000-4000-8000-000000000003", binding_revision: 1, project_id: "00000000-0000-4000-8000-000000000004" }, project: { title: "Anfrage" }, persisted_facts: [], inbound: { message_id: "00000000-0000-4000-8000-000000000001", text: "Hallo" }, transcript: [], ready_media: [] }));
 
-    const format = parse.mock.calls[0][0].text.format;
+    const format = zodTextFormat(mvpOpenAiTurnOutputSchema, "klimaguy_mvp_turn");
     expect(format.strict).toBe(true);
     expect(containsEmptySchema(format.schema)).toBe(false);
-    expect(format.schema.properties.facts_patch.items.properties.value).toEqual({
-      anyOf: expect.arrayContaining([
-        expect.objectContaining({ type: "string" }),
-        expect.objectContaining({ type: "number" }),
-        expect.objectContaining({ type: "boolean" }),
-        expect.objectContaining({ type: "array" }),
-      ]),
-    });
+    expect(parse.mock.calls[0][0].text.format).toEqual(format);
+
+    const generatedSchema = format.schema as {
+      properties: { facts_patch: { items: { anyOf: Array<{
+        properties?: { key?: { const?: string }; value?: { enum?: readonly string[] } };
+      }> } } };
+    };
+    const factBranches = generatedSchema.properties.facts_patch.items.anyOf;
+    const buildingType = factBranches.find((branch) =>
+      branch.properties?.key?.const === "building_type");
+    expect(buildingType?.properties?.value?.enum).toEqual(MVP_BUILDING_TYPES);
+    expect(factBranches).toHaveLength(21);
+  });
+
+  it("encodes canonical values per fact key, including the Production building-type case", () => {
+    expect(mvpOpenAiFactSchema.safeParse({ key: "building_type", value: "single_family_house" }).success).toBe(true);
+    expect(mvpOpenAiFactSchema.safeParse({ key: "building_type", value: "Einfamilienhaus" }).success).toBe(false);
+    expect(mvpOpenAiFactSchema.safeParse({ key: "building_type", value: 1 }).success).toBe(false);
+
+    for (const representative of [
+      { key: "installation_address", value: "Musterstraße 1" },
+      { key: "floor_level", value: 2 },
+      { key: "existing_air_conditioning", value: false },
+      { key: "room_type", value: "living_room" },
+      { key: "required_photo_categories", value: ["room_overview", "pipe_route"] },
+    ]) {
+      expect(mvpOpenAiFactSchema.safeParse(representative).success).toBe(true);
+    }
+  });
+
+  it("returns provider-safe output without applying authoritative domain validation", async () => {
+    const output = { reply_text: "Danke.", facts_patch: [{ key: "floor_level", value: 1.5 }], missing_facts: [], qualification_status: "in_progress", needs_human: false, human_reason: null };
+    const parse = vi.fn().mockResolvedValue({ status: "completed", output_parsed: output });
+    const provider = new OpenAiMvpTurnProvider(() => ({ OPENAI_API_KEY: "test" }), () => ({ responses: { parse } } as never));
+
+    await expect(provider.generateTurn(mvpAiTurnInputSchema.parse({ turn: { inbound_message_id: "00000000-0000-4000-8000-000000000001", conversation_id: "00000000-0000-4000-8000-000000000002", expected_conversation_revision: 1, binding_id: "00000000-0000-4000-8000-000000000003", binding_revision: 1, project_id: "00000000-0000-4000-8000-000000000004" }, project: { title: "Anfrage" }, persisted_facts: [], inbound: { message_id: "00000000-0000-4000-8000-000000000001", text: "In einem Einfamilienhaus" }, transcript: [], ready_media: [] }))).resolves.toEqual(output);
+    expect(mvpAiTurnResultSchema.safeParse(output).success).toBe(false);
   });
 
   it("validates representative provider facts with the authoritative domain contract", () => {

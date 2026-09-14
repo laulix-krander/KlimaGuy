@@ -111,6 +111,13 @@ describe("MVP conversation turn", () => {
     expect(h.commit).not.toHaveBeenCalled(); expect(h.fail).toHaveBeenCalledWith(id(9), "provider_failure");
   });
 
+  it("classifies provider-safe but canonical-domain-invalid output at the Step-5 boundary", async () => {
+    const h = harness({ ...valid, facts_patch: [{ key: "floor_level", value: 1.5 }] });
+    await expect(runMvpConversationTurn(id(2), id(1), h)).rejects.toThrow("mvp_turn_invalid_provider_output");
+    expect(h.fail).toHaveBeenCalledWith(id(9), "invalid_provider_output");
+    expect(h.fail).not.toHaveBeenCalledWith(id(9), "provider_failure");
+  });
+
   it("does not invoke a provider or create a reply for duplicate inbound", async () => {
     const h = harness(); h.acquire.mockResolvedValue({ status: "completed", turn_id: id(9), outbound_message_id: id(10) });
     await expect(runMvpConversationTurn(id(2), id(1), h)).resolves.toEqual({ status: "duplicate" });
