@@ -180,6 +180,32 @@ describe("WhatsApp webhook security and route", () => {
     expect(dispatchMvp).toHaveBeenCalledWith({conversation_id:uuid(3),message_id:uuid(4),first_contact:true});
   });
 
+  it.each([
+    ["mvp_turn_provider_failed", "mvp_turn_provider_failed"],
+    ["provider rejected UUID 00000000-0000-4000-8000-000000000099 for 491234: secret-token message Grüße", "mvp_dispatch_failed"],
+  ])("logs exactly one closed PII-safe event for MVP dispatch failure", async (failure, expectedCode) => {
+    const logger = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const persisted={status:"recorded" as const,receipt_id:uuid(1),transport_identity_id:uuid(2),conversation_id:uuid(3),internal_message_id:uuid(4),cycle_eligible:false};
+    const response = await createHandlers({ appSecret: () => secret, persist: vi.fn().mockResolvedValue(persisted),
+      resolveEngine: vi.fn().mockResolvedValue({ conversation_id: uuid(3), engine_owner: "mvp" }),
+      dispatchMvp: vi.fn().mockRejectedValue(new Error(failure)) }).POST(signed(envelope()));
+    expect(response.status).toBe(200);
+    expect(logger).toHaveBeenCalledTimes(1);
+    expect(logger).toHaveBeenCalledWith("mvp_dispatch_failed", { operation: "dispatch_mvp_conversation", code: expectedCode });
+    const logged = JSON.stringify(logger.mock.calls);
+    for (const forbidden of ["491234", "Grüße", "00000000-0000-4000-8000-000000000099", "secret-token", "provider rejected"]) expect(logged).not.toContain(forbidden);
+    logger.mockRestore();
+  });
+
+  it("keeps successful MVP dispatch at HTTP 200 without a failure event", async () => {
+    const logger = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const persisted={status:"recorded" as const,receipt_id:uuid(1),transport_identity_id:uuid(2),conversation_id:uuid(3),internal_message_id:uuid(4),cycle_eligible:true};
+    const response = await createHandlers({ appSecret: () => secret, persist: vi.fn().mockResolvedValue(persisted),
+      resolveEngine: vi.fn().mockResolvedValue({ conversation_id: uuid(3), engine_owner: "mvp" }), dispatchMvp: vi.fn().mockResolvedValue(undefined) }).POST(signed(envelope()));
+    expect(response.status).toBe(200); expect(logger).not.toHaveBeenCalled();
+    logger.mockRestore();
+  });
+
   it("logs only a safe operation and internal code when engine resolution fails", async () => {
     const logger=vi.spyOn(console,"error").mockImplementation(()=>undefined);
     const persisted={status:"recorded" as const,receipt_id:uuid(1),transport_identity_id:uuid(2),conversation_id:uuid(3),internal_message_id:uuid(4),cycle_eligible:false};
