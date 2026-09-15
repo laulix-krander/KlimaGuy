@@ -29,7 +29,7 @@ export const projectNoteIdSchema = z.string().uuid("Die Notiz-ID ist ungültig."
 
 export const PROJECT_MEDIA_MIME_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"] as const;
 export const PROJECT_MEDIA_CATEGORIES = [
-  "indoor_area", "outdoor_area", "indoor_unit_location", "outdoor_unit_location",
+  "room_overview", "indoor_area", "outdoor_area", "indoor_unit_location", "outdoor_unit_location",
   "pipe_route", "electrical_connection", "condensate_route", "facade", "roof",
   "balcony", "floor_plan", "technical_document", "customer_document", "other",
 ] as const;

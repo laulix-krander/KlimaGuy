@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { mvpAiTurnInputObjectSchema, mvpAiTurnInputSchema, mvpAiTurnResultSchema, mvpQualificationStatusSchema, type MvpAiTurnInput, type MvpAiTurnResult } from "@/lib/domain/mvp-ai-turn";
 import { MVP_PROJECT_FACT_KEYS, mvpProjectFactKeySchema } from "@/lib/domain/mvp-project-facts";
+import { MVP_REQUIRED_PHOTO_CATEGORIES } from "@/lib/domain/mvp-project-facts";
 import type { MvpAiTurnProvider } from "@/lib/server/ai/mvp-turn-provider";
 import { OpenAiMvpTurnProvider } from "@/lib/server/ai/providers/openai/mvp-turn-adapter";
 import { getProjectFacts, type ProjectFactsRpc } from "@/lib/server/project-facts/project-facts";
@@ -18,7 +19,8 @@ const acquiredSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("acquired"), turn_id: uuid, turn: mvpAiTurnInputObjectSchema.shape.turn,
     project: mvpAiTurnInputObjectSchema.shape.project, customer: mvpAiTurnInputObjectSchema.shape.customer,
     inbound: mvpAiTurnInputObjectSchema.shape.inbound,
-    transcript: mvpAiTurnInputObjectSchema.shape.transcript, ready_media: z.array(acquiredMediaSchema).max(20) }).strict(),
+    transcript: mvpAiTurnInputObjectSchema.shape.transcript, ready_media: z.array(acquiredMediaSchema).max(20),
+    project_photo_coverage: mvpAiTurnInputObjectSchema.shape.project_photo_coverage }).strict(),
   z.object({ status: z.literal("busy"), turn_id: uuid, outbound_message_id: uuid.nullable() }).strict(),
   z.object({ status: z.literal("completed"), turn_id: uuid, outbound_message_id: uuid.nullable() }).strict(),
   z.object({ status: z.literal("not_applicable") }).strict(),
@@ -30,8 +32,9 @@ const committedSchema = z.union([
   z.object({
     ...completedCommitBase,
     qualification_status: mvpQualificationStatusSchema,
-    handoff: z.enum(["none", "technical_review", "human_review_required", "missing_facts"]),
+    handoff: z.enum(["none", "technical_review", "human_review_required", "missing_facts", "missing_evidence"]),
     missing_facts: z.array(mvpProjectFactKeySchema).max(MVP_PROJECT_FACT_KEYS.length),
+    missing_photos: z.array(z.enum(MVP_REQUIRED_PHOTO_CATEGORIES)).max(6).default([]),
   }).strict(),
   z.object({ status: z.literal("stale") }).strict(),
 ]);
@@ -76,7 +79,7 @@ export async function runMvpConversationTurn(
   }
   const input: MvpAiTurnInput = mvpAiTurnInputSchema.parse({
     turn: acquired.turn, project: acquired.project, customer: acquired.customer, persisted_facts: persistedFacts,
-    inbound: acquired.inbound, transcript: acquired.transcript, ready_media: readyMedia,
+    inbound: acquired.inbound, transcript: acquired.transcript, ready_media: readyMedia, project_photo_coverage: acquired.project_photo_coverage,
   });
   let untrusted: unknown;
   try { untrusted = await dependencies.provider.generateTurn(input); }
@@ -116,6 +119,7 @@ export function createProductiveMvpTurnStore(): MvpTurnStore {
     acquire: (conversationId, inboundMessageId) => call("acquire_mvp_ai_turn", { target_conversation_id: conversationId, target_inbound_message_id: inboundMessageId }),
     commit: (turnId, result) => call("commit_mvp_ai_turn", { target_turn_id: turnId, target_facts_patch: result.facts_patch,
       target_customer_name_patch: result.customer_name_patch,
+      target_media_classifications: result.media_classifications,
       target_reply_text: result.reply_text, target_qualification_status: result.qualification_status,
       target_needs_human: result.needs_human, target_human_reason: result.human_reason }),
     fail: async (turnId, code) => { await call("fail_mvp_ai_turn", { target_turn_id: turnId, target_failure_code: code }); },

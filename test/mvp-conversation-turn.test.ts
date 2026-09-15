@@ -13,7 +13,7 @@ const context = {
     { message_id: id(1), sequence: 2, direction: "inbound", text: "28 qm Wohnzimmer" },
   ], ready_media: [],
 } as const;
-const valid = { reply_text: "Danke! Wo kann das Außengerät stehen?", facts_patch: [{ key: "room_area_sqm", value: 28 }], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null } as const;
+const valid = { reply_text: "Danke! Wo kann das Außengerät stehen?", facts_patch: [{ key: "room_area_sqm", value: 28 }], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null, media_classifications: [] } as const;
 
 function harness(output: unknown = valid) {
   let facts: MvpProjectFact[] = [{ key: "room_type", value: "living_room" }];
