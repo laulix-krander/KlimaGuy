@@ -9,6 +9,7 @@ export type ProjectMediaGalleryRow = {
   id: string; project_id: string; category: string; media_type: string; mime_type: string;
   file_size_bytes: number; caption: string | null; created_at: string;
   storage_bucket: string; storage_path: string;
+  source_conversation_id?: string | null; source_message_id?: string | null;
 };
 
 export type ProjectMediaGalleryItem = {
@@ -16,6 +17,7 @@ export type ProjectMediaGalleryItem = {
   media_type: "image" | "document"; mime_type: "image/jpeg" | "image/png" | "image/webp" | "application/pdf";
   file_size_bytes: number; caption: string | null; created_at: string;
   display_kind: "image" | "pdf"; signed_view_url: string | null;
+  source_conversation_id?: string | null; source_message_id?: string | null;
 };
 
 type QueryResult<T> = Promise<{ data: T | null; error: unknown }>;
@@ -64,6 +66,7 @@ export async function getProjectMediaGalleryWithDataSource(dataSource: ProjectMe
         mime_type: row.mime_type, file_size_bytes: row.file_size_bytes, caption: row.caption,
         created_at: row.created_at, display_kind: row.mime_type === "application/pdf" ? "pdf" : "image",
         signed_view_url: signedUrlByPath.get(row.storage_path) ?? null,
+        source_conversation_id: row.source_conversation_id, source_message_id: row.source_message_id,
       })),
     },
   };

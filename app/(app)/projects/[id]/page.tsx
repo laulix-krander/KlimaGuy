@@ -1,176 +1,60 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Card, Badge } from "@/components/ui";
+import { Badge, Card } from "@/components/ui";
+import { getProjectEvidence } from "@/lib/actions/project-evidence-read";
+import { bindProjectMediaEvidenceForProjectAction } from "@/lib/actions/project-evidence-binding";
+import { getProjectMediaGallery } from "@/lib/actions/project-media-gallery";
+import { readProjectOffers } from "@/lib/actions/project-offer-read-service";
+import { readProjectOperations } from "@/lib/actions/project-operations-read";
+import { formatBusinessDateTime } from "@/lib/domain/business-time";
 import { humanReviewDisplay, optionalFieldDisplay, projectClassDisplay, projectSummaryDisplay } from "@/lib/domain/display";
-import { canBindProjectMediaAsEvidence, canChangeProjectClass, canChangeProjectStatus, canCreateProjectNote, canEditAnyProjectNote, canEditOwnProjectNote, canEditProjectCoreFields, canEditProjectSummary, canChangeHumanReview, canManageProjectOffers, canReserveProjectMediaUpload, canSoftDeleteAnyProjectNote, canSoftDeleteOwnProjectNote } from "@/lib/domain/permissions";
-import { projectIdSchema, roleSchema } from "@/lib/domain/schemas";
 import { statusToLabel } from "@/lib/domain/mappers";
+import { canBindProjectMediaAsEvidence, canChangeHumanReview, canChangeProjectClass, canChangeProjectStatus, canCreateProjectNote, canEditAnyProjectNote, canEditOwnProjectNote, canEditProjectCoreFields, canEditProjectSummary, canManageProjectOffers, canReserveProjectMediaUpload, canSoftDeleteAnyProjectNote, canSoftDeleteOwnProjectNote } from "@/lib/domain/permissions";
+import { customerDisplayName, qualificationDisplay } from "@/lib/domain/project-operations-read-model";
+import { projectIdSchema, roleSchema } from "@/lib/domain/schemas";
 import type { ProjectClass, ProjectStatus } from "@/lib/domain/types";
 import { createClient } from "@/lib/supabase/server";
+import { ProjectClassForm } from "./project-class-form";
+import { ProjectConversation } from "./project-conversation";
+import { ProjectFacts } from "./project-facts";
+import { ProjectHumanReviewForm } from "./project-human-review-form";
+import { ProjectMediaGallery } from "./project-media-gallery";
+import { ProjectMediaUploadForm } from "./project-media-upload-form";
 import { ProjectMetadataForm } from "./project-metadata-form";
 import { ProjectNoteForm } from "./project-note-form";
 import { ProjectNoteItem } from "./project-note-item";
-import { ProjectClassForm } from "./project-class-form";
-import { ProjectStatusForm } from "./project-status-form";
-import { ProjectSummaryForm } from "./project-summary-form";
-import { ProjectHumanReviewForm } from "./project-human-review-form";
-import { ProjectSuccessMessage, type ProjectSuccessSearchParams } from "./project-success-message";
-import { ProjectMediaUploadForm } from "./project-media-upload-form";
-import { getProjectMediaGallery } from "@/lib/actions/project-media-gallery";
-import { ProjectMediaGallery } from "./project-media-gallery";
-import { getProjectEvidence } from "@/lib/actions/project-evidence-read";
-import { bindProjectMediaEvidenceForProjectAction } from "@/lib/actions/project-evidence-binding";
 import { ProjectOfferHandoff } from "./project-offer-handoff";
+import { ProjectStatusForm } from "./project-status-form";
+import { ProjectSuccessMessage, type ProjectSuccessSearchParams } from "./project-success-message";
+import { ProjectSummaryForm } from "./project-summary-form";
 
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
-}
-
-function firstRelatedCustomer<T>(value: T | T[] | null): T | null {
-  return Array.isArray(value) ? value[0] ?? null : value;
-}
-
+function firstRelatedCustomer<T>(value: T | T[] | null): T | null { return Array.isArray(value) ? value[0] ?? null : value; }
 type ProjectNoteRow = { id: string; content: string; created_by: string; created_at: string };
 type NoteAuthorProfile = { id: string; display_name: string | null; role: string | null };
-
-function authorDisplay(profile: NoteAuthorProfile | undefined): string {
-  if (!profile) return "Interner Benutzer";
-  if (profile.display_name?.trim()) return profile.display_name.trim();
-  if (profile.role === "admin") return "Admin";
-  if (profile.role === "reviewer") return "Reviewer";
-  return "Interner Benutzer";
-}
+function authorDisplay(profile: NoteAuthorProfile | undefined): string { return profile?.display_name?.trim() || (profile?.role === "admin" ? "Admin" : profile?.role === "reviewer" ? "Reviewer" : "Interner Benutzer"); }
+const OFFER_STATUS = { draft: "Entwurf", created: "Erstellt", sent: "Versendet", accepted: "Angenommen", rejected: "Abgelehnt", superseded: "Ersetzt" } as const;
 
 export default async function ProjectDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<ProjectSuccessSearchParams> }) {
-  const { id } = await params;
-  const successSearchParams = await searchParams;
-  const parsedId = projectIdSchema.safeParse(id);
-
-  if (!parsedId.success) {
-    notFound();
-  }
-
-  const supabase = await createClient();
-  const { data: project } = await supabase
-    .from("projects")
-    .select("id,title,status,project_class,requires_human_review,installation_address,postal_code,city,summary,created_at,updated_at,customers(id,first_name,last_name)")
-    .eq("id", parsedId.data)
-    .is("deleted_at", null)
-    .single();
-
-  if (!project) {
-    notFound();
-  }
-
-  const customer = firstRelatedCustomer(project.customers);
-  const { data: authData } = await supabase.auth.getUser();
-  const { data: profile } = authData.user ? await supabase.from("profiles").select("role").eq("id", authData.user.id).single() : { data: null };
-  const parsedRole = roleSchema.safeParse(profile?.role);
-  const mayEditProject = parsedRole.success && canEditProjectCoreFields(parsedRole.data);
-  const mayEditProjectStatus = parsedRole.success && canChangeProjectStatus(parsedRole.data);
-  const mayEditProjectClass = parsedRole.success && canChangeProjectClass(parsedRole.data);
-  const mayEditProjectSummary = parsedRole.success && canEditProjectSummary(parsedRole.data);
-  const mayEditHumanReview = parsedRole.success && canChangeHumanReview(parsedRole.data);
-  const mayCreateProjectNote = parsedRole.success && canCreateProjectNote(parsedRole.data);
-  const mayUploadProjectMedia = parsedRole.success && canReserveProjectMediaUpload(parsedRole.data);
-  const mayBindEvidence = parsedRole.success && canBindProjectMediaAsEvidence(parsedRole.data);
-  const mediaGallery = parsedRole.success ? await getProjectMediaGallery(project.id) : null;
-  const evidence = mayBindEvidence ? await getProjectEvidence(project.id) : null;
-  const bindEvidence = bindProjectMediaEvidenceForProjectAction.bind(null, project.id);
-
-  const { data: notesData } = await supabase
-    .from("project_notes")
-    .select("id,content,created_by,created_at")
-    .eq("project_id", project.id)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: false });
-  const notes: ProjectNoteRow[] = notesData ?? [];
-  const authorIds = Array.from(new Set(notes.map((note) => note.created_by)));
-  const { data: profilesData } = authorIds.length > 0
-    ? await supabase.from("profiles").select("id,display_name,role").in("id", authorIds)
-    : { data: [] };
-  const authorProfiles = new Map((profilesData ?? []).map((author) => [author.id, author as NoteAuthorProfile]));
-
-  return (
-    <div className="space-y-6">
-      <ProjectSuccessMessage searchParams={successSearchParams} />
-      <div className="flex items-start justify-between gap-4">
-        <h1 className="text-3xl font-bold">{project.title}</h1>
-      </div>
-      <Card className="space-y-5">
-        <dl className="grid gap-4 md:grid-cols-2">
-          <div>
-            <dt className="font-medium">Kunde</dt>
-            <dd>
-              {customer?.id ? (
-                <Link className="text-teal-700 underline-offset-2 hover:underline" href={`/customers/${customer.id}`}>
-                  {customer.first_name} {customer.last_name}
-                </Link>
-              ) : (
-                "Nicht angegeben"
-              )}
-            </dd>
-          </div>
-          <div><dt className="font-medium">Status</dt><dd><Badge tone={project.requires_human_review ? "warn" : "default"}>{statusToLabel(project.status as ProjectStatus)}</Badge>{mayEditProjectStatus ? <ProjectStatusForm projectId={project.id} status={project.status as ProjectStatus} /> : null}</dd></div>
-          <div><dt className="font-medium">Projektklasse</dt><dd>{projectClassDisplay(project.project_class as ProjectClass | null)}{mayEditProjectClass ? <ProjectClassForm projectId={project.id} projectClass={project.project_class as ProjectClass | null} /> : null}</dd></div>
-          <div><dt className="font-medium">Human Review</dt><dd>{humanReviewDisplay(project.requires_human_review)}{mayEditHumanReview ? <ProjectHumanReviewForm projectId={project.id} requiresHumanReview={project.requires_human_review} /> : null}</dd></div>
-          <div><dt className="font-medium">Installationsadresse</dt><dd>{optionalFieldDisplay(project.installation_address)}</dd></div>
-          <div><dt className="font-medium">Postleitzahl</dt><dd>{optionalFieldDisplay(project.postal_code)}</dd></div>
-          <div><dt className="font-medium">Ort</dt><dd>{optionalFieldDisplay(project.city)}</dd></div>
-          <div><dt className="font-medium">Erstellt</dt><dd>{formatDate(project.created_at)}</dd></div>
-          <div><dt className="font-medium">Zuletzt geändert</dt><dd>{formatDate(project.updated_at)}</dd></div>
-          <div className="md:col-span-2"><dt className="font-medium">Interne Zusammenfassung</dt><dd>{projectSummaryDisplay(project.summary)}{mayEditProjectSummary ? <ProjectSummaryForm projectId={project.id} summary={project.summary} /> : null}</dd></div>
-        </dl>
-        {mayEditProject ? (
-          <div className="border-t pt-5">
-            <ProjectMetadataForm project={{ id: project.id, title: project.title, installation_address: project.installation_address, postal_code: project.postal_code, city: project.city }} />
-          </div>
-        ) : null}
-      </Card>
-      {(project.status === "technical_review" || project.status === "human_review") ? <ProjectOfferHandoff
-        mayCreate={parsedRole.success && canManageProjectOffers(parsedRole.data)}
-        projectId={project.id}
-        status={project.status}
-      /> : null}
-      {mayUploadProjectMedia ? (
-        <Card>
-          <div className="mb-4">
-            <h2 className="text-xl font-semibold">Projektmedien</h2>
-            <p className="text-sm text-slate-600">Eine Datei sicher zum Projekt hochladen.</p>
-          </div>
-          <ProjectMediaUploadForm projectId={project.id} />
-        </Card>
-      ) : null}
-      {mediaGallery ? <ProjectMediaGallery bindEvidence={bindEvidence} evidenceByMediaId={evidence?.success ? evidence.data.by_media_id : {}} isAdmin={parsedRole.success && parsedRole.data === "admin"} mayBindEvidence={mayBindEvidence && evidence?.success === true} result={mediaGallery} /> : null}
-      <Card>
-        <div className="mb-4">
-          <h2 className="text-xl font-semibold">Interne Notizen</h2>
-          <p className="text-sm text-slate-600">Diese Notizen sind nur für interne Benutzer sichtbar.</p>
-        </div>
-        {notes.length > 0 ? (
-          <ul className="mb-6 space-y-3">
-            {notes.map((note) => {
-              const canEditNote = parsedRole.success && (canEditAnyProjectNote(parsedRole.data) || canEditOwnProjectNote(parsedRole.data, authData.user?.id ?? "", note.created_by));
-              const canDeleteNote = parsedRole.success && (canSoftDeleteAnyProjectNote(parsedRole.data) || canSoftDeleteOwnProjectNote(parsedRole.data, authData.user?.id ?? "", note.created_by));
-              return (
-                <ProjectNoteItem
-                  canDelete={canDeleteNote}
-                  canEdit={canEditNote}
-                  content={note.content}
-                  key={note.id}
-                  meta={`${authorDisplay(authorProfiles.get(note.created_by))} · ${formatDate(note.created_at)}`}
-                  noteId={note.id}
-                  projectId={project.id}
-                />
-              );
-            })}
-          </ul>
-        ) : (
-          <p className="mb-6 rounded-lg border border-dashed p-4 text-sm text-slate-600">Noch keine internen Notizen vorhanden.</p>
-        )}
-        {mayCreateProjectNote ? <ProjectNoteForm projectId={project.id} /> : null}
-      </Card>
-    </div>
-  );
+  const parsedId = projectIdSchema.safeParse((await params).id); if (!parsedId.success) notFound();
+  const successSearchParams = await searchParams; const supabase = await createClient();
+  const { data: project } = await supabase.from("projects").select("id,title,status,project_class,requires_human_review,installation_address,postal_code,city,summary,created_at,updated_at,customers(id,first_name,last_name)").eq("id", parsedId.data).is("deleted_at", null).single(); if (!project) notFound();
+  const customer = firstRelatedCustomer(project.customers); const customerName = customerDisplayName(customer);
+  const { data: authData } = await supabase.auth.getUser(); const { data: profile } = authData.user ? await supabase.from("profiles").select("role").eq("id", authData.user.id).single() : { data: null }; const parsedRole = roleSchema.safeParse(profile?.role);
+  const mayEditProject = parsedRole.success && canEditProjectCoreFields(parsedRole.data), mayEditProjectStatus = parsedRole.success && canChangeProjectStatus(parsedRole.data), mayEditProjectClass = parsedRole.success && canChangeProjectClass(parsedRole.data), mayEditProjectSummary = parsedRole.success && canEditProjectSummary(parsedRole.data), mayEditHumanReview = parsedRole.success && canChangeHumanReview(parsedRole.data), mayCreateProjectNote = parsedRole.success && canCreateProjectNote(parsedRole.data), mayUploadProjectMedia = parsedRole.success && canReserveProjectMediaUpload(parsedRole.data), mayBindEvidence = parsedRole.success && canBindProjectMediaAsEvidence(parsedRole.data);
+  const mediaGallery = parsedRole.success ? await getProjectMediaGallery(project.id) : null; const mediaItems = mediaGallery?.success ? mediaGallery.data.items : []; const operations = await readProjectOperations(project.id, mediaItems); const qualification = qualificationDisplay(operations.facts);
+  const evidence = mayBindEvidence ? await getProjectEvidence(project.id) : null; const bindEvidence = bindProjectMediaEvidenceForProjectAction.bind(null, project.id);
+  const { data: notesData } = await supabase.from("project_notes").select("id,content,created_by,created_at").eq("project_id", project.id).is("deleted_at", null).order("created_at", { ascending: false }); const notes: ProjectNoteRow[] = notesData ?? [];
+  const authorIds = [...new Set(notes.map((note) => note.created_by))]; const { data: profilesData } = authorIds.length ? await supabase.from("profiles").select("id,display_name,role").in("id", authorIds) : { data: [] }; const authorProfiles = new Map((profilesData ?? []).map((author) => [author.id, author as NoteAuthorProfile]));
+  const offers = parsedRole.success ? await readProjectOffers({ list: async (id) => supabase.from("project_offers").select("id,project_id,offer_version,revision,status,supersedes_offer_id,created_at,offer_created_at,sent_at,accepted_at,rejected_at,updated_at").eq("project_id", id).order("offer_version", { ascending: false }) }, project.id).catch(() => ({ current: null, history: [] })) : { current: null, history: [] };
+  const latestConversation = operations.conversations[0]?.updated_at; const latestActivity = [project.updated_at, latestConversation, notes[0]?.created_at].filter((value): value is string => Boolean(value)).sort((a,b) => Date.parse(b)-Date.parse(a))[0];
+  return <div className="space-y-6"><ProjectSuccessMessage searchParams={successSearchParams} />
+    <header className="overflow-hidden rounded-2xl bg-slate-950 p-6 text-white shadow-lg"><Link className="text-sm text-teal-300 hover:underline" href="/projects">← Zur Projekt-Inbox</Link><div className="mt-5 flex flex-wrap items-start justify-between gap-5"><div><p className="text-sm font-semibold uppercase tracking-wider text-teal-300">{[project.postal_code, project.city].filter(Boolean).join(" ") || "Ort noch unbekannt"}</p><h1 className="mt-1 text-3xl font-bold">{customerName}</h1><p className="mt-2 text-slate-300">{project.title}</p></div><div className="flex flex-wrap gap-2"><Badge tone={project.requires_human_review ? "warn" : "default"}>{statusToLabel(project.status as ProjectStatus)}</Badge><Badge tone={project.requires_human_review ? "warn" : "ok"}>{humanReviewDisplay(project.requires_human_review)}</Badge></div></div><dl className="mt-6 grid gap-4 border-t border-slate-700 pt-5 text-sm sm:grid-cols-3"><div><dt className="text-slate-400">Qualifikation</dt><dd className="mt-1 font-semibold">{qualification.percent}% · {qualification.missingFacts.length} Pflichtangaben fehlen</dd></div><div><dt className="text-slate-400">Erstellt</dt><dd className="mt-1">{formatBusinessDateTime(project.created_at)} Uhr</dd></div><div><dt className="text-slate-400">Letzte Aktivität</dt><dd className="mt-1">{formatBusinessDateTime(latestActivity)} Uhr</dd></div></dl></header>
+    <nav aria-label="Projektbereiche" className="sticky top-0 z-10 -mx-1 overflow-x-auto rounded-xl border bg-white/95 px-4 py-3 shadow-sm backdrop-blur"><ul className="flex min-w-max gap-5 text-sm font-semibold text-slate-700"><li><a href="#uebersicht">Übersicht</a></li><li><a href="#conversation">Conversation</a></li><li><a href="#angaben">Angaben</a></li><li><a href="#medien">Fotos &amp; Medien</a></li><li><a href="#angebot">Angebot</a></li><li><a href="#aktivitaet">Aktivität &amp; Notizen</a></li></ul></nav>
+    <section aria-labelledby="overview-title" className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]" id="uebersicht"><Card className="space-y-5"><div><h2 className="text-xl font-semibold" id="overview-title">Projektübersicht</h2><p className="text-sm text-slate-600">Alle operativ wichtigen Stammdaten auf einen Blick.</p></div><dl className="grid gap-4 sm:grid-cols-2"><div><dt className="text-sm text-slate-500">Kunde</dt><dd className="font-semibold">{customer?.id ? <Link className="text-teal-700 hover:underline" href={`/customers/${customer.id}`}>{customerName}</Link> : customerName}</dd></div><div><dt className="text-sm text-slate-500">Projektklasse</dt><dd>{projectClassDisplay(project.project_class as ProjectClass | null)}{mayEditProjectClass ? <ProjectClassForm projectId={project.id} projectClass={project.project_class as ProjectClass | null} /> : null}</dd></div><div><dt className="text-sm text-slate-500">Installationsort</dt><dd>{[project.installation_address, [project.postal_code, project.city].filter(Boolean).join(" ")].filter(Boolean).join(", ") || "Noch nicht bekannt"}</dd></div><div><dt className="text-sm text-slate-500">Interne Zusammenfassung</dt><dd>{projectSummaryDisplay(project.summary)}{mayEditProjectSummary ? <ProjectSummaryForm projectId={project.id} summary={project.summary} /> : null}</dd></div></dl>{mayEditProject ? <div className="border-t pt-5"><ProjectMetadataForm project={{ id: project.id, title: project.title, installation_address: project.installation_address, postal_code: project.postal_code, city: project.city }} /></div> : null}</Card>
+      <Card className="h-fit border-amber-200 bg-amber-50/50"><h2 className="font-semibold">Was fehlt?</h2>{qualification.missingLabels.length ? <ul className="mt-3 space-y-2 text-sm">{qualification.missingLabels.map((label) => <li key={label}>○ {label}</li>)}</ul> : <p className="mt-3 text-sm">Alle Pflichtangaben der aktuellen Readiness-Policy liegen vor.</p>}{qualification.requiresSiteCheck ? <p className="mt-4 rounded-lg bg-amber-100 p-3 text-sm font-semibold">Technische Vor-Ort-Prüfung erforderlich.</p> : null}<div className="mt-5 border-t border-amber-200 pt-4"><div className="font-medium">Status</div>{mayEditProjectStatus ? <ProjectStatusForm projectId={project.id} status={project.status as ProjectStatus} /> : null}<div className="mt-3 font-medium">Human Review</div>{mayEditHumanReview ? <ProjectHumanReviewForm projectId={project.id} requiresHumanReview={project.requires_human_review} /> : null}</div></Card></section>
+    <Card><ProjectConversation conversations={operations.conversations} /></Card><Card><ProjectFacts facts={operations.facts} /></Card>
+    <section aria-labelledby="media-section-title" className="space-y-5" id="medien"><Card><h2 className="sr-only" id="media-section-title">Fotos und Medien</h2>{mayUploadProjectMedia ? <div className="mb-6 border-b pb-6"><h3 className="text-lg font-semibold">Medium hinzufügen</h3><p className="mb-4 text-sm text-slate-600">Eine Datei sicher zum kanonischen Projektbestand hochladen.</p><ProjectMediaUploadForm projectId={project.id} /></div> : null}{mediaGallery ? <ProjectMediaGallery bindEvidence={bindEvidence} evidenceByMediaId={evidence?.success ? evidence.data.by_media_id : {}} isAdmin={parsedRole.success && parsedRole.data === "admin"} mayBindEvidence={mayBindEvidence && evidence?.success === true} result={mediaGallery} /> : <p className="text-sm text-slate-600">Medien sind für diese Rolle nicht verfügbar.</p>}</Card></section>
+    <section aria-labelledby="offer-title" id="angebot"><Card><h2 className="text-xl font-semibold" id="offer-title">Angebot</h2><p className="mt-1 text-sm text-slate-600">Menschlich kontrollierter Einstieg in den bestehenden Angebotsprozess.</p>{offers.current ? <div className="mt-4 rounded-lg border bg-slate-50 p-4"><strong>Angebot Version {offers.current.offer_version}</strong><p className="text-sm text-slate-600">{OFFER_STATUS[offers.current.status]} · aktualisiert {formatBusinessDateTime(offers.current.updated_at)} Uhr</p></div> : <p className="mt-4 rounded-lg border border-dashed p-4 text-sm text-slate-600">Noch kein Angebotsentwurf vorhanden.</p>}{(project.status === "technical_review" || project.status === "human_review") ? <div className="mt-5"><ProjectOfferHandoff mayCreate={parsedRole.success && canManageProjectOffers(parsedRole.data)} projectId={project.id} status={project.status} /></div> : <p className="mt-4 text-sm font-medium">Der Angebotseinstieg wird in der technischen oder menschlichen Prüfung verfügbar.</p>}</Card></section>
+    <section aria-labelledby="activity-title" id="aktivitaet"><Card><h2 className="text-xl font-semibold" id="activity-title">Aktivität &amp; interne Notizen</h2><p className="text-sm text-slate-600">Nur für interne Benutzer sichtbar.</p><ol className="my-5 space-y-3 border-l-2 border-slate-200 pl-5"><li><strong>Projekt angelegt</strong><p className="text-xs text-slate-500">{formatBusinessDateTime(project.created_at)} Uhr</p></li>{project.updated_at !== project.created_at ? <li><strong>Projekt zuletzt geändert</strong><p className="text-xs text-slate-500">{formatBusinessDateTime(project.updated_at)} Uhr</p></li> : null}</ol>{notes.length ? <ul className="mb-6 space-y-3">{notes.map((note) => <ProjectNoteItem canDelete={parsedRole.success && (canSoftDeleteAnyProjectNote(parsedRole.data) || canSoftDeleteOwnProjectNote(parsedRole.data, authData.user?.id ?? "", note.created_by))} canEdit={parsedRole.success && (canEditAnyProjectNote(parsedRole.data) || canEditOwnProjectNote(parsedRole.data, authData.user?.id ?? "", note.created_by))} content={note.content} key={note.id} meta={`${authorDisplay(authorProfiles.get(note.created_by))} · ${formatBusinessDateTime(note.created_at)} Uhr`} noteId={note.id} projectId={project.id} />)}</ul> : <p className="mb-6 rounded-lg border border-dashed p-4 text-sm text-slate-600">Noch keine internen Notizen vorhanden.</p>}{mayCreateProjectNote ? <ProjectNoteForm projectId={project.id} /> : null}</Card></section>
+  </div>;
 }

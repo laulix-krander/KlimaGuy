@@ -6,8 +6,8 @@ import { ProjectMediaPdfOpenControl } from "./project-media-pdf-open-control";
 import { ProjectMediaEvidenceBinding } from "./project-media-evidence-binding";
 import type { ProjectEvidenceDto, BindProjectMediaEvidenceClientInput } from "@/lib/domain/conversation-intelligence/project-evidence";
 import type { ProjectEvidenceBindingResult } from "@/lib/actions/project-evidence-binding-service";
+import { formatBusinessDateTime } from "@/lib/domain/business-time";
 
-const dateFormatter = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/Berlin" });
 const sizeFormatter = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 });
 const TYPE_LABELS: Record<ProjectMediaGalleryItem["mime_type"], string> = {
   "image/jpeg": "JPEG-Bild", "image/png": "PNG-Bild", "image/webp": "WebP-Bild", "application/pdf": "PDF-Dokument",
@@ -18,7 +18,7 @@ export function formatProjectMediaSize(bytes: number): string {
 }
 
 function MediaMeta({ item }: { item: ProjectMediaGalleryItem }) {
-  return <div className="space-y-3 p-4"><Badge>{item.category_label}</Badge>{item.caption ? <p className="break-words text-sm text-slate-800">{item.caption}</p> : null}<dl className="space-y-1 text-sm text-slate-600"><div><dt className="sr-only">Dateityp</dt><dd>{TYPE_LABELS[item.mime_type]}</dd></div><div><dt className="sr-only">Dateigröße</dt><dd>{formatProjectMediaSize(item.file_size_bytes)}</dd></div><div><dt className="sr-only">Uploaddatum</dt><dd>{dateFormatter.format(new Date(item.created_at))}</dd></div></dl></div>;
+  return <div className="space-y-3 p-4"><Badge>{item.category_label}</Badge>{item.caption ? <p className="break-words text-sm text-slate-800">{item.caption}</p> : null}<dl className="space-y-1 text-sm text-slate-600"><div><dt className="sr-only">Dateityp</dt><dd>{TYPE_LABELS[item.mime_type]}</dd></div><div><dt className="sr-only">Dateigröße</dt><dd>{formatProjectMediaSize(item.file_size_bytes)}</dd></div><div><dt className="sr-only">Uploaddatum</dt><dd>{formatBusinessDateTime(item.created_at)} Uhr</dd></div></dl></div>;
 }
 
 export function ProjectMediaGallery({ result, isAdmin = false, mayBindEvidence = false, evidenceByMediaId = {}, bindEvidence }: { result: ProjectMediaGalleryResult; isAdmin?: boolean; mayBindEvidence?: boolean; evidenceByMediaId?: Record<string, ProjectEvidenceDto[]>; bindEvidence?: (input: BindProjectMediaEvidenceClientInput) => Promise<ProjectEvidenceBindingResult> }) {

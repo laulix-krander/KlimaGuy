@@ -10,7 +10,7 @@ function source(overrides: Partial<ProjectMediaGalleryDataSource> = {}): Project
     auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "user-1" } } }) },
     getProfile: vi.fn().mockResolvedValue({ data: { role: "admin" }, error: null }),
     getActiveProject: vi.fn().mockResolvedValue({ data: { id: PROJECT_ID }, error: null }),
-    listMedia: vi.fn().mockResolvedValue({ data: [{ id: MEDIA_ID, project_id: PROJECT_ID, category: "facade", media_type: "image", mime_type: "image/jpeg", file_size_bytes: 1_500_000, caption: null, created_at: "2026-07-30T12:00:00.000Z", storage_bucket: "project-media", storage_path: `${PROJECT_ID}/${MEDIA_ID}.jpg` }], error: null }),
+    listMedia: vi.fn().mockResolvedValue({ data: [{ id: MEDIA_ID, project_id: PROJECT_ID, category: "facade", media_type: "image", mime_type: "image/jpeg", file_size_bytes: 1_500_000, caption: null, created_at: "2026-07-30T12:00:00.000Z", storage_bucket: "project-media", storage_path: `${PROJECT_ID}/${MEDIA_ID}.jpg`, source_conversation_id: null, source_message_id: null }], error: null }),
     createSignedUrls: vi.fn().mockResolvedValue({ data: [{ path: `${PROJECT_ID}/${MEDIA_ID}.jpg`, signedUrl: "https://storage.invalid/signed" }], error: null }),
     ...overrides,
   };
@@ -26,7 +26,7 @@ describe("Projektmedien-Galerie", () => {
   it("mappt ausschließlich das schmale DTO und signiert einmal mit 120 Sekunden", async () => {
     const dataSource = source();
     const result = await getProjectMediaGalleryWithDataSource(dataSource, PROJECT_ID);
-    expect(result).toEqual({ success: true, data: { is_limited: false, items: [{ media_id: MEDIA_ID, project_id: PROJECT_ID, category: "facade", category_label: "Fassade", media_type: "image", mime_type: "image/jpeg", file_size_bytes: 1_500_000, caption: null, created_at: "2026-07-30T12:00:00.000Z", display_kind: "image", signed_view_url: "https://storage.invalid/signed" }] } });
+    expect(result).toEqual({ success: true, data: { is_limited: false, items: [{ media_id: MEDIA_ID, project_id: PROJECT_ID, category: "facade", category_label: "Fassade", media_type: "image", mime_type: "image/jpeg", file_size_bytes: 1_500_000, caption: null, created_at: "2026-07-30T12:00:00.000Z", display_kind: "image", signed_view_url: "https://storage.invalid/signed", source_conversation_id: null, source_message_id: null }] } });
     expect(dataSource.createSignedUrls).toHaveBeenCalledTimes(1);
     expect(dataSource.createSignedUrls).toHaveBeenCalledWith("project-media", [`${PROJECT_ID}/${MEDIA_ID}.jpg`], PROJECT_MEDIA_SIGNED_URL_TTL_SECONDS);
   });
