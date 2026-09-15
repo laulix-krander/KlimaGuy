@@ -7,6 +7,7 @@ import {
   mvpOpenAiTurnOutputSchema,
 } from "../lib/server/ai/providers/openai/mvp-turn-output-schema";
 import { MVP_BUILDING_TYPES } from "../lib/domain/mvp-project-facts";
+import { OPENAI_MVP_TURN_INSTRUCTIONS } from "../lib/server/ai/providers/openai/mvp-turn-instructions";
 
 function containsEmptySchema(value: unknown): boolean {
   if (Array.isArray(value)) return value.some(containsEmptySchema);
@@ -15,9 +16,15 @@ function containsEmptySchema(value: unknown): boolean {
   return entries.length === 0 || entries.some(([, child]) => containsEmptySchema(child));
 }
 
+function resolveSchemaReference(root: Record<string, unknown>, schema: Record<string, unknown> | undefined) {
+  if (typeof schema?.$ref !== "string" || !schema.$ref.startsWith("#/")) return schema;
+  return schema.$ref.slice(2).split("/").reduce<unknown>((value, segment) =>
+    typeof value === "object" && value !== null ? (value as Record<string, unknown>)[segment] : undefined, root);
+}
+
 describe("dedicated MVP OpenAI provider", () => {
   it("makes exactly one stateless structured Responses call", async () => {
-    const output = { reply_text: "Welche Etage ist es?", facts_patch: [], missing_facts: ["floor_level"], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null };
+    const output = { reply_text: "Welche Etage ist es?", facts_patch: [], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null };
     const parse = vi.fn().mockResolvedValue({ status: "completed", output_parsed: output });
     const provider = new OpenAiMvpTurnProvider(() => ({ OPENAI_API_KEY: "test", OPENAI_MODEL: "gpt-4.1-mini" }), () => ({ responses: { parse } } as never));
     const input = mvpAiTurnInputSchema.parse({ turn: { inbound_message_id: "00000000-0000-4000-8000-000000000001", conversation_id: "00000000-0000-4000-8000-000000000002", expected_conversation_revision: 1, binding_id: "00000000-0000-4000-8000-000000000003", binding_revision: 1, project_id: "00000000-0000-4000-8000-000000000004" }, project: { title: "Anfrage" }, customer: { name_known: false, first_name: null, last_name: null }, persisted_facts: [], inbound: { message_id: "00000000-0000-4000-8000-000000000001", text: "Hallo" }, transcript: [{ message_id: "00000000-0000-4000-8000-000000000001", sequence: 1, direction: "inbound", text: "Hallo" }], ready_media: [] });
@@ -27,7 +34,7 @@ describe("dedicated MVP OpenAI provider", () => {
   });
 
   it("uses a strict provider schema without unconstrained schema nodes", async () => {
-    const output = { reply_text: "Danke.", facts_patch: [], missing_facts: [], qualification_status: "ready_for_offer", needs_human: false, human_reason: null, customer_name_patch: null };
+    const output = { reply_text: "Danke.", facts_patch: [], qualification_status: "ready_for_offer", needs_human: false, human_reason: null, customer_name_patch: null };
     const parse = vi.fn().mockResolvedValue({ status: "completed", output_parsed: output });
     const provider = new OpenAiMvpTurnProvider(() => ({ OPENAI_API_KEY: "test" }), () => ({ responses: { parse } } as never));
 
@@ -39,15 +46,25 @@ describe("dedicated MVP OpenAI provider", () => {
     expect(parse.mock.calls[0][0].text.format).toEqual(format);
 
     const generatedSchema = format.schema as {
-      properties: { facts_patch: { items: { anyOf: Array<{
-        properties?: { key?: { const?: string }; value?: { enum?: readonly string[] } };
-      }> } } };
+      anyOf: Array<{ properties: { facts_patch: { items: { anyOf: Array<{
+        properties?: { key?: { const?: string }; value?: Record<string, unknown> };
+      }> } } } }>;
     };
-    const factBranches = generatedSchema.properties.facts_patch.items.anyOf;
+    const factBranches = generatedSchema.anyOf[0].properties.facts_patch.items.anyOf;
     const buildingType = factBranches.find((branch) =>
       branch.properties?.key?.const === "building_type");
     expect(buildingType?.properties?.value?.enum).toEqual(MVP_BUILDING_TYPES);
     expect(factBranches).toHaveLength(21);
+    const valueSchema = (key: string) => resolveSchemaReference(
+      format.schema as Record<string, unknown>,
+      factBranches.find((branch) => branch.properties?.key?.const === key)?.properties?.value,
+    );
+    expect(valueSchema("line_route")).toMatchObject({ type: "string", minLength: 1, maxLength: 240 });
+    expect(valueSchema("postal_code")).toMatchObject({ type: "string", pattern: "^\\d{5}$" });
+    expect(valueSchema("floor_level")).toMatchObject({ type: "integer", minimum: -2, maximum: 100 });
+    expect(valueSchema("requested_room_count")).toMatchObject({ type: "integer", minimum: 1, maximum: 20 });
+    expect(valueSchema("room_area_sqm")).toMatchObject({ type: "number", minimum: 5, maximum: 500 });
+    expect(valueSchema("required_photo_categories")).toMatchObject({ type: "array", maxItems: 6 });
   });
 
   it("encodes canonical values per fact key, including the Production building-type case", () => {
@@ -66,13 +83,40 @@ describe("dedicated MVP OpenAI provider", () => {
     }
   });
 
-  it("returns provider-safe output without applying authoritative domain validation", async () => {
-    const output = { reply_text: "Danke.", facts_patch: [{ key: "floor_level", value: 1.5 }], missing_facts: [], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null };
-    const parse = vi.fn().mockResolvedValue({ status: "completed", output_parsed: output });
-    const provider = new OpenAiMvpTurnProvider(() => ({ OPENAI_API_KEY: "test" }), () => ({ responses: { parse } } as never));
+  it.each([
+    { key: "line_route", value: "" },
+    { key: "floor_level", value: 1.5 },
+    { key: "requested_room_count", value: 0 },
+    { key: "room_area_sqm", value: 501 },
+    { key: "indoor_unit_count", value: 21 },
+    { key: "estimated_line_length_m", value: 201 },
+    { key: "core_drilling_count", value: -1 },
+  ])("rejects a preventable canonical primitive mismatch for $key", (fact) => {
+    expect(mvpOpenAiFactSchema.safeParse(fact).success).toBe(false);
+  });
 
-    await expect(provider.generateTurn(mvpAiTurnInputSchema.parse({ turn: { inbound_message_id: "00000000-0000-4000-8000-000000000001", conversation_id: "00000000-0000-4000-8000-000000000002", expected_conversation_revision: 1, binding_id: "00000000-0000-4000-8000-000000000003", binding_revision: 1, project_id: "00000000-0000-4000-8000-000000000004" }, project: { title: "Anfrage" }, customer: { name_known: false, first_name: null, last_name: null }, persisted_facts: [], inbound: { message_id: "00000000-0000-4000-8000-000000000001", text: "In einem Einfamilienhaus" }, transcript: [], ready_media: [] }))).resolves.toEqual(output);
-    expect(mvpAiTurnResultSchema.safeParse(output).success).toBe(false);
+  it("represents an unresolved line route by omitting the fact patch", () => {
+    const unresolved = { reply_text: "Gibt es einen Anschluss in der Nähe?", facts_patch: [], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null };
+    expect(mvpOpenAiTurnOutputSchema.safeParse(unresolved).success).toBe(true);
+    expect(unresolved.facts_patch).not.toContainEqual(expect.objectContaining({ key: "line_route" }));
+    expect(mvpOpenAiFactSchema.safeParse({ key: "line_route", value: "Entlang der Außenwand" }).success).toBe(true);
+  });
+
+  it("structurally enforces name and escalation branches", () => {
+    const normal = { reply_text: "Danke.", facts_patch: [], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null };
+    expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, customer_name_patch: { first_name: null, last_name: null } }).success).toBe(false);
+    expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, needs_human: true }).success).toBe(false);
+    expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, qualification_status: "needs_human", needs_human: true }).success).toBe(false);
+    expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, qualification_status: "needs_human", needs_human: true, human_reason: "safety_concern" }).success).toBe(true);
+  });
+
+  it("instructs the live-case unknown, uncertainty, and electrical boundaries", () => {
+    expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain("Nein noch nicht");
+    expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain("keinen line_route-Fakt");
+    expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain("gibt es nicht, glaub ich");
+    expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain("nie zu einer definitiven technischen Tatsache");
+    expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain("Anwesenheit eines Anschlusses/einer Zuleitung");
+    expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain("nie danach, ob diese technisch geeignet oder ausreichend ist");
   });
 
   it("validates representative provider facts with the authoritative domain contract", () => {
@@ -84,8 +128,7 @@ describe("dedicated MVP OpenAI provider", () => {
         { key: "existing_air_conditioning", value: false },
         { key: "building_type", value: "apartment" },
         { key: "required_photo_categories", value: ["room_overview", "pipe_route"] },
-      ],
-      missing_facts: [], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null,
+      ], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null,
     };
 
     expect(mvpAiTurnResultSchema.parse(result)).toEqual(result);
