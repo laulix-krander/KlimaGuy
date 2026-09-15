@@ -126,6 +126,8 @@ export const projectMediaGalleryRowSchema = z.object({
   created_at: z.string().datetime({ offset: true }),
   storage_bucket: z.literal("project-media"),
   storage_path: z.string().min(1),
+  source_conversation_id: z.string().uuid().nullable().optional(),
+  source_message_id: z.string().uuid().nullable().optional(),
 }).strict().superRefine((value, context) => {
   const expectedType = value.mime_type === "application/pdf" ? "document" : "image";
   if (value.media_type !== expectedType) {
