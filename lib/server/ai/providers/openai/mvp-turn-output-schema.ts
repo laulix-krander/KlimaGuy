@@ -41,7 +41,6 @@ export const mvpOpenAiFactSchema = z.discriminatedUnion("key", [
   fact("installation_access", z.enum(MVP_INSTALLATION_ACCESS)),
   fact("existing_air_conditioning", z.boolean()),
   fact("customer_preferences", noteText),
-  fact("required_photo_categories", z.array(z.enum(MVP_REQUIRED_PHOTO_CATEGORIES)).max(MVP_REQUIRED_PHOTO_CATEGORIES.length)),
   fact("additional_installation_notes", noteText),
 ]);
 
@@ -54,6 +53,10 @@ const turnFields = {
   reply_text: z.string().min(1).max(4_000),
   facts_patch: z.array(mvpOpenAiFactSchema).max(MVP_PROJECT_FACT_KEYS.length),
   customer_name_patch: customerNamePatchSchema,
+  media_classifications: z.array(z.object({
+    media_id: z.string().uuid(), category: z.enum(MVP_REQUIRED_PHOTO_CATEGORIES).nullable(),
+    observation: z.string().trim().min(1).max(240).nullable(),
+  }).strict()).max(20),
 } as const;
 
 export const mvpOpenAiTurnOutputSchema = z.object({

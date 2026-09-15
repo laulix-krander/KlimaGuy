@@ -21,6 +21,15 @@ export const MVP_HUMAN_ESCALATION_REASONS = [
 
 const uuid = z.string().uuid();
 const customerNameComponentSchema = z.string().trim().min(1).max(120).nullable();
+export const mvpVisionObservationSchema = z.string().trim().min(1).max(240).refine(
+  (text) => !/(technisch (?:geeignet|geprüft|freigegeben)|tragfähig|stromkreis (?:ausreichend|geeignet)|kernbohrung (?:sicher|möglich)|vor ort (?:geprüft|besichtigt)|\b\d+(?:[,.]\d+)?\s*(?:cm|mm|m)\b)/iu.test(text),
+  "vision_observation_overclaims",
+);
+export const mvpMediaClassificationSchema = z.object({
+  media_id: uuid,
+  category: z.enum(MVP_REQUIRED_PHOTO_CATEGORIES).nullable(),
+  observation: mvpVisionObservationSchema.nullable(),
+}).strict();
 
 export const mvpCustomerNamePatchSchema = z.object({
   first_name: customerNameComponentSchema,
@@ -65,11 +74,12 @@ export const mvpAiTurnInputObjectSchema = z.object({
   }).strict()).max(100),
   ready_media: z.array(z.object({
     media_id: uuid,
-    category: z.enum(MVP_REQUIRED_PHOTO_CATEGORIES),
+    category: z.union([z.enum(MVP_REQUIRED_PHOTO_CATEGORIES), z.literal("other")]),
     mime_type: z.enum(["image/jpeg", "image/png", "image/webp"]),
     caption: z.string().trim().min(1).max(1_000).nullable(),
     image_data: z.string().regex(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/),
   }).strict()).max(20),
+  project_photo_coverage: z.array(z.object({ category: z.enum(MVP_REQUIRED_PHOTO_CATEGORIES), count: z.number().int().positive() }).strict()).max(MVP_REQUIRED_PHOTO_CATEGORIES.length).default([]),
 }).strict();
 
 export const mvpAiTurnInputSchema = mvpAiTurnInputObjectSchema.superRefine((input, context) => {
@@ -91,6 +101,7 @@ export const mvpAiTurnResultSchema = z.object({
   needs_human: z.boolean(),
   human_reason: mvpHumanEscalationReasonSchema.nullable(),
   customer_name_patch: mvpCustomerNamePatchSchema.nullable(),
+  media_classifications: z.array(mvpMediaClassificationSchema).max(20).default([]),
 }).strict().superRefine((result, context) => {
   if (new Set(result.facts_patch.map(({ key }) => key)).size !== result.facts_patch.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["facts_patch"], message: "duplicate_fact_key" });
@@ -101,6 +112,7 @@ export const mvpAiTurnResultSchema = z.object({
   if (result.needs_human !== (result.human_reason !== null)) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["human_reason"], message: "human_reason_mismatch" });
   }
+  if (new Set(result.media_classifications.map(({ media_id }) => media_id)).size !== result.media_classifications.length) context.addIssue({ code: z.ZodIssueCode.custom, path: ["media_classifications"], message: "duplicate_media_id" });
 });
 
 export type MvpAiTurnInput = Readonly<z.infer<typeof mvpAiTurnInputSchema>>;

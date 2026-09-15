@@ -4,6 +4,7 @@ import type { ProjectClass, ProjectStatus, Role } from "./types";
 export type ProjectMediaCategory = (typeof PROJECT_MEDIA_CATEGORIES)[number];
 
 export const PROJECT_MEDIA_CATEGORY_LABELS: Readonly<Record<ProjectMediaCategory, string>> = Object.freeze({
+  room_overview: "Raumübersicht",
   indoor_area: "Innenbereich",
   outdoor_area: "Außenbereich",
   indoor_unit_location: "Standort Innengerät",

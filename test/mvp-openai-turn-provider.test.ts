@@ -31,7 +31,7 @@ function resolveSchemaReference(root: Record<string, unknown>, schema: Record<st
 
 describe("dedicated MVP OpenAI provider", () => {
   it("makes exactly one stateless structured Responses call", async () => {
-    const output = { reply_text: "Welche Etage ist es?", facts_patch: [], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null };
+    const output = { reply_text: "Welche Etage ist es?", facts_patch: [], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null, media_classifications: [] };
     const parse = vi.fn().mockResolvedValue({ status: "completed", output_parsed: output });
     const provider = new OpenAiMvpTurnProvider(() => ({ OPENAI_API_KEY: "test", OPENAI_MODEL: "gpt-4.1-mini" }), () => ({ responses: { parse } } as never));
     const input = mvpAiTurnInputSchema.parse({ turn: { inbound_message_id: "00000000-0000-4000-8000-000000000001", conversation_id: "00000000-0000-4000-8000-000000000002", expected_conversation_revision: 1, binding_id: "00000000-0000-4000-8000-000000000003", binding_revision: 1, project_id: "00000000-0000-4000-8000-000000000004" }, project: { title: "Anfrage" }, customer: { name_known: false, first_name: null, last_name: null }, persisted_facts: [], inbound: { message_id: "00000000-0000-4000-8000-000000000001", text: "Hallo" }, transcript: [{ message_id: "00000000-0000-4000-8000-000000000001", sequence: 1, direction: "inbound", text: "Hallo" }], ready_media: [] });
@@ -41,7 +41,7 @@ describe("dedicated MVP OpenAI provider", () => {
   });
 
   it("uses a strict provider schema without unconstrained schema nodes", async () => {
-    const output = { reply_text: "Danke.", facts_patch: [], qualification_status: "ready_for_offer", needs_human: false, human_reason: null, customer_name_patch: null };
+    const output = { reply_text: "Danke.", facts_patch: [], qualification_status: "ready_for_offer", needs_human: false, human_reason: null, customer_name_patch: null, media_classifications: [] };
     const parse = vi.fn().mockResolvedValue({ status: "completed", output_parsed: output });
     const provider = new OpenAiMvpTurnProvider(() => ({ OPENAI_API_KEY: "test" }), () => ({ responses: { parse } } as never));
 
@@ -73,7 +73,7 @@ describe("dedicated MVP OpenAI provider", () => {
     const buildingType = factBranches.find((branch) =>
       branch.properties?.key?.const === "building_type");
     expect(buildingType?.properties?.value?.enum).toEqual(MVP_BUILDING_TYPES);
-    expect(factBranches).toHaveLength(21);
+    expect(factBranches).toHaveLength(20);
     const valueSchema = (key: string) => resolveSchemaReference(
       format.schema as Record<string, unknown>,
       factBranches.find((branch) => branch.properties?.key?.const === key)?.properties?.value,
@@ -83,11 +83,7 @@ describe("dedicated MVP OpenAI provider", () => {
     expect(valueSchema("floor_level")).toMatchObject({ type: "integer", minimum: -2, maximum: 100 });
     expect(valueSchema("requested_room_count")).toMatchObject({ type: "integer", minimum: 1, maximum: 20 });
     expect(valueSchema("room_area_sqm")).toMatchObject({ type: "number", minimum: 5, maximum: 500 });
-    expect(valueSchema("required_photo_categories")).toMatchObject({
-      type: "array",
-      maxItems: 6,
-      items: { enum: MVP_REQUIRED_PHOTO_CATEGORIES },
-    });
+    expect(factBranches.some((branch) => branch.properties?.key?.const === "required_photo_categories")).toBe(false);
     const customerNameBranches = generatedSchema.properties.customer_name_patch.anyOf;
     expect(customerNameBranches).toHaveLength(2);
     expect(customerNameBranches[0]?.anyOf).toHaveLength(2);
@@ -111,7 +107,7 @@ describe("dedicated MVP OpenAI provider", () => {
       { key: "room_type", value: "living_room" },
       { key: "required_photo_categories", value: ["room_overview", "pipe_route"] },
     ]) {
-      expect(mvpOpenAiFactSchema.safeParse(representative).success).toBe(true);
+      expect(mvpOpenAiFactSchema.safeParse(representative).success).toBe(representative.key !== "required_photo_categories");
     }
   });
 
@@ -128,14 +124,14 @@ describe("dedicated MVP OpenAI provider", () => {
   });
 
   it("represents an unresolved line route by omitting the fact patch", () => {
-    const unresolved = { reply_text: "Gibt es einen Anschluss in der Nähe?", facts_patch: [], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null };
+    const unresolved = { reply_text: "Gibt es einen Anschluss in der Nähe?", facts_patch: [], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null, media_classifications: [] };
     expect(mvpOpenAiTurnOutputSchema.safeParse(unresolved).success).toBe(true);
     expect(unresolved.facts_patch).not.toContainEqual(expect.objectContaining({ key: "line_route" }));
     expect(mvpOpenAiFactSchema.safeParse({ key: "line_route", value: "Entlang der Außenwand" }).success).toBe(true);
   });
 
   it("structurally enforces safe name patches without encoding cross-field escalation rules", () => {
-    const normal = { reply_text: "Danke.", facts_patch: [], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null };
+    const normal = { reply_text: "Danke.", facts_patch: [], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null, media_classifications: [] };
     expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, customer_name_patch: { first_name: null, last_name: null } }).success).toBe(false);
     expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, needs_human: true }).success).toBe(true);
     expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, qualification_status: "needs_human", needs_human: true, human_reason: "safety_concern" }).success).toBe(true);
@@ -159,7 +155,7 @@ describe("dedicated MVP OpenAI provider", () => {
         { key: "existing_air_conditioning", value: false },
         { key: "building_type", value: "apartment" },
         { key: "required_photo_categories", value: ["room_overview", "pipe_route"] },
-      ], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null,
+      ], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null, media_classifications: [],
     };
 
     expect(mvpAiTurnResultSchema.parse(result)).toEqual(result);
