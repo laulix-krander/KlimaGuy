@@ -8,8 +8,7 @@ export type MvpPhotoCoverageMedia = Readonly<{ project_id: string; category: str
 export function deriveSituationalPhotoCategories(facts: readonly MvpProjectFact[]): MvpPhotoCategory[] {
   const values = new Map(facts.map((fact) => [fact.key, fact.value]));
   const required: MvpPhotoCategory[] = [];
-  const route = values.get("line_route");
-  if (route === undefined || (typeof route === "string" && /unklar|unbekannt|offen|prüf/i.test(route))) required.push("pipe_route");
+  if (!values.has("line_route")) required.push("pipe_route");
   if (["available", "unknown", "requires_site_check"].includes(String(values.get("electrical_supply")))) required.push("electrical_connection");
   if (["unknown", "requires_site_check"].includes(String(values.get("condensate_drainage")))) required.push("condensate_route");
   return required;
@@ -22,7 +21,15 @@ export function evaluateMvpPhotoReadiness(projectId: string, facts: readonly Mvp
   }
   const missingCore = MVP_CORE_PHOTO_CATEGORIES.filter((category) => !covered.has(category));
   const situational = deriveSituationalPhotoCategories(facts);
-  return { covered: [...covered], missingCore, missingSituational: situational.filter((category) => !covered.has(category)), coreReady: missingCore.length === 0 } as const;
+  const missingSituational = situational.filter((category) => !covered.has(category));
+  return {
+    covered: [...covered],
+    required: [...MVP_CORE_PHOTO_CATEGORIES, ...situational],
+    missingCore,
+    missingSituational,
+    coreReady: missingCore.length === 0,
+    ready: missingCore.length === 0 && missingSituational.length === 0,
+  } as const;
 }
 
 export const MVP_PHOTO_LABELS: Record<MvpPhotoCategory, string> = {
