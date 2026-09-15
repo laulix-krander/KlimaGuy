@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   MVP_HUMAN_ESCALATION_REASONS,
+  MVP_QUALIFICATION_STATUSES,
 } from "@/lib/domain/mvp-ai-turn";
 import {
   MVP_BUILDING_TYPES,
@@ -55,7 +56,9 @@ const turnFields = {
   customer_name_patch: customerNamePatchSchema,
 } as const;
 
-export const mvpOpenAiTurnOutputSchema = z.union([
-  z.object({ ...turnFields, qualification_status: z.enum(["in_progress", "ready_for_offer"]), needs_human: z.literal(false), human_reason: z.null() }).strict(),
-  z.object({ ...turnFields, qualification_status: z.literal("needs_human"), needs_human: z.literal(true), human_reason: z.enum(MVP_HUMAN_ESCALATION_REASONS) }).strict(),
-]);
+export const mvpOpenAiTurnOutputSchema = z.object({
+  ...turnFields,
+  qualification_status: z.enum(MVP_QUALIFICATION_STATUSES),
+  needs_human: z.boolean(),
+  human_reason: z.enum(MVP_HUMAN_ESCALATION_REASONS).nullable(),
+}).strict();

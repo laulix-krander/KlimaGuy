@@ -90,6 +90,17 @@ describe("MVP AI turn result", () => {
     expect(mvpAiTurnResultSchema.safeParse({ ...validResult, human_reason: "safety_concern" }).success).toBe(false);
   });
 
+  it("accepts normal and escalated results but rejects mismatched escalation fields", () => {
+    expect(mvpAiTurnResultSchema.safeParse(validResult).success).toBe(true);
+    expect(mvpAiTurnResultSchema.safeParse({
+      ...validResult,
+      qualification_status: "needs_human",
+      needs_human: true,
+      human_reason: "requires_site_check",
+    }).success).toBe(true);
+    expect(mvpAiTurnResultSchema.safeParse({ ...validResult, needs_human: true }).success).toBe(false);
+  });
+
   it("accepts a structurally normal ready result but rejects pricing or offer authority fields", () => {
     expect(mvpAiTurnResultSchema.safeParse({ ...validResult, qualification_status: "ready_for_offer" }).success).toBe(true);
     expect(mvpAiTurnResultSchema.safeParse({ ...validResult, price_cents: 750_000 }).success).toBe(false);
