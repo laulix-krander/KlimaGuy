@@ -6,7 +6,14 @@ import {
   mvpOpenAiFactSchema,
   mvpOpenAiTurnOutputSchema,
 } from "../lib/server/ai/providers/openai/mvp-turn-output-schema";
-import { MVP_BUILDING_TYPES } from "../lib/domain/mvp-project-facts";
+import {
+  MVP_BUILDING_TYPES,
+  MVP_REQUIRED_PHOTO_CATEGORIES,
+} from "../lib/domain/mvp-project-facts";
+import {
+  MVP_HUMAN_ESCALATION_REASONS,
+  MVP_QUALIFICATION_STATUSES,
+} from "../lib/domain/mvp-ai-turn";
 import { OPENAI_MVP_TURN_INSTRUCTIONS } from "../lib/server/ai/providers/openai/mvp-turn-instructions";
 
 function containsEmptySchema(value: unknown): boolean {
@@ -46,11 +53,23 @@ describe("dedicated MVP OpenAI provider", () => {
     expect(parse.mock.calls[0][0].text.format).toEqual(format);
 
     const generatedSchema = format.schema as {
-      anyOf: Array<{ properties: { facts_patch: { items: { anyOf: Array<{
+      type: string;
+      anyOf?: unknown;
+      oneOf?: unknown;
+      properties: {
+        facts_patch: { items: { anyOf: Array<{
         properties?: { key?: { const?: string }; value?: Record<string, unknown> };
-      }> } } } }>;
+        }> } };
+        customer_name_patch: { anyOf: Array<{ anyOf?: Array<Record<string, unknown>>; type?: string }> };
+        qualification_status: { enum: string[] };
+        human_reason: { anyOf: Array<{ enum?: string[]; type?: string }> };
+      };
     };
-    const factBranches = generatedSchema.anyOf[0].properties.facts_patch.items.anyOf;
+    expect(generatedSchema.type).toBe("object");
+    expect(generatedSchema).not.toHaveProperty("anyOf");
+    expect(generatedSchema).not.toHaveProperty("oneOf");
+
+    const factBranches = generatedSchema.properties.facts_patch.items.anyOf;
     const buildingType = factBranches.find((branch) =>
       branch.properties?.key?.const === "building_type");
     expect(buildingType?.properties?.value?.enum).toEqual(MVP_BUILDING_TYPES);
@@ -64,7 +83,20 @@ describe("dedicated MVP OpenAI provider", () => {
     expect(valueSchema("floor_level")).toMatchObject({ type: "integer", minimum: -2, maximum: 100 });
     expect(valueSchema("requested_room_count")).toMatchObject({ type: "integer", minimum: 1, maximum: 20 });
     expect(valueSchema("room_area_sqm")).toMatchObject({ type: "number", minimum: 5, maximum: 500 });
-    expect(valueSchema("required_photo_categories")).toMatchObject({ type: "array", maxItems: 6 });
+    expect(valueSchema("required_photo_categories")).toMatchObject({
+      type: "array",
+      maxItems: 6,
+      items: { enum: MVP_REQUIRED_PHOTO_CATEGORIES },
+    });
+    const customerNameBranches = generatedSchema.properties.customer_name_patch.anyOf;
+    expect(customerNameBranches).toHaveLength(2);
+    expect(customerNameBranches[0]?.anyOf).toHaveLength(2);
+    expect(customerNameBranches[1]).toMatchObject({ type: "null" });
+    expect(generatedSchema.properties.qualification_status.enum).toEqual(MVP_QUALIFICATION_STATUSES);
+    expect(generatedSchema.properties.human_reason.anyOf).toContainEqual({
+      type: "string",
+      enum: MVP_HUMAN_ESCALATION_REASONS,
+    });
   });
 
   it("encodes canonical values per fact key, including the Production building-type case", () => {
@@ -102,11 +134,10 @@ describe("dedicated MVP OpenAI provider", () => {
     expect(mvpOpenAiFactSchema.safeParse({ key: "line_route", value: "Entlang der Außenwand" }).success).toBe(true);
   });
 
-  it("structurally enforces name and escalation branches", () => {
+  it("structurally enforces safe name patches without encoding cross-field escalation rules", () => {
     const normal = { reply_text: "Danke.", facts_patch: [], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null };
     expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, customer_name_patch: { first_name: null, last_name: null } }).success).toBe(false);
-    expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, needs_human: true }).success).toBe(false);
-    expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, qualification_status: "needs_human", needs_human: true }).success).toBe(false);
+    expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, needs_human: true }).success).toBe(true);
     expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, qualification_status: "needs_human", needs_human: true, human_reason: "safety_concern" }).success).toBe(true);
   });
 
