@@ -38,5 +38,5 @@ export function evaluateMvpQualificationReadiness(facts: readonly MvpProjectFact
   const hasUnknownTechnicalFact = ["condensate_drainage", "electrical_supply", "installation_access"]
     .some((key) => byKey.get(key as MvpProjectFactKey) === "unknown");
   const photos = evaluateMvpPhotoReadiness(projectId, facts, media);
-  return { ready: missingFacts.length === 0 && photos.coreReady && !requiresSiteCheck && !hasUnknownTechnicalFact, missingFacts, missingPhotos: photos.missingCore, requiresSiteCheck };
+  return { ready: missingFacts.length === 0 && photos.ready && !requiresSiteCheck && !hasUnknownTechnicalFact, missingFacts, missingPhotos: [...photos.missingCore, ...photos.missingSituational], requiresSiteCheck };
 }
