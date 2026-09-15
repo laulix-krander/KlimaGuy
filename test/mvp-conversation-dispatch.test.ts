@@ -11,10 +11,10 @@ const foundation = (status: "created" | "partial_completed" | "already_complete"
 
 describe("MVP conversation dispatch", () => {
   it("delivers the exact outbound ID after the actual fresh Step-11 response shape", async () => {
-    const turnResult = { reply_text: "Danke!", facts_patch: [], missing_facts: ["outdoor_unit_position"], qualification_status: "in_progress", needs_human: false, human_reason: null } as const;
+    const turnResult = { reply_text: "Danke!", facts_patch: [], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null } as const;
     const store: MvpTurnStore = {
-      acquire: vi.fn().mockResolvedValue({ status: "acquired", turn_id: id(4), turn: { inbound_message_id: id(5), conversation_id: id(1), expected_conversation_revision: 1, binding_id: id(6), binding_revision: 1, project_id: id(3) }, project: { title: "Neue Klimaanfrage" }, inbound: { message_id: id(5), text: "Hallo" }, transcript: [], ready_media: [] }),
-      commit: vi.fn().mockResolvedValue({ status: "completed", outbound_message_id: id(7), qualification_status: "in_progress", handoff: "none", missing_facts: ["outdoor_unit_position"] }),
+      acquire: vi.fn().mockResolvedValue({ status: "acquired", turn_id: id(4), turn: { inbound_message_id: id(5), conversation_id: id(1), expected_conversation_revision: 1, binding_id: id(6), binding_revision: 1, project_id: id(3) }, project: { title: "Neue Klimaanfrage" }, customer: { name_known: false, first_name: null, last_name: null }, inbound: { message_id: id(5), text: "Hallo" }, transcript: [], ready_media: [] }),
+      commit: vi.fn().mockResolvedValue({ status: "completed", outbound_message_id: id(7), qualification_status: "in_progress", handoff: "none", missing_facts: [] }),
       fail: vi.fn(), loadMedia: vi.fn(), revalidate: vi.fn().mockResolvedValue(true),
       rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
     };

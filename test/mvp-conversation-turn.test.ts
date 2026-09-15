@@ -13,8 +13,7 @@ const context = {
     { message_id: id(1), sequence: 2, direction: "inbound", text: "28 qm Wohnzimmer" },
   ], ready_media: [],
 } as const;
-const valid = { reply_text: "Danke! Wo kann das Außengerät stehen?", facts_patch: [{ key: "room_area_sqm", value: 28 }],
-  missing_facts: ["outdoor_unit_position"], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null } as const;
+const valid = { reply_text: "Danke! Wo kann das Außengerät stehen?", facts_patch: [{ key: "room_area_sqm", value: 28 }], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null } as const;
 
 function harness(output: unknown = valid) {
   let facts: MvpProjectFact[] = [{ key: "room_type", value: "living_room" }];
@@ -111,8 +110,8 @@ describe("MVP conversation turn", () => {
     expect(h.commit).not.toHaveBeenCalled(); expect(h.fail).toHaveBeenCalledWith(id(9), "provider_failure");
   });
 
-  it("classifies provider-safe but canonical-domain-invalid output at the Step-5 boundary", async () => {
-    const h = harness({ ...valid, facts_patch: [{ key: "floor_level", value: 1.5 }] });
+  it("keeps duplicate discriminants as an intentional fail-closed canonical boundary", async () => {
+    const h = harness({ ...valid, facts_patch: [{ key: "floor_level", value: 1 }, { key: "floor_level", value: 2 }] });
     await expect(runMvpConversationTurn(id(2), id(1), h)).rejects.toThrow("mvp_turn_invalid_provider_output");
     expect(h.fail).toHaveBeenCalledWith(id(9), "invalid_provider_output");
     expect(h.fail).not.toHaveBeenCalledWith(id(9), "provider_failure");
@@ -125,8 +124,8 @@ describe("MVP conversation turn", () => {
   });
 
   it.each([
-    { ...valid, qualification_status: "needs_human", needs_human: true, human_reason: "requires_site_check", missing_facts: ["electrical_supply"] },
-    { ...valid, qualification_status: "ready_for_offer", missing_facts: [] },
+    { ...valid, qualification_status: "needs_human", needs_human: true, human_reason: "requires_site_check", },
+    { ...valid, qualification_status: "ready_for_offer", },
   ])("keeps qualification metadata in-contract without pricing or approval side effects", async (output) => {
     const h = harness(output); await runMvpConversationTurn(id(2), id(1), h);
     expect(h.commit).toHaveBeenCalledWith(id(9), output);

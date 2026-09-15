@@ -45,7 +45,6 @@ const validResult = {
     { key: "room_area_sqm", value: 28.5 },
     { key: "existing_air_conditioning", value: false },
   ],
-  missing_facts: ["outdoor_unit_position"],
   qualification_status: "in_progress",
   needs_human: false,
   human_reason: null,
@@ -77,8 +76,8 @@ describe("MVP AI turn result", () => {
     expect(mvpAiTurnResultSchema.safeParse({ ...validResult, customer_name_patch: { first_name: "Max", last_name: null, phone: "+49123" } }).success).toBe(false);
   });
 
-  it("accepts only canonical missing facts and qualification states", () => {
-    expect(mvpAiTurnResultSchema.safeParse({ ...validResult, missing_facts: ["offer_price"] }).success).toBe(false);
+  it("rejects redundant provider missing facts and non-canonical qualification states", () => {
+    expect(mvpAiTurnResultSchema.safeParse({ ...validResult, missing_facts: ["line_route"] }).success).toBe(false);
     expect(mvpAiTurnResultSchema.safeParse({ ...validResult, qualification_status: "approved" }).success).toBe(false);
   });
 
@@ -91,8 +90,8 @@ describe("MVP AI turn result", () => {
     expect(mvpAiTurnResultSchema.safeParse({ ...validResult, human_reason: "safety_concern" }).success).toBe(false);
   });
 
-  it("rejects missing facts on a ready result and pricing or offer authority fields", () => {
-    expect(mvpAiTurnResultSchema.safeParse({ ...validResult, qualification_status: "ready_for_offer" }).success).toBe(false);
+  it("accepts a structurally normal ready result but rejects pricing or offer authority fields", () => {
+    expect(mvpAiTurnResultSchema.safeParse({ ...validResult, qualification_status: "ready_for_offer" }).success).toBe(true);
     expect(mvpAiTurnResultSchema.safeParse({ ...validResult, price_cents: 750_000 }).success).toBe(false);
     expect(mvpAiTurnResultSchema.safeParse({ ...validResult, offer_approved: true }).success).toBe(false);
   });
