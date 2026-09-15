@@ -21,6 +21,16 @@ export const MVP_HUMAN_ESCALATION_REASONS = [
 ] as const;
 
 const uuid = z.string().uuid();
+const customerNameComponentSchema = z.string().trim().min(1).max(120).nullable();
+
+export const mvpCustomerNamePatchSchema = z.object({
+  first_name: customerNameComponentSchema,
+  last_name: customerNameComponentSchema,
+}).strict().superRefine((patch, context) => {
+  if (patch.first_name === null && patch.last_name === null) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "customer_name_patch_empty" });
+  }
+});
 
 export const mvpAiTurnInputObjectSchema = z.object({
   turn: z.object({
@@ -34,6 +44,15 @@ export const mvpAiTurnInputObjectSchema = z.object({
   project: z.object({
     title: z.string().trim().min(1).max(180),
   }).strict(),
+  customer: z.object({
+    name_known: z.boolean(),
+    first_name: customerNameComponentSchema,
+    last_name: customerNameComponentSchema,
+  }).strict().superRefine((customer, context) => {
+    if (customer.name_known !== (customer.first_name !== null || customer.last_name !== null)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["name_known"], message: "customer_name_known_mismatch" });
+    }
+  }),
   persisted_facts: z.array(mvpProjectFactSchema).max(MVP_PROJECT_FACT_KEYS.length),
   inbound: z.object({
     message_id: uuid,
@@ -73,6 +92,7 @@ export const mvpAiTurnResultSchema = z.object({
   qualification_status: mvpQualificationStatusSchema,
   needs_human: z.boolean(),
   human_reason: mvpHumanEscalationReasonSchema.nullable(),
+  customer_name_patch: mvpCustomerNamePatchSchema.nullable(),
 }).strict().superRefine((result, context) => {
   if (new Set(result.facts_patch.map(({ key }) => key)).size !== result.facts_patch.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["facts_patch"], message: "duplicate_fact_key" });

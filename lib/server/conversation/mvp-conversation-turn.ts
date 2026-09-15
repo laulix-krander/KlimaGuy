@@ -16,7 +16,8 @@ const acquiredMediaSchema = z.object({ media_id: uuid, category: mvpAiTurnInputO
   file_size_bytes: z.number().int().positive().max(15_000_000) }).strict();
 const acquiredSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("acquired"), turn_id: uuid, turn: mvpAiTurnInputObjectSchema.shape.turn,
-    project: mvpAiTurnInputObjectSchema.shape.project, inbound: mvpAiTurnInputObjectSchema.shape.inbound,
+    project: mvpAiTurnInputObjectSchema.shape.project, customer: mvpAiTurnInputObjectSchema.shape.customer,
+    inbound: mvpAiTurnInputObjectSchema.shape.inbound,
     transcript: mvpAiTurnInputObjectSchema.shape.transcript, ready_media: z.array(acquiredMediaSchema).max(20) }).strict(),
   z.object({ status: z.literal("busy"), turn_id: uuid, outbound_message_id: uuid.nullable() }).strict(),
   z.object({ status: z.literal("completed"), turn_id: uuid, outbound_message_id: uuid.nullable() }).strict(),
@@ -74,7 +75,7 @@ export async function runMvpConversationTurn(
     throw new MvpConversationTurnError("mvp_turn_stale");
   }
   const input: MvpAiTurnInput = mvpAiTurnInputSchema.parse({
-    turn: acquired.turn, project: acquired.project, persisted_facts: persistedFacts,
+    turn: acquired.turn, project: acquired.project, customer: acquired.customer, persisted_facts: persistedFacts,
     inbound: acquired.inbound, transcript: acquired.transcript, ready_media: readyMedia,
   });
   let untrusted: unknown;
@@ -114,6 +115,7 @@ export function createProductiveMvpTurnStore(): MvpTurnStore {
     rpc: (name, args) => client.rpc(name, args),
     acquire: (conversationId, inboundMessageId) => call("acquire_mvp_ai_turn", { target_conversation_id: conversationId, target_inbound_message_id: inboundMessageId }),
     commit: (turnId, result) => call("commit_mvp_ai_turn", { target_turn_id: turnId, target_facts_patch: result.facts_patch,
+      target_customer_name_patch: result.customer_name_patch,
       target_reply_text: result.reply_text, target_qualification_status: result.qualification_status,
       target_needs_human: result.needs_human, target_human_reason: result.human_reason }),
     fail: async (turnId, code) => { await call("fail_mvp_ai_turn", { target_turn_id: turnId, target_failure_code: code }); },

@@ -7,14 +7,14 @@ const id = (number: number) => `00000000-0000-4000-8000-${String(number).padStar
 const context = {
   status: "acquired", turn_id: id(9),
   turn: { inbound_message_id: id(1), conversation_id: id(2), expected_conversation_revision: 2, binding_id: id(3), binding_revision: 1, project_id: id(4) },
-  project: { title: "Neue Klimaanfrage" }, inbound: { message_id: id(1), text: "28 qm Wohnzimmer" },
+  project: { title: "Neue Klimaanfrage" }, customer: { name_known: false, first_name: null, last_name: null }, inbound: { message_id: id(1), text: "28 qm Wohnzimmer" },
   transcript: [
     { message_id: id(5), sequence: 1, direction: "outbound", text: "Wie kann ich helfen?" },
     { message_id: id(1), sequence: 2, direction: "inbound", text: "28 qm Wohnzimmer" },
   ], ready_media: [],
 } as const;
 const valid = { reply_text: "Danke! Wo kann das Außengerät stehen?", facts_patch: [{ key: "room_area_sqm", value: 28 }],
-  missing_facts: ["outdoor_unit_position"], qualification_status: "in_progress", needs_human: false, human_reason: null } as const;
+  missing_facts: ["outdoor_unit_position"], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null } as const;
 
 function harness(output: unknown = valid) {
   let facts: MvpProjectFact[] = [{ key: "room_type", value: "living_room" }];

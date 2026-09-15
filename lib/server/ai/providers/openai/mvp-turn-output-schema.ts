@@ -56,4 +56,8 @@ export const mvpOpenAiTurnOutputSchema = z.object({
   qualification_status: z.enum(MVP_QUALIFICATION_STATUSES),
   needs_human: z.boolean(),
   human_reason: z.enum(MVP_HUMAN_ESCALATION_REASONS).nullable(),
+  customer_name_patch: z.object({
+    first_name: z.string().min(1).max(120).nullable(),
+    last_name: z.string().min(1).max(120).nullable(),
+  }).strict().nullable(),
 }).strict();
