@@ -64,7 +64,7 @@ export default async function CustomerDetailPage({ params, searchParams }: { par
         </div>
       ) : null}
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-3xl font-bold">{customer.first_name} {customer.last_name}</h1>
+        <h1 className="text-3xl font-bold">{[customer.first_name, customer.last_name].filter(Boolean).join(" ") || "Name noch unbekannt"}</h1>
         <div className="flex flex-wrap gap-3">
           {mayCreateProject ? (
             <Link className="rounded-lg bg-teal-700 px-4 py-2 font-medium text-white hover:bg-teal-800" href={`/projects/new?customer_id=${customer.id}`}>

@@ -45,7 +45,7 @@ export default async function Customers({ searchParams }: { searchParams: Promis
         <div className="grid gap-2">
           {(data ?? []).map((customer) => (
             <Link className="rounded border p-3 hover:bg-slate-50" href={`/customers/${customer.id}`} key={customer.id}>
-              <strong>{customer.first_name} {customer.last_name}</strong>
+              <strong>{[customer.first_name, customer.last_name].filter(Boolean).join(" ") || "Name noch unbekannt"}</strong>
               <p className="text-sm text-slate-600">{customer.email ?? "Keine E-Mail"} · {customer.phone ?? "Keine Telefonnummer"}</p>
             </Link>
           ))}

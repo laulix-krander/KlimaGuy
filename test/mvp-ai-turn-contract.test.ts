@@ -49,6 +49,7 @@ const validResult = {
   qualification_status: "in_progress",
   needs_human: false,
   human_reason: null,
+  customer_name_patch: null,
 } as const;
 
 describe("MVP project fact registry", () => {
@@ -67,6 +68,13 @@ describe("MVP project fact registry", () => {
 describe("MVP AI turn result", () => {
   it("parses a valid result with multiple typed fact patches", () => {
     expect(mvpAiTurnResultSchema.parse(validResult)).toEqual(validResult);
+  });
+
+  it("accepts full and partial name patches but rejects empty or arbitrary Customer mutations", () => {
+    expect(mvpAiTurnResultSchema.safeParse({ ...validResult, customer_name_patch: { first_name: "Max", last_name: "Mustermann" } }).success).toBe(true);
+    expect(mvpAiTurnResultSchema.safeParse({ ...validResult, customer_name_patch: { first_name: "Max", last_name: null } }).success).toBe(true);
+    expect(mvpAiTurnResultSchema.safeParse({ ...validResult, customer_name_patch: { first_name: null, last_name: null } }).success).toBe(false);
+    expect(mvpAiTurnResultSchema.safeParse({ ...validResult, customer_name_patch: { first_name: "Max", last_name: null, phone: "+49123" } }).success).toBe(false);
   });
 
   it("accepts only canonical missing facts and qualification states", () => {
@@ -107,14 +115,22 @@ describe("MVP AI turn input", () => {
       project_id: ids.project,
     },
     project: { title: "Neue Klimaanfrage" },
+    customer: { name_known: false, first_name: null, last_name: null },
     persisted_facts: [{ key: "city", value: "Berlin" }],
     inbound: { message_id: ids.message, text: "Das Wohnzimmer ist etwa 28 m² groß." },
     transcript: [{ message_id: ids.message, sequence: 1, direction: "inbound", text: "Das Wohnzimmer ist etwa 28 m² groß." }],
-    ready_media: [{ media_id: ids.media, category: "room_overview", mime_type: "image/jpeg", caption: null }],
+    ready_media: [{ media_id: ids.media, category: "room_overview", mime_type: "image/jpeg", caption: null,
+      image_data: "data:image/jpeg;base64,/9j/" }],
   } as const;
 
   it("receives only current turn, project, facts, inbound content, transcript and ready media metadata", () => {
     expect(mvpAiTurnInputSchema.parse(validInput)).toEqual(validInput);
+  });
+
+  it("treats a partial name as known and rejects transport PII", () => {
+    expect(mvpAiTurnInputSchema.safeParse({ ...validInput, customer: { name_known: true, first_name: "Max", last_name: null } }).success).toBe(true);
+    expect(mvpAiTurnInputSchema.safeParse({ ...validInput, customer: { name_known: false, first_name: "Max", last_name: null } }).success).toBe(false);
+    expect(mvpAiTurnInputSchema.safeParse({ ...validInput, customer: { ...validInput.customer, phone: "+49123" } }).success).toBe(false);
   });
 
   it("does not represent unrelated or old Conversation data", () => {
