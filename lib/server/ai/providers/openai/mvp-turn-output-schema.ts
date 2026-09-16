@@ -54,7 +54,7 @@ const turnFields = {
   facts_patch: z.array(mvpOpenAiFactSchema).max(MVP_PROJECT_FACT_KEYS.length),
   customer_name_patch: customerNamePatchSchema,
   media_classifications: z.array(z.object({
-    media_id: z.string().uuid(), category: z.enum(MVP_REQUIRED_PHOTO_CATEGORIES).nullable(),
+    media_id: z.string().uuid(), category: z.union([z.enum(MVP_REQUIRED_PHOTO_CATEGORIES), z.literal("other")]),
     observation: z.string().trim().min(1).max(240).nullable(),
   }).strict()).max(20),
 } as const;

@@ -92,10 +92,25 @@ export async function runMvpConversationTurn(
     await dependencies.store.fail(acquired.turn_id, "invalid_provider_output");
     throw new MvpConversationTurnError("mvp_turn_invalid_provider_output", { cause: validated.error });
   }
+  const currentMediaIds = new Set(input.ready_media.map(({ media_id }) => media_id));
+  if (validated.data.media_classifications.some(({ media_id }) => !currentMediaIds.has(media_id))) {
+    await dependencies.store.fail(acquired.turn_id, "invalid_provider_output");
+    throw new MvpConversationTurnError("mvp_turn_invalid_provider_output");
+  }
+  const classifiedMediaIds = new Set(validated.data.media_classifications.map(({ media_id }) => media_id));
+  const reconciled: MvpAiTurnResult = {
+    ...validated.data,
+    media_classifications: [
+      ...validated.data.media_classifications,
+      ...input.ready_media
+        .filter(({ media_id }) => !classifiedMediaIds.has(media_id))
+        .map(({ media_id }) => ({ media_id, category: "other" as const, observation: null })),
+    ],
+  };
   try {
-    const committed = committedSchema.parse(await dependencies.store.commit(acquired.turn_id, validated.data));
+    const committed = committedSchema.parse(await dependencies.store.commit(acquired.turn_id, reconciled));
     if (committed.status === "stale") throw new MvpConversationTurnError("mvp_turn_stale");
-    return { status: "completed", outbound_message_id: committed.outbound_message_id, turn: validated.data };
+    return { status: "completed", outbound_message_id: committed.outbound_message_id, turn: reconciled };
   } catch (error) {
     await dependencies.store.fail(acquired.turn_id, "commit_failed");
     if (error instanceof MvpConversationTurnError) throw error;
