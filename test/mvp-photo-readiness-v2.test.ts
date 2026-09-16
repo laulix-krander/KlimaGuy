@@ -57,6 +57,16 @@ describe("Photo Readiness V2", () => {
 });
 
 describe("safe Vision output", () => {
-  it("allows an ambiguous current image to remain unclassified", () => expect(mvpAiTurnResultSchema.safeParse({ reply_text: "Was zeigt das Bild?", facts_patch: [], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null, media_classifications: [{ media_id: crypto.randomUUID(), category: null, observation: null }] }).success).toBe(true));
+  it("requires explicit other for an image that cannot establish readiness", () => {
+    const result = { reply_text: "Was zeigt das Bild?", facts_patch: [], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null, media_classifications: [{ media_id: crypto.randomUUID(), category: "other", observation: null }] };
+    expect(mvpAiTurnResultSchema.safeParse(result).success).toBe(true);
+    expect(mvpAiTurnResultSchema.safeParse({ ...result, media_classifications: [{ ...result.media_classifications[0], category: null }] }).success).toBe(false);
+  });
+  it("remembers sequential canonical classifications without replaying historical bytes", () => {
+    const afterIndoor = [image("indoor_unit_location")];
+    expect(evaluateMvpPhotoReadiness(project, [], afterIndoor).missingCore).toEqual(["room_overview", "outdoor_unit_location"]);
+    const afterOutdoor = [...afterIndoor, image("outdoor_unit_location")];
+    expect(evaluateMvpPhotoReadiness(project, [], afterOutdoor).missingCore).toEqual(["room_overview"]);
+  });
   it.each(["Wand technisch geeignet", "Stromkreis ausreichend", "Kernbohrung sicher", "Vor Ort besichtigt", "Abstand 120 cm"])("rejects technical certainty: %s", (claim) => expect(mvpVisionObservationSchema.safeParse(claim).success).toBe(false));
 });

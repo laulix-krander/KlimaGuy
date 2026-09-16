@@ -146,6 +146,19 @@ describe("dedicated MVP OpenAI provider", () => {
     expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain("nie danach, ob diese technisch geeignet oder ausreichend ist");
   });
 
+  it("requires one context-aware, reply-consistent classification for every current image", () => {
+    expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain("für JEDES Bild aus ready_media genau einen Eintrag");
+    expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain("reply_text und media_classifications dürfen einander nicht widersprechen");
+    expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain("indoor_unit_location");
+    expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain("outdoor_unit_location");
+    expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain("verwende other");
+  });
+
+  it("extracts explicit room cardinality without inferring indoor units", () => {
+    expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain("„ein Wohnzimmer“ bedeutet requested_room_count 1");
+    expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain("nicht automatisch indoor_unit_count 1");
+  });
+
   it("validates representative provider facts with the authoritative domain contract", () => {
     const result = {
       reply_text: "Danke, die Angaben sind erfasst.",

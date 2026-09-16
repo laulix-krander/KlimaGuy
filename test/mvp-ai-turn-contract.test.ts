@@ -49,6 +49,7 @@ const validResult = {
   needs_human: false,
   human_reason: null,
   customer_name_patch: null,
+  media_classifications: [],
 } as const;
 
 describe("MVP project fact registry", () => {
@@ -131,6 +132,7 @@ describe("MVP AI turn input", () => {
     transcript: [{ message_id: ids.message, sequence: 1, direction: "inbound", text: "Das Wohnzimmer ist etwa 28 m² groß." }],
     ready_media: [{ media_id: ids.media, category: "room_overview", mime_type: "image/jpeg", caption: null,
       image_data: "data:image/jpeg;base64,/9j/" }],
+    project_photo_coverage: [],
   } as const;
 
   it("receives only current turn, project, facts, inbound content, transcript and ready media metadata", () => {

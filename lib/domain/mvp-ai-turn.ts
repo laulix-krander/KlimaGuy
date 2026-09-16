@@ -27,7 +27,7 @@ export const mvpVisionObservationSchema = z.string().trim().min(1).max(240).refi
 );
 export const mvpMediaClassificationSchema = z.object({
   media_id: uuid,
-  category: z.enum(MVP_REQUIRED_PHOTO_CATEGORIES).nullable(),
+  category: z.union([z.enum(MVP_REQUIRED_PHOTO_CATEGORIES), z.literal("other")]),
   observation: mvpVisionObservationSchema.nullable(),
 }).strict();
 
