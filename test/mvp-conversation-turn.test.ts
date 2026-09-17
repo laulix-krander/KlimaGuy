@@ -99,9 +99,58 @@ describe("MVP conversation turn", () => {
     ] });
     await runMvpConversationTurn(id(2), id(1), h);
     expect(h.provider.generateTurn).toHaveBeenCalledWith(expect.objectContaining({ qualification_context: {
+      collection_active: true,
       missing_facts: ["building_type", "room_area_sqm", "indoor_unit_count", "line_route", "estimated_line_length_m", "condensate_drainage", "electrical_supply", "installation_access"],
       missing_photos: ["pipe_route"], requires_site_check: false,
     } }));
+  });
+
+  it("keeps truthful gaps but disables collection after human handoff while classifying the final image", async () => {
+    const mediaId = id(20);
+    const output = {
+      ...valid,
+      reply_text: "Danke, das aktuelle Foto ist erfasst. Die offenen Punkte klärt unser Techniker.",
+      facts_patch: [],
+      qualification_status: "needs_human" as const,
+      needs_human: true,
+      human_reason: "requires_site_check" as const,
+      media_classifications: [{ media_id: mediaId, category: "other" as const, observation: null }],
+    };
+    const h = harness(output);
+    h.acquire.mockResolvedValue({
+      ...context,
+      project: { title: "Neue Klimaanfrage", status: "human_review", requires_human_review: true },
+      inbound: { message_id: id(1), text: "Das ist alles was ich habe, mehr Fotos hab ich nicht" },
+      ready_media: [{ media_id: mediaId, category: "other", mime_type: "image/jpeg", caption: "Das ist alles was ich habe, mehr Fotos hab ich nicht", storage_bucket: "project-media", storage_path: `projects/${id(4)}/final.jpg`, file_size_bytes: 3 }],
+      project_photo_coverage: [{ category: "room_overview", count: 1 }, { category: "outdoor_unit_location", count: 1 }],
+    });
+    vi.mocked(h.store.rpc).mockResolvedValue({ data: [
+      { key: "room_type", value: "living_room" },
+      { key: "electrical_supply", value: "available" },
+      { key: "condensate_drainage", value: "unknown" },
+    ], error: null });
+    vi.mocked(h.store.loadMedia).mockResolvedValue(new Uint8Array([0xff, 0xd8, 0xff]));
+
+    await expect(runMvpConversationTurn(id(2), id(1), h)).resolves.toMatchObject({ status: "completed", turn: output });
+    const providerInput = vi.mocked(h.provider.generateTurn).mock.calls[0][0];
+    expect(providerInput.qualification_context.collection_active).toBe(false);
+    expect(providerInput.qualification_context.missing_facts).toEqual(expect.arrayContaining(["line_route", "estimated_line_length_m"]));
+    expect(providerInput.qualification_context.missing_photos).toEqual(expect.arrayContaining(["indoor_unit_location", "pipe_route", "electrical_connection", "condensate_route"]));
+    expect(output.reply_text).not.toMatch(/Innen|Leitungsweg|Elektroanschluss|Kondensat.*Foto/iu);
+    expect(output.facts_patch).not.toEqual(expect.arrayContaining([expect.objectContaining({ key: "line_route" }), expect.objectContaining({ key: "estimated_line_length_m" })]));
+    expect(h.commit).toHaveBeenCalledWith(id(9), output);
+  });
+
+  it("accepts voluntary facts without restarting collection for a human-review project", async () => {
+    const output = { ...valid, reply_text: "Danke, ich habe den Hinweis für den Techniker ergänzt.", facts_patch: [{ key: "electrical_supply", value: "available" }] as const, qualification_status: "needs_human" as const, needs_human: true, human_reason: "requires_site_check" as const };
+    const h = harness(output);
+    h.acquire.mockResolvedValue({ ...context, project: { title: "Neue Klimaanfrage", status: "human_review", requires_human_review: true }, inbound: { message_id: id(1), text: "Übrigens, der Stromanschluss ist direkt daneben." } });
+
+    await runMvpConversationTurn(id(2), id(1), h);
+
+    expect(vi.mocked(h.provider.generateTurn).mock.calls[0][0].qualification_context.collection_active).toBe(false);
+    expect(h.commit).toHaveBeenCalledWith(id(9), output);
+    expect(output.reply_text).not.toMatch(/noch|fehlt|Foto/iu);
   });
 
   it("validates, persists the patch, and returns the canonical outbound reply", async () => {
