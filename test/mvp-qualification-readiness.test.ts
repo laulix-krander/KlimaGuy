@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateMvpQualificationReadiness } from "@/lib/domain/mvp-qualification-readiness";
+import { deriveMissingMvpRequiredFacts, evaluateMvpQualificationReadiness, MVP_OFFER_REQUIRED_FACT_GROUPS } from "@/lib/domain/mvp-qualification-readiness";
 import type { MvpProjectFact } from "@/lib/domain/mvp-project-facts";
 
 const PROJECT = "00000000-0000-4000-8000-000000000001";
@@ -19,6 +19,19 @@ const complete: MvpProjectFact[] = [
 const photos = [...corePhotos, { ...corePhotos[0], category: "electrical_connection" }];
 
 describe("deterministische MVP-Angebotsbereitschaft", () => {
+  it("projects the production gaps in canonical policy order", () => {
+    const productionFacts: MvpProjectFact[] = [
+      { key: "installation_address", value: "Glashütterweg 14" }, { key: "postal_code", value: "22889" },
+      { key: "city", value: "tangstedt" }, { key: "floor_level", value: 1 }, { key: "requested_room_count", value: 1 },
+      { key: "room_type", value: "living_room" }, { key: "indoor_unit_position", value: "Unter dem Fenster" },
+      { key: "outdoor_unit_position", value: "Terrasse" },
+    ];
+    expect(MVP_OFFER_REQUIRED_FACT_GROUPS).toHaveLength(15);
+    expect(deriveMissingMvpRequiredFacts(productionFacts)).toEqual([
+      "building_type", "room_area_sqm", "indoor_unit_count", "line_route", "estimated_line_length_m",
+      "condensate_drainage", "electrical_supply", "installation_access",
+    ]);
+  });
   it("accepts the smallest reviewable fact set", () => expect(evaluateMvpQualificationReadiness(complete, PROJECT, photos)).toEqual({ ready: true, missingFacts: [], missingPhotos: [], requiresSiteCheck: false }));
   it("blocks readiness when core photos are complete but an applicable situational photo is missing", () => {
     expect(evaluateMvpQualificationReadiness(complete, PROJECT, corePhotos)).toMatchObject({ ready: false, missingPhotos: ["electrical_connection"] });

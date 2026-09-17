@@ -14,14 +14,24 @@ export function deriveSituationalPhotoCategories(facts: readonly MvpProjectFact[
   return required;
 }
 
+export function deriveMissingMvpPhotoCategories(
+  facts: readonly MvpProjectFact[],
+  coveredCategories: readonly MvpPhotoCategory[],
+) {
+  const covered = new Set(coveredCategories);
+  const situational = deriveSituationalPhotoCategories(facts);
+  const missingCore = MVP_CORE_PHOTO_CATEGORIES.filter((category) => !covered.has(category));
+  const missingSituational = situational.filter((category) => !covered.has(category));
+  return { missingCore, missingSituational } as const;
+}
+
 export function evaluateMvpPhotoReadiness(projectId: string, facts: readonly MvpProjectFact[], media: readonly MvpPhotoCoverageMedia[]) {
   const covered = new Set<MvpPhotoCategory>();
   for (const item of media) {
     if (item.project_id === projectId && item.upload_status === "ready" && item.deleted_at === null && item.media_type === "image" && ["image/jpeg", "image/png", "image/webp"].includes(item.mime_type) && MVP_REQUIRED_PHOTO_CATEGORIES.includes(item.category as MvpPhotoCategory)) covered.add(item.category as MvpPhotoCategory);
   }
-  const missingCore = MVP_CORE_PHOTO_CATEGORIES.filter((category) => !covered.has(category));
   const situational = deriveSituationalPhotoCategories(facts);
-  const missingSituational = situational.filter((category) => !covered.has(category));
+  const { missingCore, missingSituational } = deriveMissingMvpPhotoCategories(facts, [...covered]);
   return {
     covered: [...covered],
     required: [...MVP_CORE_PHOTO_CATEGORIES, ...situational],

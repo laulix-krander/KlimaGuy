@@ -86,6 +86,24 @@ describe("MVP conversation turn", () => {
     expect(vi.mocked(h.provider.generateTurn).mock.calls[0][0]).not.toHaveProperty("previous_response_id");
   });
 
+  it("supplies deterministic production qualification gaps despite complete core photo coverage", async () => {
+    const h = harness();
+    const productionFacts: MvpProjectFact[] = [
+      { key: "installation_address", value: "Glashütterweg 14" }, { key: "postal_code", value: "22889" }, { key: "city", value: "tangstedt" },
+      { key: "floor_level", value: 1 }, { key: "requested_room_count", value: 1 }, { key: "room_type", value: "living_room" },
+      { key: "indoor_unit_position", value: "Wand" }, { key: "outdoor_unit_position", value: "Terrasse" },
+    ];
+    vi.mocked(h.store.rpc).mockResolvedValue({ data: productionFacts, error: null });
+    h.acquire.mockResolvedValue({ ...context, project_photo_coverage: [
+      { category: "room_overview", count: 1 }, { category: "indoor_unit_location", count: 1 }, { category: "outdoor_unit_location", count: 1 },
+    ] });
+    await runMvpConversationTurn(id(2), id(1), h);
+    expect(h.provider.generateTurn).toHaveBeenCalledWith(expect.objectContaining({ qualification_context: {
+      missing_facts: ["building_type", "room_area_sqm", "indoor_unit_count", "line_route", "estimated_line_length_m", "condensate_drainage", "electrical_supply", "installation_access"],
+      missing_photos: ["pipe_route"], requires_site_check: false,
+    } }));
+  });
+
   it("validates, persists the patch, and returns the canonical outbound reply", async () => {
     const h = harness(); const result = await runMvpConversationTurn(id(2), id(1), h);
     expect(result).toEqual({ status: "completed", outbound_message_id: id(10), turn: valid });

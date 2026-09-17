@@ -34,7 +34,7 @@ describe("dedicated MVP OpenAI provider", () => {
     const output = { reply_text: "Welche Etage ist es?", facts_patch: [], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null, media_classifications: [] };
     const parse = vi.fn().mockResolvedValue({ status: "completed", output_parsed: output });
     const provider = new OpenAiMvpTurnProvider(() => ({ OPENAI_API_KEY: "test", OPENAI_MODEL: "gpt-4.1-mini" }), () => ({ responses: { parse } } as never));
-    const input = mvpAiTurnInputSchema.parse({ turn: { inbound_message_id: "00000000-0000-4000-8000-000000000001", conversation_id: "00000000-0000-4000-8000-000000000002", expected_conversation_revision: 1, binding_id: "00000000-0000-4000-8000-000000000003", binding_revision: 1, project_id: "00000000-0000-4000-8000-000000000004" }, project: { title: "Anfrage" }, customer: { name_known: false, first_name: null, last_name: null }, persisted_facts: [], inbound: { message_id: "00000000-0000-4000-8000-000000000001", text: "Hallo" }, transcript: [{ message_id: "00000000-0000-4000-8000-000000000001", sequence: 1, direction: "inbound", text: "Hallo" }], ready_media: [] });
+    const input = mvpAiTurnInputSchema.parse({ turn: { inbound_message_id: "00000000-0000-4000-8000-000000000001", conversation_id: "00000000-0000-4000-8000-000000000002", expected_conversation_revision: 1, binding_id: "00000000-0000-4000-8000-000000000003", binding_revision: 1, project_id: "00000000-0000-4000-8000-000000000004" }, project: { title: "Anfrage" }, customer: { name_known: false, first_name: null, last_name: null }, persisted_facts: [], inbound: { message_id: "00000000-0000-4000-8000-000000000001", text: "Hallo" }, transcript: [{ message_id: "00000000-0000-4000-8000-000000000001", sequence: 1, direction: "inbound", text: "Hallo" }], ready_media: [], qualification_context: { missing_facts: ["installation_address"], missing_photos: ["room_overview"], requires_site_check: false } });
     await expect(provider.generateTurn(input)).resolves.toEqual(output); expect(parse).toHaveBeenCalledOnce();
     const request = parse.mock.calls[0][0]; expect(request).not.toHaveProperty("previous_response_id"); expect(request).not.toHaveProperty("conversation");
     expect(request.input[0].content).toHaveLength(1);
@@ -45,7 +45,7 @@ describe("dedicated MVP OpenAI provider", () => {
     const parse = vi.fn().mockResolvedValue({ status: "completed", output_parsed: output });
     const provider = new OpenAiMvpTurnProvider(() => ({ OPENAI_API_KEY: "test" }), () => ({ responses: { parse } } as never));
 
-    await provider.generateTurn(mvpAiTurnInputSchema.parse({ turn: { inbound_message_id: "00000000-0000-4000-8000-000000000001", conversation_id: "00000000-0000-4000-8000-000000000002", expected_conversation_revision: 1, binding_id: "00000000-0000-4000-8000-000000000003", binding_revision: 1, project_id: "00000000-0000-4000-8000-000000000004" }, project: { title: "Anfrage" }, customer: { name_known: false, first_name: null, last_name: null }, persisted_facts: [], inbound: { message_id: "00000000-0000-4000-8000-000000000001", text: "Hallo" }, transcript: [], ready_media: [] }));
+    await provider.generateTurn(mvpAiTurnInputSchema.parse({ turn: { inbound_message_id: "00000000-0000-4000-8000-000000000001", conversation_id: "00000000-0000-4000-8000-000000000002", expected_conversation_revision: 1, binding_id: "00000000-0000-4000-8000-000000000003", binding_revision: 1, project_id: "00000000-0000-4000-8000-000000000004" }, project: { title: "Anfrage" }, customer: { name_known: false, first_name: null, last_name: null }, persisted_facts: [], inbound: { message_id: "00000000-0000-4000-8000-000000000001", text: "Hallo" }, transcript: [], ready_media: [], qualification_context: { missing_facts: ["installation_address"], missing_photos: ["room_overview"], requires_site_check: false } }));
 
     const format = zodTextFormat(mvpOpenAiTurnOutputSchema, "klimaguy_mvp_turn");
     expect(format.strict).toBe(true);
@@ -159,6 +159,20 @@ describe("dedicated MVP OpenAI provider", () => {
     expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain("nicht automatisch indoor_unit_count 1");
   });
 
+  it("uses deterministic gaps to continue the production case instead of declaring completion", () => {
+    for (const requiredInstruction of [
+      "Ignoriere missing_facts niemals",
+      "ein oder zwei natürlich zusammenpassende Angaben",
+      "Beginne den gebündelten Kernfoto-Request normalerweise erst",
+      "building_type, requested_room_count, room_type, room_area_sqm, indoor_unit_count",
+      "behandle dieses Motiv bereits in derselben Antwort als erfüllt",
+      "Planung ist komplett",
+      "alles vollständig",
+      "bereit für technische Prüfung",
+      "Setze dann andernfalls in_progress und qualifiziere weiter",
+    ]) expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain(requiredInstruction);
+  });
+
   it("validates representative provider facts with the authoritative domain contract", () => {
     const result = {
       reply_text: "Danke, die Angaben sind erfasst.",
@@ -178,7 +192,7 @@ describe("dedicated MVP OpenAI provider", () => {
   it("keeps missing configuration classified without making a provider call", async () => {
     const clientFactory = vi.fn();
     const provider = new OpenAiMvpTurnProvider(() => ({}), clientFactory);
-    const input = mvpAiTurnInputSchema.parse({ turn: { inbound_message_id: "00000000-0000-4000-8000-000000000001", conversation_id: "00000000-0000-4000-8000-000000000002", expected_conversation_revision: 1, binding_id: "00000000-0000-4000-8000-000000000003", binding_revision: 1, project_id: "00000000-0000-4000-8000-000000000004" }, project: { title: "Anfrage" }, customer: { name_known: false, first_name: null, last_name: null }, persisted_facts: [], inbound: { message_id: "00000000-0000-4000-8000-000000000001", text: "Hallo" }, transcript: [], ready_media: [] });
+    const input = mvpAiTurnInputSchema.parse({ turn: { inbound_message_id: "00000000-0000-4000-8000-000000000001", conversation_id: "00000000-0000-4000-8000-000000000002", expected_conversation_revision: 1, binding_id: "00000000-0000-4000-8000-000000000003", binding_revision: 1, project_id: "00000000-0000-4000-8000-000000000004" }, project: { title: "Anfrage" }, customer: { name_known: false, first_name: null, last_name: null }, persisted_facts: [], inbound: { message_id: "00000000-0000-4000-8000-000000000001", text: "Hallo" }, transcript: [], ready_media: [], qualification_context: { missing_facts: ["installation_address"], missing_photos: ["room_overview"], requires_site_check: false } });
 
     await expect(provider.generateTurn(input)).rejects.toThrow("mvp_openai_configuration_failed");
     expect(clientFactory).not.toHaveBeenCalled();
