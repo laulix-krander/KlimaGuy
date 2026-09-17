@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MVP_PROJECT_FACT_KEYS, type MvpProjectFact } from "@/lib/domain/mvp-project-facts";
-import { FACT_DISPLAY, customerDisplayName, displayFactValue, mapConversationWorkspace, mapFactDisplay, mapProjectInbox, UNKNOWN_CUSTOMER_NAME } from "@/lib/domain/project-operations-read-model";
+import { FACT_DISPLAY, customerDisplayName, displayFactValue, mapConversationWorkspace, mapFactDisplay, mapProjectInbox, qualificationDisplay, resolveProjectLocation, UNKNOWN_CUSTOMER_NAME } from "@/lib/domain/project-operations-read-model";
+import { MVP_OFFER_REQUIRED_FACT_GROUPS } from "@/lib/domain/mvp-qualification-readiness";
 import type { ConversationDto, MessageDto } from "@/lib/domain/conversation-authority";
 
 const id = (n: number) => `${String(n).padStart(8,"0")}-0000-4000-8000-000000000000`;
@@ -22,6 +23,28 @@ describe("Project Inbox Read Model", () => {
     ]);
     expect(rows.map((row) => row.id)).toEqual([id(2), id(1)]);
     expect(mapProjectInbox(rows, { query: "anna", status: "new", review: "false" }).map((row) => row.id)).toEqual([id(1)]);
+  });
+  it("uses the same canonical fact location for display and search, with legacy fallback", () => {
+    const canonicalFacts: MvpProjectFact[] = [{ key: "installation_address", value: "glashütterweg 14" }, { key: "postal_code", value: "22889" }, { key: "city", value: "tangstedt" }];
+    const [item] = mapProjectInbox([{ ...base, id: id(3), city: null, postal_code: null, facts: canonicalFacts, customer: null, requires_human_review: false }]);
+    expect(item.location).toMatchObject({ place: "22889 Tangstedt", installationSite: "glashütterweg 14, 22889 Tangstedt" });
+    expect(resolveProjectLocation({ installation_address: null, postal_code: null, city: null }, canonicalFacts)).toEqual(item.location);
+    expect(mapProjectInbox([{ ...base, id: id(3), city: null, postal_code: null, facts: canonicalFacts, customer: null, requires_human_review: false }], { query: "tangstedt" })).toHaveLength(1);
+    expect(resolveProjectLocation({ installation_address: "Altweg 2", postal_code: "22000", city: "hamburg" }, [])).toMatchObject({ place: "22000 Hamburg", installationSite: "Altweg 2, 22000 Hamburg" });
+  });
+
+  it("derives and clamps fact completion independently from photo readiness", () => {
+    const productionFacts: MvpProjectFact[] = [
+      { key: "installation_address", value: "Glashütterweg 14" }, { key: "postal_code", value: "22889" }, { key: "city", value: "tangstedt" },
+      { key: "requested_room_count", value: 1 }, { key: "room_type", value: "living_room" },
+      { key: "indoor_unit_position", value: "Wand" }, { key: "outdoor_unit_position", value: "Terrasse" },
+    ];
+    const display = qualificationDisplay(productionFacts);
+    expect(display).toMatchObject({ required: MVP_OFFER_REQUIRED_FACT_GROUPS.length, completed: 7, percent: 47 });
+    expect(display.percent).toBeGreaterThanOrEqual(0);
+    expect(display.percent).toBeLessThanOrEqual(100);
+    expect(qualificationDisplay([]).percent).toBe(0);
+    expect(display.missingPhotos.length).toBeGreaterThan(0);
   });
 });
 

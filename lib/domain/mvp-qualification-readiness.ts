@@ -26,12 +26,17 @@ export type MvpQualificationReadiness = Readonly<{
   missingPhotos: readonly string[];
 }>;
 
+export function deriveMissingMvpRequiredFacts(facts: readonly MvpProjectFact[]): MvpProjectFactKey[] {
+  const known = new Set(facts.map((fact) => fact.key));
+  return MVP_OFFER_REQUIRED_FACT_GROUPS
+    .filter((group) => !group.some((key) => known.has(key)))
+    .map(([key]) => key);
+}
+
 /** Small deterministic handoff policy. It establishes reviewability, not technical certainty. */
 export function evaluateMvpQualificationReadiness(facts: readonly MvpProjectFact[], projectId = "", media: readonly MvpPhotoCoverageMedia[] = []): MvpQualificationReadiness {
   const byKey = new Map(facts.map((fact) => [fact.key, fact.value]));
-  const missingFacts = MVP_OFFER_REQUIRED_FACT_GROUPS
-    .filter((group) => !group.some((key) => byKey.has(key)))
-    .map(([key]) => key);
+  const missingFacts = deriveMissingMvpRequiredFacts(facts);
   const requiresSiteCheck = ["condensate_drainage", "electrical_supply"]
     .some((key) => byKey.get(key as MvpProjectFactKey) === "requires_site_check")
     || byKey.get("installation_access") === "special_access_required";

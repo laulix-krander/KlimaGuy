@@ -2,8 +2,10 @@ import { z } from "zod";
 import {
   MVP_PROJECT_FACT_KEYS,
   MVP_REQUIRED_PHOTO_CATEGORIES,
+  mvpProjectFactKeySchema,
   mvpProjectFactSchema,
 } from "./mvp-project-facts";
+import { MVP_OFFER_REQUIRED_FACT_GROUPS } from "./mvp-qualification-readiness";
 
 export const MVP_QUALIFICATION_STATUSES = [
   "in_progress",
@@ -80,6 +82,11 @@ export const mvpAiTurnInputObjectSchema = z.object({
     image_data: z.string().regex(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/),
   }).strict()).max(20),
   project_photo_coverage: z.array(z.object({ category: z.enum(MVP_REQUIRED_PHOTO_CATEGORIES), count: z.number().int().positive() }).strict()).max(MVP_REQUIRED_PHOTO_CATEGORIES.length).default([]),
+  qualification_context: z.object({
+    missing_facts: z.array(mvpProjectFactKeySchema).max(MVP_OFFER_REQUIRED_FACT_GROUPS.length),
+    missing_photos: z.array(z.enum(MVP_REQUIRED_PHOTO_CATEGORIES)).max(MVP_REQUIRED_PHOTO_CATEGORIES.length),
+    requires_site_check: z.boolean(),
+  }).strict(),
 }).strict();
 
 export const mvpAiTurnInputSchema = mvpAiTurnInputObjectSchema.superRefine((input, context) => {

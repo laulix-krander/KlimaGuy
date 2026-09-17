@@ -1,6 +1,6 @@
 import type { MessageDto, ConversationDto } from "./conversation-authority";
 import { MVP_PROJECT_FACT_KEYS, type MvpProjectFact, type MvpProjectFactKey } from "./mvp-project-facts";
-import { evaluateMvpQualificationReadiness } from "./mvp-qualification-readiness";
+import { evaluateMvpQualificationReadiness, MVP_OFFER_REQUIRED_FACT_GROUPS } from "./mvp-qualification-readiness";
 import type { ProjectStatus } from "./types";
 
 export const UNKNOWN_CUSTOMER_NAME = "Name noch unbekannt";
@@ -41,15 +41,33 @@ export function mapFactDisplay(facts: readonly MvpProjectFact[]) {
 
 export function qualificationDisplay(facts: readonly MvpProjectFact[]) {
   const readiness = evaluateMvpQualificationReadiness(facts);
-  const required = 6;
-  return { ...readiness, completed: required - readiness.missingFacts.length, required, percent: Math.round(((required - readiness.missingFacts.length) / required) * 100), missingLabels: readiness.missingFacts.map((key) => FACT_DISPLAY[key][1]) };
+  const required = MVP_OFFER_REQUIRED_FACT_GROUPS.length;
+  const completed = Math.max(0, Math.min(required, required - readiness.missingFacts.length));
+  const percent = Math.max(0, Math.min(100, Math.round((completed / required) * 100)));
+  return { ...readiness, completed, required, percent, missingLabels: readiness.missingFacts.map((key) => FACT_DISPLAY[key][1]) };
 }
 
-export type InboxSource = { id: string; title: string; status: ProjectStatus; requires_human_review: boolean; city: string | null; postal_code: string | null; created_at: string; updated_at: string; customer: { first_name: string | null; last_name: string | null } | null; facts: readonly MvpProjectFact[]; latest_activity_at?: string | null };
+type LegacyProjectLocation = Readonly<{ installation_address?: string | null; postal_code: string | null; city: string | null }>;
+function factText(facts: readonly MvpProjectFact[], key: "installation_address" | "postal_code" | "city"): string | null {
+  const value = facts.find((fact) => fact.key === key)?.value;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+function presentationPlace(value: string | null): string | null {
+  return value ? value.charAt(0).toLocaleUpperCase("de-DE") + value.slice(1) : null;
+}
+export function resolveProjectLocation(project: LegacyProjectLocation, facts: readonly MvpProjectFact[]) {
+  const installationAddress = factText(facts, "installation_address") ?? project.installation_address?.trim() ?? null;
+  const postalCode = factText(facts, "postal_code") ?? project.postal_code?.trim() ?? null;
+  const city = presentationPlace(factText(facts, "city") ?? project.city?.trim() ?? null);
+  const place = [postalCode, city].filter(Boolean).join(" ") || "Ort noch unbekannt";
+  return { installationAddress, postalCode, city, place, installationSite: [installationAddress, place === "Ort noch unbekannt" ? null : place].filter(Boolean).join(", ") || "Noch nicht bekannt" } as const;
+}
+
+export type InboxSource = { id: string; title: string; status: ProjectStatus; requires_human_review: boolean; installation_address?: string | null; city: string | null; postal_code: string | null; created_at: string; updated_at: string; customer: { first_name: string | null; last_name: string | null } | null; facts: readonly MvpProjectFact[]; latest_activity_at?: string | null };
 export function mapProjectInbox(source: readonly InboxSource[], filters: { query?: string; status?: string; review?: string } = {}) {
   const query = filters.query?.trim().toLocaleLowerCase("de-DE") ?? "";
-  return source.map((item) => ({ ...item, customerName: customerDisplayName(item.customer), qualification: qualificationDisplay(item.facts), latestActivityAt: item.latest_activity_at ?? item.updated_at }))
-    .filter((item) => !query || [item.customerName, item.title, item.city, item.postal_code].some((value) => value?.toLocaleLowerCase("de-DE").includes(query)))
+  return source.map((item) => ({ ...item, customerName: customerDisplayName(item.customer), qualification: qualificationDisplay(item.facts), location: resolveProjectLocation(item, item.facts), latestActivityAt: item.latest_activity_at ?? item.updated_at }))
+    .filter((item) => !query || [item.customerName, item.title, item.location.city, item.location.postalCode, item.location.installationAddress].some((value) => value?.toLocaleLowerCase("de-DE").includes(query)))
     .filter((item) => !filters.status || item.status === filters.status)
     .filter((item) => !filters.review || String(item.requires_human_review) === filters.review)
     .sort((a, b) => Number(b.requires_human_review) - Number(a.requires_human_review) || Date.parse(b.latestActivityAt) - Date.parse(a.latestActivityAt) || Date.parse(b.updated_at) - Date.parse(a.updated_at));
