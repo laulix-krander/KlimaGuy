@@ -125,7 +125,7 @@ describe("MVP AI turn input", () => {
       binding_revision: 2,
       project_id: ids.project,
     },
-    project: { title: "Neue Klimaanfrage" },
+    project: { title: "Neue Klimaanfrage", status: "collecting_information", requires_human_review: false },
     customer: { name_known: false, first_name: null, last_name: null },
     persisted_facts: [{ key: "city", value: "Berlin" }],
     inbound: { message_id: ids.message, text: "Das Wohnzimmer ist etwa 28 m² groß." },

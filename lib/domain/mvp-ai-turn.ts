@@ -53,6 +53,8 @@ export const mvpAiTurnInputObjectSchema = z.object({
   }).strict(),
   project: z.object({
     title: z.string().trim().min(1).max(180),
+    status: z.enum(["new", "collecting_information", "technical_review", "human_review", "quote_draft", "quote_sent", "accepted", "rejected", "closed"]).default("collecting_information"),
+    requires_human_review: z.boolean().default(false),
   }).strict(),
   customer: z.object({
     name_known: z.boolean(),
