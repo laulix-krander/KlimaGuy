@@ -12,7 +12,6 @@ import {
 } from "../lib/domain/mvp-project-facts";
 import {
   MVP_HUMAN_ESCALATION_REASONS,
-  MVP_QUALIFICATION_STATUSES,
 } from "../lib/domain/mvp-ai-turn";
 import { OPENAI_MVP_TURN_INSTRUCTIONS } from "../lib/server/ai/providers/openai/mvp-turn-instructions";
 
@@ -31,21 +30,43 @@ function resolveSchemaReference(root: Record<string, unknown>, schema: Record<st
 
 describe("dedicated MVP OpenAI provider", () => {
   it("makes exactly one stateless structured Responses call", async () => {
-    const output = { reply_text: "Welche Etage ist es?", facts_patch: [], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null, media_classifications: [] };
+    const output = { reply_text: "Welche Etage ist es?", facts_patch: [], qualification: { status: "in_progress", human_reason: null }, customer_name_patch: null, media_classifications: [] };
     const parse = vi.fn().mockResolvedValue({ status: "completed", output_parsed: output });
     const provider = new OpenAiMvpTurnProvider(() => ({ OPENAI_API_KEY: "test", OPENAI_MODEL: "gpt-4.1-mini" }), () => ({ responses: { parse } } as never));
-    const input = mvpAiTurnInputSchema.parse({ turn: { inbound_message_id: "00000000-0000-4000-8000-000000000001", conversation_id: "00000000-0000-4000-8000-000000000002", expected_conversation_revision: 1, binding_id: "00000000-0000-4000-8000-000000000003", binding_revision: 1, project_id: "00000000-0000-4000-8000-000000000004" }, project: { title: "Anfrage" }, customer: { name_known: false, first_name: null, last_name: null }, persisted_facts: [], inbound: { message_id: "00000000-0000-4000-8000-000000000001", text: "Hallo" }, transcript: [{ message_id: "00000000-0000-4000-8000-000000000001", sequence: 1, direction: "inbound", text: "Hallo" }], ready_media: [], qualification_context: { missing_facts: ["installation_address"], missing_photos: ["room_overview"], requires_site_check: false } });
-    await expect(provider.generateTurn(input)).resolves.toEqual(output); expect(parse).toHaveBeenCalledOnce();
+    const input = mvpAiTurnInputSchema.parse({ turn: { inbound_message_id: "00000000-0000-4000-8000-000000000001", conversation_id: "00000000-0000-4000-8000-000000000002", expected_conversation_revision: 1, binding_id: "00000000-0000-4000-8000-000000000003", binding_revision: 1, project_id: "00000000-0000-4000-8000-000000000004" }, project: { title: "Anfrage" }, customer: { name_known: false, first_name: null, last_name: null }, persisted_facts: [], inbound: { message_id: "00000000-0000-4000-8000-000000000001", text: "Hallo" }, transcript: [{ message_id: "00000000-0000-4000-8000-000000000001", sequence: 1, direction: "inbound", text: "Hallo" }], ready_media: [], qualification_context: { collection_active: true, missing_facts: ["installation_address"], missing_photos: ["room_overview"], requires_site_check: false } });
+    await expect(provider.generateTurn(input)).resolves.toEqual({
+      reply_text: output.reply_text, facts_patch: [], customer_name_patch: null, media_classifications: [],
+      qualification_status: "in_progress", needs_human: false, human_reason: null,
+    }); expect(parse).toHaveBeenCalledOnce();
     const request = parse.mock.calls[0][0]; expect(request).not.toHaveProperty("previous_response_id"); expect(request).not.toHaveProperty("conversation");
     expect(request.input[0].content).toHaveLength(1);
   });
 
+  it("maps an escalated provider decision and drops only an unsafe optional Vision observation", async () => {
+    const mediaId = "00000000-0000-4000-8000-000000000020";
+    const output = {
+      reply_text: "Danke, den Rest klärt unser Techniker.", facts_patch: [], customer_name_patch: null,
+      media_classifications: [{ media_id: mediaId, category: "other", observation: "Die Wand ist technisch geeignet." }],
+      qualification: { status: "needs_human", human_reason: "requires_site_check" },
+    };
+    const parse = vi.fn().mockResolvedValue({ status: "completed", output_parsed: output });
+    const provider = new OpenAiMvpTurnProvider(() => ({ OPENAI_API_KEY: "test" }), () => ({ responses: { parse } } as never));
+    const input = mvpAiTurnInputSchema.parse({ turn: { inbound_message_id: "00000000-0000-4000-8000-000000000001", conversation_id: "00000000-0000-4000-8000-000000000002", expected_conversation_revision: 1, binding_id: "00000000-0000-4000-8000-000000000003", binding_revision: 1, project_id: "00000000-0000-4000-8000-000000000004" }, project: { title: "Anfrage", status: "human_review", requires_human_review: true }, customer: { name_known: true, first_name: "Max", last_name: null }, persisted_facts: [], inbound: { message_id: "00000000-0000-4000-8000-000000000001", text: "Das ist alles was ich habe, mehr Fotos hab ich nicht" }, transcript: [], ready_media: [{ media_id: mediaId, category: "other", mime_type: "image/jpeg", caption: "Das ist alles was ich habe, mehr Fotos hab ich nicht", image_data: "data:image/jpeg;base64,/9j/" }], qualification_context: { collection_active: false, missing_facts: ["line_route", "estimated_line_length_m"], missing_photos: ["indoor_unit_location", "pipe_route", "electrical_connection", "condensate_route"], requires_site_check: true } });
+
+    const mapped = await provider.generateTurn(input);
+
+    expect(mapped).toEqual({ reply_text: output.reply_text, facts_patch: [], customer_name_patch: null,
+      media_classifications: [{ media_id: mediaId, category: "other", observation: null }],
+      qualification_status: "needs_human", needs_human: true, human_reason: "requires_site_check" });
+    expect(mvpAiTurnResultSchema.safeParse(mapped).success).toBe(true);
+  });
+
   it("uses a strict provider schema without unconstrained schema nodes", async () => {
-    const output = { reply_text: "Danke.", facts_patch: [], qualification_status: "ready_for_offer", needs_human: false, human_reason: null, customer_name_patch: null, media_classifications: [] };
+    const output = { reply_text: "Danke.", facts_patch: [], qualification: { status: "ready_for_offer", human_reason: null }, customer_name_patch: null, media_classifications: [] };
     const parse = vi.fn().mockResolvedValue({ status: "completed", output_parsed: output });
     const provider = new OpenAiMvpTurnProvider(() => ({ OPENAI_API_KEY: "test" }), () => ({ responses: { parse } } as never));
 
-    await provider.generateTurn(mvpAiTurnInputSchema.parse({ turn: { inbound_message_id: "00000000-0000-4000-8000-000000000001", conversation_id: "00000000-0000-4000-8000-000000000002", expected_conversation_revision: 1, binding_id: "00000000-0000-4000-8000-000000000003", binding_revision: 1, project_id: "00000000-0000-4000-8000-000000000004" }, project: { title: "Anfrage" }, customer: { name_known: false, first_name: null, last_name: null }, persisted_facts: [], inbound: { message_id: "00000000-0000-4000-8000-000000000001", text: "Hallo" }, transcript: [], ready_media: [], qualification_context: { missing_facts: ["installation_address"], missing_photos: ["room_overview"], requires_site_check: false } }));
+    await provider.generateTurn(mvpAiTurnInputSchema.parse({ turn: { inbound_message_id: "00000000-0000-4000-8000-000000000001", conversation_id: "00000000-0000-4000-8000-000000000002", expected_conversation_revision: 1, binding_id: "00000000-0000-4000-8000-000000000003", binding_revision: 1, project_id: "00000000-0000-4000-8000-000000000004" }, project: { title: "Anfrage" }, customer: { name_known: false, first_name: null, last_name: null }, persisted_facts: [], inbound: { message_id: "00000000-0000-4000-8000-000000000001", text: "Hallo" }, transcript: [], ready_media: [], qualification_context: { collection_active: true, missing_facts: ["installation_address"], missing_photos: ["room_overview"], requires_site_check: false } }));
 
     const format = zodTextFormat(mvpOpenAiTurnOutputSchema, "klimaguy_mvp_turn");
     expect(format.strict).toBe(true);
@@ -61,8 +82,7 @@ describe("dedicated MVP OpenAI provider", () => {
         properties?: { key?: { const?: string }; value?: Record<string, unknown> };
         }> } };
         customer_name_patch: { anyOf: Array<{ anyOf?: Array<Record<string, unknown>>; type?: string }> };
-        qualification_status: { enum: string[] };
-        human_reason: { anyOf: Array<{ enum?: string[]; type?: string }> };
+        qualification: { anyOf: Array<{ properties: { status: Record<string, unknown>; human_reason: Record<string, unknown> } }> };
       };
     };
     expect(generatedSchema.type).toBe("object");
@@ -88,11 +108,15 @@ describe("dedicated MVP OpenAI provider", () => {
     expect(customerNameBranches).toHaveLength(2);
     expect(customerNameBranches[0]?.anyOf).toHaveLength(2);
     expect(customerNameBranches[1]).toMatchObject({ type: "null" });
-    expect(generatedSchema.properties.qualification_status.enum).toEqual(MVP_QUALIFICATION_STATUSES);
-    expect(generatedSchema.properties.human_reason.anyOf).toContainEqual({
-      type: "string",
-      enum: MVP_HUMAN_ESCALATION_REASONS,
-    });
+    expect(generatedSchema.properties).not.toHaveProperty("needs_human");
+    expect(generatedSchema.properties).not.toHaveProperty("qualification_status");
+    expect(generatedSchema.properties).not.toHaveProperty("human_reason");
+    const qualificationBranches = generatedSchema.properties.qualification.anyOf;
+    expect(qualificationBranches).toHaveLength(2);
+    expect(qualificationBranches[0]?.properties.status).toMatchObject({ enum: ["in_progress", "ready_for_offer"] });
+    expect(qualificationBranches[0]?.properties.human_reason).toMatchObject({ type: "null" });
+    expect(qualificationBranches[1]?.properties.status).toMatchObject({ const: "needs_human" });
+    expect(qualificationBranches[1]?.properties.human_reason).toMatchObject({ enum: MVP_HUMAN_ESCALATION_REASONS });
   });
 
   it("encodes canonical values per fact key, including the Production building-type case", () => {
@@ -124,17 +148,19 @@ describe("dedicated MVP OpenAI provider", () => {
   });
 
   it("represents an unresolved line route by omitting the fact patch", () => {
-    const unresolved = { reply_text: "Gibt es einen Anschluss in der Nähe?", facts_patch: [], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null, media_classifications: [] };
+    const unresolved = { reply_text: "Gibt es einen Anschluss in der Nähe?", facts_patch: [], qualification: { status: "in_progress", human_reason: null }, customer_name_patch: null, media_classifications: [] };
     expect(mvpOpenAiTurnOutputSchema.safeParse(unresolved).success).toBe(true);
     expect(unresolved.facts_patch).not.toContainEqual(expect.objectContaining({ key: "line_route" }));
     expect(mvpOpenAiFactSchema.safeParse({ key: "line_route", value: "Entlang der Außenwand" }).success).toBe(true);
   });
 
-  it("structurally enforces safe name patches without encoding cross-field escalation rules", () => {
-    const normal = { reply_text: "Danke.", facts_patch: [], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null, media_classifications: [] };
+  it("structurally enforces safe name patches and qualification decisions", () => {
+    const normal = { reply_text: "Danke.", facts_patch: [], qualification: { status: "in_progress", human_reason: null }, customer_name_patch: null, media_classifications: [] };
     expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, customer_name_patch: { first_name: null, last_name: null } }).success).toBe(false);
-    expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, needs_human: true }).success).toBe(true);
-    expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, qualification_status: "needs_human", needs_human: true, human_reason: "safety_concern" }).success).toBe(true);
+    expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, needs_human: true }).success).toBe(false);
+    expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, qualification: { status: "in_progress", human_reason: "safety_concern" } }).success).toBe(false);
+    expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, qualification: { status: "needs_human", human_reason: null } }).success).toBe(false);
+    expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, qualification: { status: "needs_human", human_reason: "safety_concern" } }).success).toBe(true);
   });
 
   it("instructs the live-case unknown, uncertainty, and electrical boundaries", () => {
@@ -148,7 +174,7 @@ describe("dedicated MVP OpenAI provider", () => {
   });
 
   it("instructs same-turn and persisted human handoff without fake completion", () => {
-    for (const phrase of ["line_route nicht bestimmen kann", "keine weiteren angeforderten Fotos", "project.status human_review", "starte den normalen Lückenfragebogen", "freiwillig gelieferte neue Fakten"]) expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain(phrase);
+    for (const phrase of ["line_route nicht bestimmen kann", "keine weiteren angeforderten Fotos", "project.status human_review", "HAT DIESE HUMAN-REVIEW-REGEL VORRANG", "KEINE Request-Queue", "freiwillig gelieferte neue Fakten"]) expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain(phrase);
   });
 
   it("requires one context-aware, reply-consistent classification for every current image", () => {
@@ -166,15 +192,15 @@ describe("dedicated MVP OpenAI provider", () => {
 
   it("uses deterministic gaps to continue the production case instead of declaring completion", () => {
     for (const requiredInstruction of [
-      "Ignoriere missing_facts niemals",
+      "Ignoriere missing_facts dann niemals",
       "ein oder zwei natürlich zusammenpassende Angaben",
-      "Beginne den gebündelten Kernfoto-Request normalerweise erst",
+      "beginne den gebündelten Kernfoto-Request normalerweise erst",
       "building_type, requested_room_count, room_type, room_area_sqm, indoor_unit_count",
       "behandle dieses Motiv bereits in derselben Antwort als erfüllt",
       "Planung ist komplett",
       "alles vollständig",
       "bereit für technische Prüfung",
-      "Setze dann andernfalls in_progress und qualifiziere weiter",
+      "Ist collection_active wahr, setze andernfalls in_progress und qualifiziere weiter",
     ]) expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain(requiredInstruction);
   });
 
@@ -186,18 +212,17 @@ describe("dedicated MVP OpenAI provider", () => {
         { key: "floor_level", value: 2 },
         { key: "existing_air_conditioning", value: false },
         { key: "building_type", value: "apartment" },
-        { key: "required_photo_categories", value: ["room_overview", "pipe_route"] },
-      ], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null, media_classifications: [],
+      ], qualification: { status: "in_progress", human_reason: null }, customer_name_patch: null, media_classifications: [],
     };
 
-    expect(mvpAiTurnResultSchema.parse(result)).toEqual(result);
-    expect(() => mvpAiTurnResultSchema.parse({ ...result, facts_patch: [{ key: "floor_level", value: "zweiter Stock" }] })).toThrow();
+    expect(mvpOpenAiTurnOutputSchema.parse(result)).toEqual(result);
+    expect(() => mvpOpenAiTurnOutputSchema.parse({ ...result, facts_patch: [{ key: "floor_level", value: "zweiter Stock" }] })).toThrow();
   });
 
   it("keeps missing configuration classified without making a provider call", async () => {
     const clientFactory = vi.fn();
     const provider = new OpenAiMvpTurnProvider(() => ({}), clientFactory);
-    const input = mvpAiTurnInputSchema.parse({ turn: { inbound_message_id: "00000000-0000-4000-8000-000000000001", conversation_id: "00000000-0000-4000-8000-000000000002", expected_conversation_revision: 1, binding_id: "00000000-0000-4000-8000-000000000003", binding_revision: 1, project_id: "00000000-0000-4000-8000-000000000004" }, project: { title: "Anfrage" }, customer: { name_known: false, first_name: null, last_name: null }, persisted_facts: [], inbound: { message_id: "00000000-0000-4000-8000-000000000001", text: "Hallo" }, transcript: [], ready_media: [], qualification_context: { missing_facts: ["installation_address"], missing_photos: ["room_overview"], requires_site_check: false } });
+    const input = mvpAiTurnInputSchema.parse({ turn: { inbound_message_id: "00000000-0000-4000-8000-000000000001", conversation_id: "00000000-0000-4000-8000-000000000002", expected_conversation_revision: 1, binding_id: "00000000-0000-4000-8000-000000000003", binding_revision: 1, project_id: "00000000-0000-4000-8000-000000000004" }, project: { title: "Anfrage" }, customer: { name_known: false, first_name: null, last_name: null }, persisted_facts: [], inbound: { message_id: "00000000-0000-4000-8000-000000000001", text: "Hallo" }, transcript: [], ready_media: [], qualification_context: { collection_active: true, missing_facts: ["installation_address"], missing_photos: ["room_overview"], requires_site_check: false } });
 
     await expect(provider.generateTurn(input)).rejects.toThrow("mvp_openai_configuration_failed");
     expect(clientFactory).not.toHaveBeenCalled();

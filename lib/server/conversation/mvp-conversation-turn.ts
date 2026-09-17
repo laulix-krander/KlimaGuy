@@ -86,6 +86,7 @@ export async function runMvpConversationTurn(
       const covered = acquired.project_photo_coverage.map(({ category }) => category as MvpPhotoCategory);
       const photos = deriveMissingMvpPhotoCategories(persistedFacts, covered);
       return {
+        collection_active: acquired.project.status !== "human_review" && acquired.project.requires_human_review !== true,
         missing_facts: deriveMissingMvpRequiredFacts(persistedFacts),
         missing_photos: [...photos.missingCore, ...photos.missingSituational],
         requires_site_check: evaluateMvpQualificationReadiness(persistedFacts).requiresSiteCheck,

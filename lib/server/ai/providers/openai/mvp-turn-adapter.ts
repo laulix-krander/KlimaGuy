@@ -2,7 +2,7 @@ import "server-only";
 
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
-import type { MvpAiTurnInput } from "@/lib/domain/mvp-ai-turn";
+import { mvpVisionObservationSchema, type MvpAiTurnInput } from "@/lib/domain/mvp-ai-turn";
 import type { MvpAiTurnProvider } from "../../mvp-turn-provider";
 import { readOpenAiEnvironment, readOpenAiProviderConfig, type OpenAiEnvironment } from "./config";
 import { OPENAI_MVP_TURN_INSTRUCTIONS } from "./mvp-turn-instructions";
@@ -38,7 +38,22 @@ export class OpenAiMvpTurnProvider implements MvpAiTurnProvider {
         text: { format: zodTextFormat(mvpOpenAiTurnOutputSchema, "klimaguy_mvp_turn") },
       });
       if (response.status !== undefined && response.status !== "completed") throw new Error("incomplete");
-      return response.output_parsed;
+      const parsed = mvpOpenAiTurnOutputSchema.parse(response.output_parsed);
+      return {
+        reply_text: parsed.reply_text,
+        facts_patch: parsed.facts_patch,
+        customer_name_patch: parsed.customer_name_patch,
+        media_classifications: parsed.media_classifications.map((classification) => ({
+          ...classification,
+          observation: classification.observation !== null
+            && !mvpVisionObservationSchema.safeParse(classification.observation).success
+            ? null
+            : classification.observation,
+        })),
+        qualification_status: parsed.qualification.status,
+        needs_human: parsed.qualification.status === "needs_human",
+        human_reason: parsed.qualification.human_reason,
+      };
     } catch (error) {
       throw new MvpOpenAiTurnError("mvp_openai_turn_failed", { cause: error });
     }

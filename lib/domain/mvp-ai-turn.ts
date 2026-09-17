@@ -85,6 +85,7 @@ export const mvpAiTurnInputObjectSchema = z.object({
   }).strict()).max(20),
   project_photo_coverage: z.array(z.object({ category: z.enum(MVP_REQUIRED_PHOTO_CATEGORIES), count: z.number().int().positive() }).strict()).max(MVP_REQUIRED_PHOTO_CATEGORIES.length).default([]),
   qualification_context: z.object({
+    collection_active: z.boolean(),
     missing_facts: z.array(mvpProjectFactKeySchema).max(MVP_OFFER_REQUIRED_FACT_GROUPS.length),
     missing_photos: z.array(z.enum(MVP_REQUIRED_PHOTO_CATEGORIES)).max(MVP_REQUIRED_PHOTO_CATEGORIES.length),
     requires_site_check: z.boolean(),
