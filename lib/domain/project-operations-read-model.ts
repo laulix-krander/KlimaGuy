@@ -17,7 +17,7 @@ const VALUE_LABELS: Readonly<Record<string, string>> = {
   apartment: "Wohnung", single_family_house: "Einfamilienhaus", multi_family_house: "Mehrfamilienhaus", other: "Sonstiges",
   living_room: "Wohnzimmer", bedroom: "Schlafzimmer", office: "Büro", kitchen: "Küche",
   available: "Vorhanden (technische Eignung ungeprüft)", not_available: "Nicht vorhanden", unknown: "Unbekannt", requires_site_check: "Vor-Ort-Prüfung erforderlich",
-  standard_ladder: "Standardleiter ausreichend", special_access_required: "Sonderzugang erforderlich",
+  standard_ladder: "Kein Sonderzugang erforderlich", special_access_required: "Sonderzugang erforderlich",
   room_overview: "Raumübersicht", indoor_unit_location: "Position Innengerät", outdoor_unit_location: "Position Außengerät", pipe_route: "Leitungsweg", electrical_connection: "Elektroanschluss", condensate_route: "Kondensatweg",
 };
 

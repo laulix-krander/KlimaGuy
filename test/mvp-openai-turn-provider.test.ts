@@ -142,8 +142,13 @@ describe("dedicated MVP OpenAI provider", () => {
     expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain("keinen line_route-Fakt");
     expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain("gibt es nicht, glaub ich");
     expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain("nie zu einer definitiven technischen Tatsache");
+    for (const phrase of ["Ich denke schon", "glaube ja", "wahrscheinlich", "weiß ich nicht genau", "niemals available", "condensate_drainage auf unknown"]) expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain(phrase);
     expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain("Anwesenheit eines Anschlusses/einer Zuleitung");
     expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain("nie danach, ob diese technisch geeignet oder ausreichend ist");
+  });
+
+  it("instructs same-turn and persisted human handoff without fake completion", () => {
+    for (const phrase of ["line_route nicht bestimmen kann", "keine weiteren angeforderten Fotos", "project.status human_review", "starte den normalen Lückenfragebogen", "freiwillig gelieferte neue Fakten"]) expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain(phrase);
   });
 
   it("requires one context-aware, reply-consistent classification for every current image", () => {
