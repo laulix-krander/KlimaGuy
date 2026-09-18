@@ -1,19 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { z } from "zod";
 import { canManageKlimaGuyOperations } from "@/lib/domain/permissions";
-import { klimaguyAgentSettingsSchema } from "@/lib/domain/klimaguy-agent-settings";
 import { roleSchema } from "@/lib/domain/schemas";
 import { KlimaGuySettingsConflictError, updateKlimaGuySettings } from "@/lib/server/klimaguy-agent-settings-service";
 import { createClient } from "@/lib/supabase/server";
+import { parseKlimaGuySettingsFormData } from "./klimaguy-agent-settings-form";
 
 export type KlimaGuySettingsActionState = { success: boolean; message: string };
-const checkbox = z.enum(["on", "true"]).optional().transform(Boolean);
-const formSchema = klimaguyAgentSettingsSchema.extend({ expected_revision: z.coerce.number().int().nonnegative(), acknowledge_answers: checkbox, ask_customer_name: checkbox, use_customer_name: checkbox });
 
 export async function updateKlimaGuySettingsAction(_state: KlimaGuySettingsActionState, formData: FormData): Promise<KlimaGuySettingsActionState> {
-  const input = formSchema.safeParse(Object.fromEntries(formData));
+  const input = parseKlimaGuySettingsFormData(formData);
   if (!input.success) return { success: false, message: "Bitte prüfe die markierten Einstellungen." };
   const { expected_revision, ...settings } = input.data;
   const supabase = await createClient();
