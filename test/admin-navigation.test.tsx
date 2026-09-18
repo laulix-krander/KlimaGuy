@@ -48,10 +48,11 @@ describe("Admin-Navigation", () => {
       .toBe("/admin/project-media/orphans");
   });
 
-  it("zeigt Reviewern den Bereich Administration und die Medien-Inventur nicht", () => {
+  it("zeigt Reviewern Operations lesbar, aber nicht die Medien-Inventur", () => {
     render(<Nav role="reviewer" />);
 
-    expect(screen.queryByText("Administration")).toBeNull();
+    expect(screen.getByText("Administration")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "KlimaGuy Operations" }).getAttribute("href")).toBe("/admin/klimaguy");
     expect(screen.queryByRole("link", { name: "Medien-Inventur" })).toBeNull();
   });
 

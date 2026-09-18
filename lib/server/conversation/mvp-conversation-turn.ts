@@ -10,6 +10,7 @@ import { deriveMissingMvpRequiredFacts, evaluateMvpQualificationReadiness } from
 import type { MvpAiTurnProvider } from "@/lib/server/ai/mvp-turn-provider";
 import { OpenAiMvpTurnProvider } from "@/lib/server/ai/providers/openai/mvp-turn-adapter";
 import { getProjectFacts, type ProjectFactsRpc } from "@/lib/server/project-facts/project-facts";
+import { loadRuntimeKlimaGuySettings } from "@/lib/server/klimaguy-agent-settings-service";
 
 const uuid = z.string().uuid();
 const acquiredMediaSchema = z.object({ media_id: uuid, category: mvpAiTurnInputObjectSchema.shape.ready_media.element.shape.category,
@@ -156,5 +157,11 @@ export function createProductiveMvpTurnStore(): MvpTurnStore {
 }
 
 export async function runProductiveMvpConversationTurn(conversationId: string, inboundMessageId: string) {
-  return runMvpConversationTurn(conversationId, inboundMessageId, { store: createProductiveMvpTurnStore(), provider: new OpenAiMvpTurnProvider() });
+  const client = serviceClient();
+  const settings = await loadRuntimeKlimaGuySettings({ read: async () => {
+    const { data, error } = await client.from("klimaguy_agent_settings").select("*").maybeSingle();
+    if (error) throw error;
+    return data;
+  } });
+  return runMvpConversationTurn(conversationId, inboundMessageId, { store: createProductiveMvpTurnStore(), provider: new OpenAiMvpTurnProvider(undefined, undefined, settings) });
 }
