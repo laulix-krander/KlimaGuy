@@ -105,6 +105,62 @@ describe("MVP conversation turn", () => {
     } }));
   });
 
+  it("blocks a speculative handoff after basic qualification and continues with the next canonical fact", async () => {
+    const h = harness({ ...valid, reply_text: "Die Technik-Abteilung prüft jetzt die offenen Punkte.", facts_patch: [], qualification_status: "needs_human", needs_human: true, human_reason: "requires_site_check" });
+    vi.mocked(h.store.rpc).mockResolvedValue({ data: [
+      { key: "installation_address", value: "Musterweg 1" }, { key: "postal_code", value: "20095" }, { key: "city", value: "hamburg" },
+      { key: "building_type", value: "single_family_house" }, { key: "requested_room_count", value: 1 }, { key: "room_type", value: "kitchen" }, { key: "room_area_sqm", value: 12 },
+    ], error: null });
+    h.acquire.mockResolvedValue({ ...context, inbound: { message_id: id(1), text: "Nur der Raum und ca. 12 qm" }, project_photo_coverage: [] });
+
+    const result = await runMvpConversationTurn(id(2), id(1), h);
+
+    if (result.status !== "completed") throw new Error("expected_completed_turn");
+    expect(result.turn).toMatchObject({ qualification_status: "in_progress", needs_human: false, human_reason: null });
+    expect(result.turn.reply_text).toMatch(/wie viele Innengeräte/iu);
+    expect(result.turn.reply_text).not.toMatch(/Technik-Abteilung|Experten übernehmen|keine weiteren Fotos/iu);
+    expect(h.commit).toHaveBeenCalledWith(id(9), expect.objectContaining({ qualification_status: "in_progress", needs_human: false }));
+  });
+
+  it("allows an explicit inability to assess the line route to require a site check", async () => {
+    const output = { ...valid, reply_text: "Das prüft ein Techniker.", facts_patch: [], qualification_status: "needs_human" as const, needs_human: true, human_reason: "requires_site_check" as const };
+    const h = harness(output);
+    h.acquire.mockResolvedValue({ ...context, inbound: { message_id: id(1), text: "Den Leitungsweg kann ich nicht beurteilen, das müsst ihr als Fachbetrieb prüfen." } });
+
+    const result = await runMvpConversationTurn(id(2), id(1), h);
+
+    if (result.status !== "completed") throw new Error("expected_completed_turn");
+    expect(result.turn).toEqual(output);
+    expect(h.commit).toHaveBeenCalledWith(id(9), output);
+  });
+
+  it("requests core photos at the existing threshold instead of accepting a speculative handoff", async () => {
+    const h = harness({ ...valid, reply_text: "Unsere Experten übernehmen jetzt.", facts_patch: [], qualification_status: "needs_human", needs_human: true, human_reason: "requires_site_check" });
+    vi.mocked(h.store.rpc).mockResolvedValue({ data: [
+      { key: "installation_address", value: "Musterweg 1" }, { key: "postal_code", value: "20095" }, { key: "city", value: "hamburg" }, { key: "building_type", value: "single_family_house" },
+      { key: "requested_room_count", value: 1 }, { key: "room_type", value: "kitchen" }, { key: "room_area_sqm", value: 12 }, { key: "indoor_unit_count", value: 1 },
+      { key: "indoor_unit_position", value: "Über der Tür" }, { key: "outdoor_unit_position", value: "Terrasse" },
+    ], error: null });
+    h.acquire.mockResolvedValue({ ...context, inbound: { message_id: id(1), text: "Das Außengerät kann auf die Terrasse." }, project_photo_coverage: [] });
+
+    const result = await runMvpConversationTurn(id(2), id(1), h);
+
+    if (result.status !== "completed") throw new Error("expected_completed_turn");
+    expect(result.turn).toMatchObject({ qualification_status: "in_progress", needs_human: false });
+    expect(result.turn.reply_text).toMatch(/Fotos.*Raumübersicht.*Innen- und Außengerät/iu);
+  });
+
+  it("does not let approved knowledge alone escalate the qualification lifecycle", async () => {
+    const h = harness({ ...valid, reply_text: "Unsere Experten übernehmen jetzt.", facts_patch: [], qualification_status: "needs_human", needs_human: true, human_reason: "requires_site_check" });
+    const loadKnowledge = vi.fn().mockResolvedValue([{ category: "qualification_behavior", title: "Leitungsweg nicht mehrfach abfragen", guidance: "Wenn der Kunde den Leitungsweg nicht bestimmen kann, nicht mehrfach danach fragen." }]);
+
+    const result = await runMvpConversationTurn(id(2), id(1), { ...h, loadKnowledge });
+
+    if (result.status !== "completed") throw new Error("expected_completed_turn");
+    expect(result.turn).toMatchObject({ qualification_status: "in_progress", needs_human: false, human_reason: null });
+    expect(vi.mocked(h.provider.generateTurn).mock.calls[0][0].knowledge_context).toHaveLength(1);
+  });
+
   it("keeps truthful gaps but disables collection after human handoff while classifying the final image", async () => {
     const mediaId = id(20);
     const output = {
@@ -219,7 +275,6 @@ describe("MVP conversation turn", () => {
   });
 
   it.each([
-    { ...valid, qualification_status: "needs_human", needs_human: true, human_reason: "requires_site_check", },
     { ...valid, qualification_status: "ready_for_offer", },
   ])("keeps qualification metadata in-contract without pricing or approval side effects", async (output) => {
     const h = harness(output); await runMvpConversationTurn(id(2), id(1), h);
