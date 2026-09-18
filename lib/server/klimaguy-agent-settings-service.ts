@@ -7,7 +7,7 @@ export type KlimaGuySettingsDataSource = {
   read(): Promise<unknown | null>;
   update(args: Record<string, unknown>): Promise<unknown>;
 };
-const updateResultSchema = z.object({ status: z.literal("updated"), revision: z.number().int().positive(), updated_at: z.string().datetime() }).strict();
+const updateResultSchema = z.object({ status: z.literal("updated"), revision: z.number().int().positive(), updated_at: z.string().datetime({ offset: true }) }).strict();
 
 export class KlimaGuySettingsConflictError extends Error { constructor() { super("klimaguy_settings_stale"); this.name = "KlimaGuySettingsConflictError"; } }
 export class KlimaGuySettingsServiceError extends Error { constructor(message = "klimaguy_settings_failed", options?: ErrorOptions) { super(message, options); this.name = "KlimaGuySettingsServiceError"; } }
