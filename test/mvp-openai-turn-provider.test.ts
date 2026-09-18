@@ -30,12 +30,13 @@ function resolveSchemaReference(root: Record<string, unknown>, schema: Record<st
 
 describe("dedicated MVP OpenAI provider", () => {
   it("makes exactly one stateless structured Responses call", async () => {
-    const output = { reply_text: "Welche Etage ist es?", facts_patch: [], qualification: { status: "in_progress", human_reason: null }, customer_name_patch: null, media_classifications: [] };
+    const output = { reply_text: "Welche Etage ist es?", facts_patch: [], qualification: { status: "in_progress", human_reason: null }, customer_name_patch: null, media_classifications: [], learning_candidates: [] };
     const parse = vi.fn().mockResolvedValue({ status: "completed", output_parsed: output });
     const provider = new OpenAiMvpTurnProvider(() => ({ OPENAI_API_KEY: "test", OPENAI_MODEL: "gpt-4.1-mini" }), () => ({ responses: { parse } } as never));
     const input = mvpAiTurnInputSchema.parse({ turn: { inbound_message_id: "00000000-0000-4000-8000-000000000001", conversation_id: "00000000-0000-4000-8000-000000000002", expected_conversation_revision: 1, binding_id: "00000000-0000-4000-8000-000000000003", binding_revision: 1, project_id: "00000000-0000-4000-8000-000000000004" }, project: { title: "Anfrage" }, customer: { name_known: false, first_name: null, last_name: null }, persisted_facts: [], inbound: { message_id: "00000000-0000-4000-8000-000000000001", text: "Hallo" }, transcript: [{ message_id: "00000000-0000-4000-8000-000000000001", sequence: 1, direction: "inbound", text: "Hallo" }], ready_media: [], qualification_context: { collection_active: true, missing_facts: ["installation_address"], missing_photos: ["room_overview"], requires_site_check: false } });
     await expect(provider.generateTurn(input)).resolves.toEqual({
       reply_text: output.reply_text, facts_patch: [], customer_name_patch: null, media_classifications: [],
+  learning_candidates: [],
       qualification_status: "in_progress", needs_human: false, human_reason: null,
     }); expect(parse).toHaveBeenCalledOnce();
     const request = parse.mock.calls[0][0]; expect(request).not.toHaveProperty("previous_response_id"); expect(request).not.toHaveProperty("conversation");
@@ -46,7 +47,7 @@ describe("dedicated MVP OpenAI provider", () => {
     const mediaId = "00000000-0000-4000-8000-000000000020";
     const output = {
       reply_text: "Danke, den Rest klärt unser Techniker.", facts_patch: [], customer_name_patch: null,
-      media_classifications: [{ media_id: mediaId, category: "other", observation: "Die Wand ist technisch geeignet." }],
+      media_classifications: [{ media_id: mediaId, category: "other", observation: "Die Wand ist technisch geeignet." }], learning_candidates: [],
       qualification: { status: "needs_human", human_reason: "requires_site_check" },
     };
     const parse = vi.fn().mockResolvedValue({ status: "completed", output_parsed: output });
@@ -56,13 +57,13 @@ describe("dedicated MVP OpenAI provider", () => {
     const mapped = await provider.generateTurn(input);
 
     expect(mapped).toEqual({ reply_text: output.reply_text, facts_patch: [], customer_name_patch: null,
-      media_classifications: [{ media_id: mediaId, category: "other", observation: null }],
+      media_classifications: [{ media_id: mediaId, category: "other", observation: null }], learning_candidates: [],
       qualification_status: "needs_human", needs_human: true, human_reason: "requires_site_check" });
     expect(mvpAiTurnResultSchema.safeParse(mapped).success).toBe(true);
   });
 
   it("uses a strict provider schema without unconstrained schema nodes", async () => {
-    const output = { reply_text: "Danke.", facts_patch: [], qualification: { status: "ready_for_offer", human_reason: null }, customer_name_patch: null, media_classifications: [] };
+    const output = { reply_text: "Danke.", facts_patch: [], qualification: { status: "ready_for_offer", human_reason: null }, customer_name_patch: null, media_classifications: [], learning_candidates: [] };
     const parse = vi.fn().mockResolvedValue({ status: "completed", output_parsed: output });
     const provider = new OpenAiMvpTurnProvider(() => ({ OPENAI_API_KEY: "test" }), () => ({ responses: { parse } } as never));
 
@@ -148,14 +149,14 @@ describe("dedicated MVP OpenAI provider", () => {
   });
 
   it("represents an unresolved line route by omitting the fact patch", () => {
-    const unresolved = { reply_text: "Gibt es einen Anschluss in der Nähe?", facts_patch: [], qualification: { status: "in_progress", human_reason: null }, customer_name_patch: null, media_classifications: [] };
+    const unresolved = { reply_text: "Gibt es einen Anschluss in der Nähe?", facts_patch: [], qualification: { status: "in_progress", human_reason: null }, customer_name_patch: null, media_classifications: [], learning_candidates: [] };
     expect(mvpOpenAiTurnOutputSchema.safeParse(unresolved).success).toBe(true);
     expect(unresolved.facts_patch).not.toContainEqual(expect.objectContaining({ key: "line_route" }));
     expect(mvpOpenAiFactSchema.safeParse({ key: "line_route", value: "Entlang der Außenwand" }).success).toBe(true);
   });
 
   it("structurally enforces safe name patches and qualification decisions", () => {
-    const normal = { reply_text: "Danke.", facts_patch: [], qualification: { status: "in_progress", human_reason: null }, customer_name_patch: null, media_classifications: [] };
+    const normal = { reply_text: "Danke.", facts_patch: [], qualification: { status: "in_progress", human_reason: null }, customer_name_patch: null, media_classifications: [], learning_candidates: [] };
     expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, customer_name_patch: { first_name: null, last_name: null } }).success).toBe(false);
     expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, needs_human: true }).success).toBe(false);
     expect(mvpOpenAiTurnOutputSchema.safeParse({ ...normal, qualification: { status: "in_progress", human_reason: "safety_concern" } }).success).toBe(false);
@@ -213,6 +214,7 @@ describe("dedicated MVP OpenAI provider", () => {
         { key: "existing_air_conditioning", value: false },
         { key: "building_type", value: "apartment" },
       ], qualification: { status: "in_progress", human_reason: null }, customer_name_patch: null, media_classifications: [],
+  learning_candidates: [],
     };
 
     expect(mvpOpenAiTurnOutputSchema.parse(result)).toEqual(result);

@@ -50,6 +50,7 @@ const validResult = {
   human_reason: null,
   customer_name_patch: null,
   media_classifications: [],
+  learning_candidates: [],
 } as const;
 
 describe("MVP project fact registry", () => {
@@ -133,7 +134,8 @@ describe("MVP AI turn input", () => {
     ready_media: [{ media_id: ids.media, category: "room_overview", mime_type: "image/jpeg", caption: null,
       image_data: "data:image/jpeg;base64,/9j/" }],
     project_photo_coverage: [],
-    qualification_context: { collection_active: true, missing_facts: ["installation_address"], missing_photos: ["room_overview"], requires_site_check: false },
+    knowledge_context: [],
+  qualification_context: { collection_active: true, missing_facts: ["installation_address"], missing_photos: ["room_overview"], requires_site_check: false },
   } as const;
 
   it("receives only current turn, project, facts, inbound content, transcript and ready media metadata", () => {
