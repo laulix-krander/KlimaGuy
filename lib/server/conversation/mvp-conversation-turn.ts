@@ -14,6 +14,45 @@ import { loadRuntimeKlimaGuySettings } from "@/lib/server/klimaguy-agent-setting
 import { loadRuntimeKlimaGuyKnowledge, sanitizeLearningCandidates } from "@/lib/server/klimaguy-knowledge-service";
 import type { KlimaGuyKnowledgeContextEntry, KlimaGuyLearningCandidateProposal } from "@/lib/domain/klimaguy-knowledge";
 
+const PRE_PHOTO_FACT_KEYS = ["installation_address", "postal_code", "city", "building_type", "requested_room_count", "room_type", "room_area_sqm", "indoor_unit_count", "indoor_unit_position", "outdoor_unit_position"] as const;
+
+function currentTurnSupportsHumanEscalation(input: MvpAiTurnInput, result: MvpAiTurnResult): boolean {
+  if (!input.qualification_context.collection_active || input.qualification_context.requires_site_check) return true;
+  const resultingFacts = [...input.persisted_facts.filter((fact) => !result.facts_patch.some((patch) => patch.key === fact.key)), ...result.facts_patch];
+  if (evaluateMvpQualificationReadiness(resultingFacts).requiresSiteCheck) return true;
+  const text = input.inbound.text?.toLocaleLowerCase("de") ?? "";
+  switch (result.human_reason) {
+    case "customer_request": return /\b(mensch(?:en)?|mitarbeiter(?:in)?|techniker(?:in)?|pers[oö]nlich|anrufen|r[üu]ckruf)\b/u.test(text);
+    case "conflicting_information": return /\b(widerspr(?:icht|uch)|stimmt nicht|doch nicht|falsch(?:e|er|es)?)\b/u.test(text);
+    case "safety_concern": return /\b(gefahr|gefährlich|brand|funken|stromschlag|gasgeruch|rauch)\b/u.test(text);
+    case "unsupported_request": return /\b(reparier|wartung|k[äa]ltemittel nachf[üu]llen|heizung reparieren)\b/u.test(text);
+    case "requires_site_check": return /(?:kann|könnte|kannst|weiß|weiss|beurteil|bestimm|einschätz|erkenn|liefer|schick|send).{0,60}\b(?:nicht|kein(?:e|en)?|müsst|muss)\b|\b(?:nicht|kein(?:e|en)?)\b.{0,60}(?:beurteil|bestimm|einschätz|erkenn|liefer|schick|send)|\b(?:vor ort|fachbetrieb|techniker)\b.{0,40}\b(?:prüf|klär|beurteil)\b/u.test(text);
+    default: return false;
+  }
+}
+
+function continuedQualificationReply(input: MvpAiTurnInput, result: MvpAiTurnResult): string {
+  const resultingFacts = [...input.persisted_facts.filter((fact) => !result.facts_patch.some((patch) => patch.key === fact.key)), ...result.facts_patch];
+  const known = new Set(resultingFacts.map(({ key }) => key));
+  const missing = deriveMissingMvpRequiredFacts(resultingFacts);
+  if (PRE_PHOTO_FACT_KEYS.every((key) => known.has(key)) && input.qualification_context.missing_photos.some((photo) => ["room_overview", "indoor_unit_location", "outdoor_unit_location"].includes(photo))) {
+    return "Danke. Bitte senden Sie als Nächstes Fotos der Raumübersicht sowie der geplanten Positionen für Innen- und Außengerät.";
+  }
+  const questions: Partial<Record<(typeof MVP_PROJECT_FACT_KEYS)[number], string>> = {
+    installation_address: "Wie lautet die Installationsadresse?", postal_code: "Wie lautet die Postleitzahl?", city: "In welchem Ort befindet sich das Gebäude?",
+    building_type: "Um welchen Gebäudetyp handelt es sich?", requested_room_count: "Wie viele Räume sollen klimatisiert werden?", room_type: "Welcher Raum soll klimatisiert werden?",
+    room_area_sqm: "Wie groß ist der Raum ungefähr?", indoor_unit_count: "Wie viele Innengeräte sind geplant?", indoor_unit_position: "Wo soll das Innengerät ungefähr montiert werden?",
+    outdoor_unit_position: "Wo könnte das Außengerät stehen?", line_route: "Wie könnte der Leitungsweg zwischen Innen- und Außengerät verlaufen?", estimated_line_length_m: "Wie lang ist dieser Leitungsweg ungefähr?",
+    condensate_drainage: "Gibt es eine Möglichkeit, das Kondenswasser abzuleiten?", electrical_supply: "Ist in der Nähe ein Stromanschluss oder eine Zuleitung vorhanden?", installation_access: "Ist der Montagebereich normal zugänglich?",
+  };
+  return `Danke. ${questions[missing[0]] ?? "Welche weitere Angabe können Sie zur geplanten Installation machen?"}`;
+}
+
+function enforceQualificationAuthority(input: MvpAiTurnInput, result: MvpAiTurnResult): MvpAiTurnResult {
+  if (result.qualification_status !== "needs_human" || currentTurnSupportsHumanEscalation(input, result)) return result;
+  return { ...result, reply_text: continuedQualificationReply(input, result), qualification_status: "in_progress", needs_human: false, human_reason: null };
+}
+
 const uuid = z.string().uuid();
 const acquiredMediaSchema = z.object({ media_id: uuid, category: mvpAiTurnInputObjectSchema.shape.ready_media.element.shape.category,
   mime_type: mvpAiTurnInputObjectSchema.shape.ready_media.element.shape.mime_type,
@@ -115,7 +154,7 @@ export async function runMvpConversationTurn(
     throw new MvpConversationTurnError("mvp_turn_invalid_provider_output");
   }
   const classifiedMediaIds = new Set(validated.data.media_classifications.map(({ media_id }) => media_id));
-  const reconciled: MvpAiTurnResult = {
+  const mediaReconciled: MvpAiTurnResult = {
     ...validated.data,
     media_classifications: [
       ...validated.data.media_classifications,
@@ -124,6 +163,7 @@ export async function runMvpConversationTurn(
         .map(({ media_id }) => ({ media_id, category: "other" as const, observation: null })),
     ],
   };
+  const reconciled = enforceQualificationAuthority(input, mediaReconciled);
   try {
     const committed = committedSchema.parse(await dependencies.store.commit(acquired.turn_id, reconciled));
     if (committed.status === "stale") throw new MvpConversationTurnError("mvp_turn_stale");

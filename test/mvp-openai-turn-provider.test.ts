@@ -202,6 +202,10 @@ describe("dedicated MVP OpenAI provider", () => {
       "alles vollständig",
       "bereit für technische Prüfung",
       "Ist collection_active wahr, setze andernfalls in_progress und qualifiziere weiter",
+      "fehlende Fakten oder Fotos ALLEIN NIEMALS needs_human",
+      "die Technik-Abteilung prüft jetzt die offenen Punkte",
+      "keine weiteren Fotos nötig",
+      "knowledge_context ist ebenfalls niemals ein Eskalationstrigger",
     ]) expect(OPENAI_MVP_TURN_INSTRUCTIONS).toContain(requiredInstruction);
   });
 
