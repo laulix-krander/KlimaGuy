@@ -1,0 +1,3 @@
+import fs from "node:fs";import path from "node:path";import {describe,expect,it} from "vitest";
+const files=["lib/domain/klimaguy-knowledge.ts","lib/server/klimaguy-knowledge-service.ts","lib/server/conversation/mvp-conversation-turn.ts","app/(app)/admin/klimaguy/knowledge/page.tsx"].map(f=>fs.readFileSync(path.join(process.cwd(),f),"utf8")).join("\n");
+describe("global knowledge boundary",()=>it("has no legacy conversation-intelligence or project evidence dependency",()=>expect(files).not.toMatch(/conversation-intelligence|project_knowledge_states|project_knowledge_claims|evidence_claim_proposals/)));

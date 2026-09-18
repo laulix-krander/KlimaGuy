@@ -115,6 +115,9 @@ export function canManageKlimaGuyOperations(role: Role | null): boolean {
   return role === "admin";
 }
 
+export function canViewKlimaGuyKnowledge(role: Role | null): boolean { return role === "admin"; }
+export function canManageKlimaGuyKnowledge(role: Role | null): boolean { return role === "admin"; }
+
 /** Live runtime transitions are controlled commands and remain admin-only in the MVP. */
 export function canManageConversationRuntime(role: Role | null): boolean {
   return role === "admin";

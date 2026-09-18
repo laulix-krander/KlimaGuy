@@ -10,6 +10,7 @@ import {
   MVP_ROOM_TYPES,
   MVP_TECHNICAL_SITUATIONS,
 } from "@/lib/domain/mvp-project-facts";
+import { klimaguyLearningCandidateProposalSchema } from "@/lib/domain/klimaguy-knowledge";
 
 const fact = <Key extends (typeof MVP_PROJECT_FACT_KEYS)[number], Value extends z.ZodTypeAny>(
   key: Key,
@@ -67,6 +68,7 @@ const turnFields = {
     media_id: z.string().uuid(), category: z.union([z.enum(MVP_REQUIRED_PHOTO_CATEGORIES), z.literal("other")]),
     observation: z.string().trim().min(1).max(240).nullable(),
   }).strict()).max(20),
+  learning_candidates: z.array(klimaguyLearningCandidateProposalSchema).max(2),
 } as const;
 
 export const mvpOpenAiTurnOutputSchema = z.object({

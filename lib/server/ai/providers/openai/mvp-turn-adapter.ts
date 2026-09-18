@@ -52,6 +52,7 @@ export class OpenAiMvpTurnProvider implements MvpAiTurnProvider {
             ? null
             : classification.observation,
         })),
+        learning_candidates: parsed.learning_candidates,
         qualification_status: parsed.qualification.status,
         needs_human: parsed.qualification.status === "needs_human",
         human_reason: parsed.qualification.human_reason,

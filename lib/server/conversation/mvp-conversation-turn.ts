@@ -11,6 +11,8 @@ import type { MvpAiTurnProvider } from "@/lib/server/ai/mvp-turn-provider";
 import { OpenAiMvpTurnProvider } from "@/lib/server/ai/providers/openai/mvp-turn-adapter";
 import { getProjectFacts, type ProjectFactsRpc } from "@/lib/server/project-facts/project-facts";
 import { loadRuntimeKlimaGuySettings } from "@/lib/server/klimaguy-agent-settings-service";
+import { loadRuntimeKlimaGuyKnowledge, sanitizeLearningCandidates } from "@/lib/server/klimaguy-knowledge-service";
+import type { KlimaGuyKnowledgeContextEntry, KlimaGuyLearningCandidateProposal } from "@/lib/domain/klimaguy-knowledge";
 
 const uuid = z.string().uuid();
 const acquiredMediaSchema = z.object({ media_id: uuid, category: mvpAiTurnInputObjectSchema.shape.ready_media.element.shape.category,
@@ -62,7 +64,7 @@ export class MvpConversationTurnError extends Error {
 export async function runMvpConversationTurn(
   conversationId: string,
   inboundMessageId: string,
-  dependencies: { store: MvpTurnStore; provider: MvpAiTurnProvider },
+  dependencies: { store: MvpTurnStore; provider: MvpAiTurnProvider; loadKnowledge?: () => Promise<readonly KlimaGuyKnowledgeContextEntry[]>; recordLearningCandidates?: (turnId: string, candidates: readonly KlimaGuyLearningCandidateProposal[]) => Promise<void> },
 ): Promise<MvpTurnRunResult> {
   const acquired = acquiredSchema.parse(await dependencies.store.acquire(uuid.parse(conversationId), uuid.parse(inboundMessageId)));
   if (acquired.status === "not_applicable") return { status: "not_applicable" };
@@ -80,6 +82,7 @@ export async function runMvpConversationTurn(
     await dependencies.store.fail(acquired.turn_id, "commit_failed");
     throw new MvpConversationTurnError("mvp_turn_stale");
   }
+  const knowledgeContext = dependencies.loadKnowledge ? await dependencies.loadKnowledge() : [];
   const input: MvpAiTurnInput = mvpAiTurnInputSchema.parse({
     turn: acquired.turn, project: acquired.project, customer: acquired.customer, persisted_facts: persistedFacts,
     inbound: acquired.inbound, transcript: acquired.transcript, ready_media: readyMedia, project_photo_coverage: acquired.project_photo_coverage,
@@ -93,6 +96,7 @@ export async function runMvpConversationTurn(
         requires_site_check: evaluateMvpQualificationReadiness(persistedFacts).requiresSiteCheck,
       };
     })(),
+    knowledge_context: knowledgeContext,
   });
   let untrusted: unknown;
   try { untrusted = await dependencies.provider.generateTurn(input); }
@@ -123,6 +127,11 @@ export async function runMvpConversationTurn(
   try {
     const committed = committedSchema.parse(await dependencies.store.commit(acquired.turn_id, reconciled));
     if (committed.status === "stale") throw new MvpConversationTurnError("mvp_turn_stale");
+    const candidates = sanitizeLearningCandidates(reconciled.learning_candidates, [acquired.customer.first_name, acquired.customer.last_name, ...persistedFacts.filter(({ key }) => key === "installation_address").map(({ value }) => String(value))]);
+    if (candidates.length && dependencies.recordLearningCandidates) {
+      try { await dependencies.recordLearningCandidates(acquired.turn_id, candidates); }
+      catch { console.warn("learning_candidate_persistence_failed"); }
+    }
     return { status: "completed", outbound_message_id: committed.outbound_message_id, turn: reconciled };
   } catch (error) {
     await dependencies.store.fail(acquired.turn_id, "commit_failed");
@@ -163,5 +172,9 @@ export async function runProductiveMvpConversationTurn(conversationId: string, i
     if (error) throw error;
     return data;
   } });
-  return runMvpConversationTurn(conversationId, inboundMessageId, { store: createProductiveMvpTurnStore(), provider: new OpenAiMvpTurnProvider(undefined, undefined, settings) });
+  return runMvpConversationTurn(conversationId, inboundMessageId, {
+    store: createProductiveMvpTurnStore(), provider: new OpenAiMvpTurnProvider(undefined, undefined, settings),
+    loadKnowledge: () => loadRuntimeKlimaGuyKnowledge({ read: async () => { const { data, error } = await client.from("klimaguy_knowledge_entries").select("id,category,title,guidance,priority,updated_at").eq("status", "active").order("priority", { ascending: false }).order("updated_at", { ascending: false }).order("id", { ascending: true }).limit(20); if (error) throw error; return data; } }),
+    recordLearningCandidates: async (turnId: string, candidates: readonly KlimaGuyLearningCandidateProposal[]) => { const { error } = await client.rpc("record_klimaguy_learning_candidates", { target_turn_id: turnId, target_candidates: candidates }); if (error) throw error; },
+  });
 }

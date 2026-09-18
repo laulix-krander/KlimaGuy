@@ -6,6 +6,7 @@ import {
   mvpProjectFactSchema,
 } from "./mvp-project-facts";
 import { MVP_OFFER_REQUIRED_FACT_GROUPS } from "./mvp-qualification-readiness";
+import { klimaguyKnowledgeContextEntrySchema, klimaguyLearningCandidateProposalSchema } from "./klimaguy-knowledge";
 
 export const MVP_QUALIFICATION_STATUSES = [
   "in_progress",
@@ -90,6 +91,7 @@ export const mvpAiTurnInputObjectSchema = z.object({
     missing_photos: z.array(z.enum(MVP_REQUIRED_PHOTO_CATEGORIES)).max(MVP_REQUIRED_PHOTO_CATEGORIES.length),
     requires_site_check: z.boolean(),
   }).strict(),
+  knowledge_context: z.array(klimaguyKnowledgeContextEntrySchema).max(20).default([]),
 }).strict();
 
 export const mvpAiTurnInputSchema = mvpAiTurnInputObjectSchema.superRefine((input, context) => {
@@ -112,6 +114,7 @@ export const mvpAiTurnResultSchema = z.object({
   human_reason: mvpHumanEscalationReasonSchema.nullable(),
   customer_name_patch: mvpCustomerNamePatchSchema.nullable(),
   media_classifications: z.array(mvpMediaClassificationSchema).max(20).default([]),
+  learning_candidates: z.array(klimaguyLearningCandidateProposalSchema).max(2).default([]),
 }).strict().superRefine((result, context) => {
   if (new Set(result.facts_patch.map(({ key }) => key)).size !== result.facts_patch.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["facts_patch"], message: "duplicate_fact_key" });

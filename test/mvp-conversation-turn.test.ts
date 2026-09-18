@@ -13,7 +13,7 @@ const context = {
     { message_id: id(1), sequence: 2, direction: "inbound", text: "28 qm Wohnzimmer" },
   ], ready_media: [],
 } as const;
-const valid = { reply_text: "Danke! Wo kann das Außengerät stehen?", facts_patch: [{ key: "room_area_sqm", value: 28 }], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null, media_classifications: [] } as const;
+const valid = { reply_text: "Danke! Wo kann das Außengerät stehen?", facts_patch: [{ key: "room_area_sqm", value: 28 }], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null, media_classifications: [], learning_candidates: [] } as const;
 
 function harness(output: unknown = valid) {
   let facts: MvpProjectFact[] = [{ key: "room_type", value: "living_room" }];
@@ -225,5 +225,30 @@ describe("MVP conversation turn", () => {
     const h = harness(output); await runMvpConversationTurn(id(2), id(1), h);
     expect(h.commit).toHaveBeenCalledWith(id(9), output);
     expect(h.store).not.toHaveProperty("createOffer");
+  });
+
+  it("loads approved knowledge once and records generalized learning only after commit", async () => {
+    const candidate = { category: "human_handoff" as const, title: "Fachplanung übergeben", proposed_guidance: "Professionelle Leitungsplanung an die technische Prüfung übergeben.", rationale: "Kunden können diese professionelle Planung nicht zuverlässig beurteilen." };
+    const h = harness({ ...valid, learning_candidates: [candidate] });
+    const loadKnowledge = vi.fn().mockResolvedValue([{ category: "photo_guidance", title: "Keine Wiederholung", guidance: "Nicht erneut nach ausdrücklich nicht verfügbaren Fotos fragen." }]);
+    const recordLearningCandidates = vi.fn().mockImplementation(async () => { expect(h.commit).toHaveBeenCalled(); });
+    await runMvpConversationTurn(id(2), id(1), { ...h, loadKnowledge, recordLearningCandidates });
+    expect(loadKnowledge).toHaveBeenCalledTimes(1);
+    expect(h.provider.generateTurn).toHaveBeenCalledWith(expect.objectContaining({ knowledge_context: expect.any(Array) }));
+    expect(recordLearningCandidates).toHaveBeenCalledWith(id(9), [candidate]);
+  });
+
+  it("keeps a committed customer reply successful when learning persistence fails", async () => {
+    const candidate = { category: "human_handoff" as const, title: "Fachplanung übergeben", proposed_guidance: "Professionelle Leitungsplanung an die technische Prüfung übergeben.", rationale: "Kunden können diese professionelle Planung nicht zuverlässig beurteilen." };
+    const h = harness({ ...valid, learning_candidates: [candidate] });
+    const result = await runMvpConversationTurn(id(2), id(1), { ...h, recordLearningCandidates: vi.fn().mockRejectedValue(new Error("down")) });
+    expect(result.status).toBe("completed"); expect(h.fail).not.toHaveBeenCalled();
+  });
+
+  it("drops customer-specific learning before persistence", async () => {
+    const h = harness({ ...valid, learning_candidates: [{ category: "customer_communication", title: "Felix freundlich helfen", proposed_guidance: "Felix soll bei Fachfragen freundlich an einen Techniker übergeben werden.", rationale: "Felix kann die Planung nicht zuverlässig beurteilen." }] });
+    h.acquire.mockResolvedValue({ ...context, customer: { name_known: true, first_name: "Felix", last_name: null } });
+    const recordLearningCandidates = vi.fn(); await runMvpConversationTurn(id(2), id(1), { ...h, recordLearningCandidates });
+    expect(recordLearningCandidates).not.toHaveBeenCalled(); expect(h.commit).toHaveBeenCalled();
   });
 });
