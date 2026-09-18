@@ -165,8 +165,10 @@ select pg_temp.assert_true((select a.id=b.binding_id and a.revision=b.binding_re
 select pg_temp.assert_true((select m.conversation_id=s.conversation_n1 from public.conversation_messages m cross join proof_state s where m.id=(select (result->>'internal_message_id')::uuid from followup)) and (select c.current_project_id=s.project_n1 from public.conversations c cross join proof_state s where c.id=s.conversation_n1), 27, 'follow-up Message and active Project remain on N+1/P-N+1');
 select pg_temp.assert_true((select count(*)=2 from public.conversation_transport_bindings) and (select count(*)=2 from public.conversations), 29, 'no physical delete is used anywhere in the lifecycle');
 
+\ir learning-candidate-repair-proof.sql
+
 set constraints all immediate;
-select pg_temp.assert_true(true, 30, 'all FK and constraint checks complete successfully');
+select pg_temp.assert_true(true, 36, 'all FK and constraint checks complete successfully');
 commit;
 
-\echo 'LIFECYCLE PROOF: PASS (assertions 1-30)'
+\echo 'LIFECYCLE AND LEARNING CANDIDATE REPAIR PROOF: PASS (assertions 1-36)'
