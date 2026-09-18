@@ -28,8 +28,8 @@ export function createProductiveCycleRuntime(): ProductiveCycleRuntime {
   const provider: StructuredInferenceProvider = {
     async generateStructuredInference(request) {
       if (!productiveProvider) {
-        const { OpenAiStructuredInferenceProvider } = await import("@/lib/server/ai/providers/openai/adapter");
-        productiveProvider = new OpenAiStructuredInferenceProvider();
+        const { createStructuredInferenceProvider } = await import("@/lib/server/ai/providers/openai/adapter");
+        productiveProvider = createStructuredInferenceProvider();
       }
       return productiveProvider.generateStructuredInference(request);
     },

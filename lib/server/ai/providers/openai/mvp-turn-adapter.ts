@@ -3,9 +3,10 @@ import "server-only";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { mvpVisionObservationSchema, type MvpAiTurnInput } from "@/lib/domain/mvp-ai-turn";
+import { DEFAULT_KLIMAGUY_AGENT_SETTINGS, type KlimaGuyAgentSettings } from "@/lib/domain/klimaguy-agent-settings";
 import type { MvpAiTurnProvider } from "../../mvp-turn-provider";
 import { readOpenAiEnvironment, readOpenAiProviderConfig, type OpenAiEnvironment } from "./config";
-import { OPENAI_MVP_TURN_INSTRUCTIONS } from "./mvp-turn-instructions";
+import { buildOpenAiMvpTurnInstructions } from "./mvp-turn-instructions";
 import { mvpOpenAiTurnOutputSchema } from "./mvp-turn-output-schema";
 
 type MvpOpenAiClient = Pick<OpenAI, "responses">;
@@ -21,6 +22,7 @@ export class OpenAiMvpTurnProvider implements MvpAiTurnProvider {
     private readonly environment: () => OpenAiEnvironment = readOpenAiEnvironment,
     private readonly clientFactory: (apiKey: string, timeout: number) => MvpOpenAiClient =
       (apiKey, timeout) => new OpenAI({ apiKey, timeout, maxRetries: 0 }),
+    private readonly settings: KlimaGuyAgentSettings = DEFAULT_KLIMAGUY_AGENT_SETTINGS,
   ) {}
 
   async generateTurn(input: MvpAiTurnInput): Promise<unknown> {
@@ -30,7 +32,7 @@ export class OpenAiMvpTurnProvider implements MvpAiTurnProvider {
     try {
       const response = await this.client.responses.parse({
         model: configured.config.model,
-        instructions: OPENAI_MVP_TURN_INSTRUCTIONS,
+        instructions: buildOpenAiMvpTurnInstructions(this.settings),
         input: [{ role: "user", content: [
           { type: "input_text", text: JSON.stringify({ ...input, ready_media: input.ready_media.map(({ image_data: _imageData, ...media }) => media) }) },
           ...input.ready_media.map((media) => ({ type: "input_image" as const, image_url: media.image_data, detail: "auto" as const })),

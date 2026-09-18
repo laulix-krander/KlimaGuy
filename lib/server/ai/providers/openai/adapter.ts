@@ -128,3 +128,8 @@ export class OpenAiStructuredInferenceProvider implements StructuredInferencePro
     }
   }
 }
+
+/** Keeps provider construction behind the adapter boundary for lazy productive runtimes. */
+export function createStructuredInferenceProvider(): StructuredInferenceProvider {
+  return new OpenAiStructuredInferenceProvider();
+}
