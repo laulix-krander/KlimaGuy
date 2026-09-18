@@ -34,7 +34,7 @@ export const DEFAULT_KLIMAGUY_AGENT_SETTINGS: Readonly<KlimaGuyAgentSettings> = 
 
 export const klimaguyAgentSettingsRowSchema = klimaguyAgentSettingsSchema.extend({
   id: z.literal(KLIMAGUY_AGENT_SETTINGS_ID), revision: z.number().int().positive(),
-  updated_by: z.string().uuid().nullable(), created_at: z.string().datetime(), updated_at: z.string().datetime(),
+  updated_by: z.string().uuid().nullable(), created_at: z.string().datetime({ offset: true }), updated_at: z.string().datetime({ offset: true }),
 }).strict();
 
 export const KLIMAGUY_SETTINGS_OPTIONS = {
