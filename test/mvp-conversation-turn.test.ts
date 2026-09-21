@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { runMvpConversationTurn, type MvpTurnStore } from "../lib/server/conversation/mvp-conversation-turn";
 import type { MvpAiTurnProvider } from "../lib/server/ai/mvp-turn-provider";
 import type { MvpProjectFact } from "../lib/domain/mvp-project-facts";
+import { DEFAULT_KLIMAGUY_AGENT_SETTINGS, type KlimaGuyAgentSettings } from "../lib/domain/klimaguy-agent-settings";
 
 const id = (number: number) => `00000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
 const context = {
@@ -14,6 +15,14 @@ const context = {
   ], ready_media: [],
 } as const;
 const valid = { reply_text: "Danke! Wo kann das Außengerät stehen?", facts_patch: [{ key: "room_area_sqm", value: 28 }], qualification_status: "in_progress", needs_human: false, human_reason: null, customer_name_patch: null, media_classifications: [], learning_candidates: [] } as const;
+const rejectedHandoff = { ...valid, reply_text: "Unsere Experten übernehmen jetzt.", facts_patch: [], qualification_status: "needs_human" as const, needs_human: true, human_reason: "requires_site_check" as const };
+const prePhotoFacts: MvpProjectFact[] = [
+  { key: "installation_address", value: "Musterweg 1" }, { key: "postal_code", value: "20095" }, { key: "city", value: "hamburg" },
+  { key: "building_type", value: "single_family_house" }, { key: "requested_room_count", value: 1 }, { key: "room_type", value: "kitchen" },
+  { key: "room_area_sqm", value: 12 }, { key: "indoor_unit_count", value: 1 }, { key: "indoor_unit_position", value: "Über der Tür" },
+  { key: "outdoor_unit_position", value: "Terrasse" },
+];
+const settings = (patch: Partial<KlimaGuyAgentSettings>): KlimaGuyAgentSettings => ({ ...DEFAULT_KLIMAGUY_AGENT_SETTINGS, ...patch });
 
 function harness(output: unknown = valid) {
   let facts: MvpProjectFact[] = [{ key: "room_type", value: "living_room" }];
@@ -147,7 +156,62 @@ describe("MVP conversation turn", () => {
 
     if (result.status !== "completed") throw new Error("expected_completed_turn");
     expect(result.turn).toMatchObject({ qualification_status: "in_progress", needs_human: false });
-    expect(result.turn.reply_text).toMatch(/Fotos.*Raumübersicht.*Innen- und Außengerät/iu);
+    expect(result.turn.reply_text).toMatch(/Fotos.*Raumübersicht.*Position des Innengeräts.*Position des Außengeräts/iu);
+  });
+
+  it("uses informal Operations wording for an intercepted escalation", async () => {
+    const h = harness(rejectedHandoff);
+
+    const result = await runMvpConversationTurn(id(2), id(1), { ...h, settings: settings({ communication_formality: "informal" }) });
+
+    if (result.status !== "completed") throw new Error("expected_completed_turn");
+    expect(result.turn.reply_text).toMatch(/sag mir/iu);
+    expect(result.turn.reply_text).not.toMatch(/\b(?:Sie|Ihnen|Ihr)\b/u);
+  });
+
+  it("uses formal Operations wording for an intercepted escalation", async () => {
+    const h = harness(rejectedHandoff);
+
+    const result = await runMvpConversationTurn(id(2), id(1), { ...h, settings: settings({ communication_formality: "formal" }) });
+
+    if (result.status !== "completed") throw new Error("expected_completed_turn");
+    expect(result.turn.reply_text).toMatch(/teilen Sie mir/iu);
+  });
+
+  it("omits the automatic acknowledgement when Operations disables it", async () => {
+    const h = harness(rejectedHandoff);
+
+    const result = await runMvpConversationTurn(id(2), id(1), { ...h, settings: settings({ acknowledge_answers: false }) });
+
+    if (result.status !== "completed") throw new Error("expected_completed_turn");
+    expect(result.turn.reply_text).not.toMatch(/Danke/iu);
+  });
+
+  it.each([
+    { strategy: "sequential" as const, included: [/Raumübersicht/iu], excluded: [/Position des Innengeräts/iu, /Position des Außengeräts/iu] },
+    { strategy: "grouped" as const, included: [/Raumübersicht/iu, /Position des Innengeräts/iu, /Position des Außengeräts/iu], excluded: [] },
+  ])("applies the $strategy photo request strategy during recovery", async ({ strategy, included, excluded }) => {
+    const h = harness(rejectedHandoff);
+    vi.mocked(h.store.rpc).mockResolvedValue({ data: prePhotoFacts, error: null });
+    h.acquire.mockResolvedValue({ ...context, project_photo_coverage: [] });
+
+    const result = await runMvpConversationTurn(id(2), id(1), { ...h, settings: settings({ photo_request_strategy: strategy }) });
+
+    if (result.status !== "completed") throw new Error("expected_completed_turn");
+    for (const pattern of included) expect(result.turn.reply_text).toMatch(pattern);
+    for (const pattern of excluded) expect(result.turn.reply_text).not.toMatch(pattern);
+  });
+
+  it("does not request an already covered core photo during grouped recovery", async () => {
+    const h = harness(rejectedHandoff);
+    vi.mocked(h.store.rpc).mockResolvedValue({ data: prePhotoFacts, error: null });
+    h.acquire.mockResolvedValue({ ...context, project_photo_coverage: [{ category: "room_overview", count: 1 }] });
+
+    const result = await runMvpConversationTurn(id(2), id(1), { ...h, settings: settings({ photo_request_strategy: "grouped" }) });
+
+    if (result.status !== "completed") throw new Error("expected_completed_turn");
+    expect(result.turn.reply_text).not.toMatch(/Raumübersicht/iu);
+    expect(result.turn.reply_text).toMatch(/Position des Innengeräts.*Position des Außengeräts/iu);
   });
 
   it("does not let approved knowledge alone escalate the qualification lifecycle", async () => {

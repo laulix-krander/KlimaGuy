@@ -13,6 +13,7 @@ import { getProjectFacts, type ProjectFactsRpc } from "@/lib/server/project-fact
 import { loadRuntimeKlimaGuySettings } from "@/lib/server/klimaguy-agent-settings-service";
 import { loadRuntimeKlimaGuyKnowledge, sanitizeLearningCandidates } from "@/lib/server/klimaguy-knowledge-service";
 import type { KlimaGuyKnowledgeContextEntry, KlimaGuyLearningCandidateProposal } from "@/lib/domain/klimaguy-knowledge";
+import { DEFAULT_KLIMAGUY_AGENT_SETTINGS, type KlimaGuyAgentSettings } from "@/lib/domain/klimaguy-agent-settings";
 
 const PRE_PHOTO_FACT_KEYS = ["installation_address", "postal_code", "city", "building_type", "requested_room_count", "room_type", "room_area_sqm", "indoor_unit_count", "indoor_unit_position", "outdoor_unit_position"] as const;
 
@@ -31,26 +32,58 @@ function currentTurnSupportsHumanEscalation(input: MvpAiTurnInput, result: MvpAi
   }
 }
 
-function continuedQualificationReply(input: MvpAiTurnInput, result: MvpAiTurnResult): string {
+const CORE_PHOTO_LABELS = {
+  room_overview: "eine Raumübersicht",
+  indoor_unit_location: "die geplante Position des Innengeräts",
+  outdoor_unit_location: "die geplante Position des Außengeräts",
+} as const;
+
+function joinGerman(items: readonly string[]): string {
+  if (items.length < 2) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} sowie ${items.at(-1)}`;
+}
+
+function continuedQualificationReply(input: MvpAiTurnInput, result: MvpAiTurnResult, settings: KlimaGuyAgentSettings): string {
   const resultingFacts = [...input.persisted_facts.filter((fact) => !result.facts_patch.some((patch) => patch.key === fact.key)), ...result.facts_patch];
   const known = new Set(resultingFacts.map(({ key }) => key));
   const missing = deriveMissingMvpRequiredFacts(resultingFacts);
-  if (PRE_PHOTO_FACT_KEYS.every((key) => known.has(key)) && input.qualification_context.missing_photos.some((photo) => ["room_overview", "indoor_unit_location", "outdoor_unit_location"].includes(photo))) {
-    return "Danke. Bitte senden Sie als Nächstes Fotos der Raumübersicht sowie der geplanten Positionen für Innen- und Außengerät.";
+  const newlyCovered = new Set(result.media_classifications.map(({ category }) => category));
+  const missingCore = input.qualification_context.missing_photos
+    .filter((photo): photo is keyof typeof CORE_PHOTO_LABELS => photo in CORE_PHOTO_LABELS && !newlyCovered.has(photo));
+  const acknowledgement = settings.acknowledge_answers ? "Danke. " : "";
+  if (PRE_PHOTO_FACT_KEYS.every((key) => known.has(key)) && missingCore.length) {
+    const requested = settings.photo_request_strategy === "sequential" ? missingCore.slice(0, 1) : missingCore;
+    const motives = joinGerman(requested.map((category) => CORE_PHOTO_LABELS[category]));
+    const photoPhrase = requested.length === 1 ? `ein Foto von ${motives}` : `Fotos von ${motives}`;
+    const request = settings.communication_formality === "formal"
+      ? `Bitte senden Sie mir als Nächstes ${photoPhrase}.`
+      : `Bitte sende mir als Nächstes ${photoPhrase}.`;
+    const explanation = settings.response_length === "balanced"
+      ? (settings.communication_formality === "formal" ? " So kann ich Ihre Planung weiter aufnehmen." : " So kann ich deine Planung weiter aufnehmen.")
+      : "";
+    return `${acknowledgement}${request}${explanation}`;
   }
-  const questions: Partial<Record<(typeof MVP_PROJECT_FACT_KEYS)[number], string>> = {
+  const informalQuestions: Partial<Record<(typeof MVP_PROJECT_FACT_KEYS)[number], string>> = {
     installation_address: "Wie lautet die Installationsadresse?", postal_code: "Wie lautet die Postleitzahl?", city: "In welchem Ort befindet sich das Gebäude?",
     building_type: "Um welchen Gebäudetyp handelt es sich?", requested_room_count: "Wie viele Räume sollen klimatisiert werden?", room_type: "Welcher Raum soll klimatisiert werden?",
     room_area_sqm: "Wie groß ist der Raum ungefähr?", indoor_unit_count: "Wie viele Innengeräte sind geplant?", indoor_unit_position: "Wo soll das Innengerät ungefähr montiert werden?",
     outdoor_unit_position: "Wo könnte das Außengerät stehen?", line_route: "Wie könnte der Leitungsweg zwischen Innen- und Außengerät verlaufen?", estimated_line_length_m: "Wie lang ist dieser Leitungsweg ungefähr?",
     condensate_drainage: "Gibt es eine Möglichkeit, das Kondenswasser abzuleiten?", electrical_supply: "Ist in der Nähe ein Stromanschluss oder eine Zuleitung vorhanden?", installation_access: "Ist der Montagebereich normal zugänglich?",
   };
-  return `Danke. ${questions[missing[0]] ?? "Welche weitere Angabe können Sie zur geplanten Installation machen?"}`;
+  const count = settings.question_strategy === "one_at_a_time" ? 1 : 2;
+  const questions = missing.slice(0, count).map((key) => informalQuestions[key]).filter((question): question is string => Boolean(question));
+  const prompt = questions.length
+    ? questions.join(" ")
+    : (settings.communication_formality === "formal" ? "Welche weitere Angabe können Sie mir zur geplanten Installation machen?" : "Welche weitere Angabe kannst du mir zur geplanten Installation machen?");
+  const addressedPrompt = settings.communication_formality === "formal"
+    ? `Bitte teilen Sie mir noch Folgendes mit: ${prompt}`
+    : `Bitte sag mir noch: ${prompt}`;
+  return `${acknowledgement}${addressedPrompt}`;
 }
 
-function enforceQualificationAuthority(input: MvpAiTurnInput, result: MvpAiTurnResult): MvpAiTurnResult {
+function enforceQualificationAuthority(input: MvpAiTurnInput, result: MvpAiTurnResult, settings: KlimaGuyAgentSettings): MvpAiTurnResult {
   if (result.qualification_status !== "needs_human" || currentTurnSupportsHumanEscalation(input, result)) return result;
-  return { ...result, reply_text: continuedQualificationReply(input, result), qualification_status: "in_progress", needs_human: false, human_reason: null };
+  return { ...result, reply_text: continuedQualificationReply(input, result, settings), qualification_status: "in_progress", needs_human: false, human_reason: null };
 }
 
 const uuid = z.string().uuid();
@@ -103,7 +136,7 @@ export class MvpConversationTurnError extends Error {
 export async function runMvpConversationTurn(
   conversationId: string,
   inboundMessageId: string,
-  dependencies: { store: MvpTurnStore; provider: MvpAiTurnProvider; loadKnowledge?: () => Promise<readonly KlimaGuyKnowledgeContextEntry[]>; recordLearningCandidates?: (turnId: string, candidates: readonly KlimaGuyLearningCandidateProposal[]) => Promise<void> },
+  dependencies: { store: MvpTurnStore; provider: MvpAiTurnProvider; settings?: KlimaGuyAgentSettings; loadKnowledge?: () => Promise<readonly KlimaGuyKnowledgeContextEntry[]>; recordLearningCandidates?: (turnId: string, candidates: readonly KlimaGuyLearningCandidateProposal[]) => Promise<void> },
 ): Promise<MvpTurnRunResult> {
   const acquired = acquiredSchema.parse(await dependencies.store.acquire(uuid.parse(conversationId), uuid.parse(inboundMessageId)));
   if (acquired.status === "not_applicable") return { status: "not_applicable" };
@@ -163,7 +196,7 @@ export async function runMvpConversationTurn(
         .map(({ media_id }) => ({ media_id, category: "other" as const, observation: null })),
     ],
   };
-  const reconciled = enforceQualificationAuthority(input, mediaReconciled);
+  const reconciled = enforceQualificationAuthority(input, mediaReconciled, dependencies.settings ?? DEFAULT_KLIMAGUY_AGENT_SETTINGS);
   try {
     const committed = committedSchema.parse(await dependencies.store.commit(acquired.turn_id, reconciled));
     if (committed.status === "stale") throw new MvpConversationTurnError("mvp_turn_stale");
@@ -213,7 +246,7 @@ export async function runProductiveMvpConversationTurn(conversationId: string, i
     return data;
   } });
   return runMvpConversationTurn(conversationId, inboundMessageId, {
-    store: createProductiveMvpTurnStore(), provider: new OpenAiMvpTurnProvider(undefined, undefined, settings),
+    store: createProductiveMvpTurnStore(), provider: new OpenAiMvpTurnProvider(undefined, undefined, settings), settings,
     loadKnowledge: () => loadRuntimeKlimaGuyKnowledge({ read: async () => { const { data, error } = await client.from("klimaguy_knowledge_entries").select("id,category,title,guidance,priority,updated_at").eq("status", "active").order("priority", { ascending: false }).order("updated_at", { ascending: false }).order("id", { ascending: true }).limit(20); if (error) throw error; return data; } }),
     recordLearningCandidates: async (turnId: string, candidates: readonly KlimaGuyLearningCandidateProposal[]) => { const { error } = await client.rpc("record_klimaguy_learning_candidates", { target_turn_id: turnId, target_candidates: candidates }); if (error) throw error; },
   });
