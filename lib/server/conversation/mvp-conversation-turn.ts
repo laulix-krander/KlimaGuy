@@ -33,9 +33,9 @@ function currentTurnSupportsHumanEscalation(input: MvpAiTurnInput, result: MvpAi
 }
 
 const CORE_PHOTO_LABELS = {
-  room_overview: "eine Raumübersicht",
-  indoor_unit_location: "die geplante Position des Innengeräts",
-  outdoor_unit_location: "die geplante Position des Außengeräts",
+  room_overview: "der Raumübersicht",
+  indoor_unit_location: "der geplanten Position des Innengeräts",
+  outdoor_unit_location: "der geplanten Position des Außengeräts",
 } as const;
 
 function joinGerman(items: readonly string[]): string {
