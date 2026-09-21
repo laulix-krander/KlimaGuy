@@ -188,9 +188,9 @@ describe("MVP conversation turn", () => {
   });
 
   it.each([
-    { strategy: "sequential" as const, included: [/Raumübersicht/iu], excluded: [/Position des Innengeräts/iu, /Position des Außengeräts/iu] },
-    { strategy: "grouped" as const, included: [/Raumübersicht/iu, /Position des Innengeräts/iu, /Position des Außengeräts/iu], excluded: [] },
-  ])("applies the $strategy photo request strategy during recovery", async ({ strategy, included, excluded }) => {
+    { strategy: "sequential" as const, request: "Bitte sende mir als Nächstes ein Foto von der Raumübersicht.", excluded: [/Position des Innengeräts/iu, /Position des Außengeräts/iu] },
+    { strategy: "grouped" as const, request: "Bitte sende mir als Nächstes Fotos von der Raumübersicht, der geplanten Position des Innengeräts sowie der geplanten Position des Außengeräts.", excluded: [] },
+  ])("applies the $strategy photo request strategy during informal recovery", async ({ strategy, request, excluded }) => {
     const h = harness(rejectedHandoff);
     vi.mocked(h.store.rpc).mockResolvedValue({ data: prePhotoFacts, error: null });
     h.acquire.mockResolvedValue({ ...context, project_photo_coverage: [] });
@@ -198,8 +198,21 @@ describe("MVP conversation turn", () => {
     const result = await runMvpConversationTurn(id(2), id(1), { ...h, settings: settings({ photo_request_strategy: strategy }) });
 
     if (result.status !== "completed") throw new Error("expected_completed_turn");
-    for (const pattern of included) expect(result.turn.reply_text).toMatch(pattern);
+    expect(result.turn.reply_text).toContain(request);
+    expect(result.turn.reply_text).not.toContain("von eine Raumübersicht");
     for (const pattern of excluded) expect(result.turn.reply_text).not.toMatch(pattern);
+  });
+
+  it("uses grammatically correct formal wording during grouped photo recovery", async () => {
+    const h = harness(rejectedHandoff);
+    vi.mocked(h.store.rpc).mockResolvedValue({ data: prePhotoFacts, error: null });
+    h.acquire.mockResolvedValue({ ...context, project_photo_coverage: [] });
+
+    const result = await runMvpConversationTurn(id(2), id(1), { ...h, settings: settings({ communication_formality: "formal", photo_request_strategy: "grouped" }) });
+
+    if (result.status !== "completed") throw new Error("expected_completed_turn");
+    expect(result.turn.reply_text).toContain("Bitte senden Sie mir als Nächstes Fotos von der Raumübersicht, der geplanten Position des Innengeräts sowie der geplanten Position des Außengeräts.");
+    expect(result.turn.reply_text).not.toContain("von eine Raumübersicht");
   });
 
   it("does not request an already covered core photo during grouped recovery", async () => {
