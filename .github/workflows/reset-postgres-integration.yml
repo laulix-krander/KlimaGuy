@@ -1,0 +1,44 @@
+name: D-23E Reset PostgreSQL Integration
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/reset-postgres-integration.yml"
+      - "test/integration/reset-postgres/**"
+      - "docs/audits/AP-16-06-06D-23E-reset-postgres-integration.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reset-postgres-integration:
+    name: PostgreSQL 16 / D-23D closed reset
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16.4-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: klimaguy_reset_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d klimaguy_reset_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: klimaguy_reset_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Execute production-shaped reset fixture and assertions
+        run: psql --set=ON_ERROR_STOP=1 --file=test/integration/reset-postgres/reset-postgres-integration.sql
